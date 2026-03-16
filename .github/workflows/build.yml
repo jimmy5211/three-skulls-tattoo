@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -29,16 +31,40 @@ jobs:
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
 
-      - name: Increment version code
+      - name: Set version code
         run: |
           BUILD_NUMBER=${{ github.run_number }}
-          sed -i "s/versionCode [0-9]*/versionCode $BUILD_NUMBER/" android/app/build.gradle
-          echo "Version code set to: $BUILD_NUMBER"
+          VERSION_CODE=$((1000 + BUILD_NUMBER))
+          sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/" android/app/build.gradle
+          echo "Version code set to: $VERSION_CODE"
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          echo "VERSION_NAME=1.0.$BUILD_NUMBER" >> $GITHUB_ENV
 
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
 
-      - name: Upload APK
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "Three Skulls Tattoo v1.0.${{ github.run_number }}"
+          body: |
+            ## 💀 Three Skulls Tattoo
+            ### Versión 1.0.${{ github.run_number }}
+            
+            #### Novedades:
+            - Mejoras en el canvas de dibujo
+            - Corrección de bugs
+            - Mejoras de rendimiento
+            
+            #### Instalación:
+            1. Descarga el archivo app-release.apk
+            2. Instala en tu dispositivo Android
+          files: build/app/outputs/flutter-apk/app-release.apk
+          draft: false
+          prerelease: false
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: three-skulls-tattoo-v${{ github.run_number }}
