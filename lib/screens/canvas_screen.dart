@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../theme/app_theme.dart';
 import '../controllers/canvas_controller.dart';
 import '../widgets/canvas_painter.dart';
@@ -6,7 +7,6 @@ import '../widgets/brush_selector.dart';
 import '../widgets/layer_panel.dart';
 import '../widgets/color_picker.dart';
 import '../models/brush_model.dart';
-import 'package:go_router/go_router.dart';
 
 class CanvasScreen extends StatefulWidget {
   const CanvasScreen({super.key});
@@ -43,116 +43,111 @@ class _CanvasScreenState extends State<CanvasScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.primaryBlack,
+      backgroundColor: const Color(0xFF3A3A3A),
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            if (!_isFullscreen) _buildTopBar(),
-            Expanded(
-              child: Row(
-                children: [
-                  // Panel de pinceles izquierda
-                  if (!_isFullscreen)
-                    AnimatedBuilder(
-                      animation: _controller,
-                      builder: (context, child) {
-                        return BrushSelector(
-                          activeBrush: _controller.activeBrush,
-                          brushes: _brushes,
-                          onBrushSelected: _controller.setActiveBrush,
-                          onSizeChanged: _controller.setBrushSize,
-                          onOpacityChanged: _controller.setBrushOpacity,
-                        );
-                      },
-                    ),
-                  // Canvas principal
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        _buildCanvas(),
-                        // Panel de capas
-                        if (_showLayers)
-                          Positioned(
-                            right: 0,
-                            top: 0,
-                            bottom: 0,
-                            child: AnimatedBuilder(
-                              animation: _controller,
-                              builder: (context, child) {
-                                return LayerPanel(
-                                  layers: _controller.layers,
-                                  activeLayerId:
-                                      _controller.activeLayerId,
-                                  onLayerSelected:
-                                      _controller.setActiveLayer,
-                                  onLayerVisibilityToggled:
-                                      _controller.toggleLayerVisibility,
-                                  onLayerDeleted:
-                                      _controller.removeLayer,
-                                  onLayerAdded: _controller.addLayer,
-                                );
-                              },
-                            ),
-                          ),
-                        // Panel de colores
-                        if (_showColors)
-                          Positioned(
-                            top: 8,
-                            left: 0,
-                            right: 0,
-                            child: Center(
-                              child: AnimatedBuilder(
-                                animation: _controller,
-                                builder: (context, child) {
-                                  return ColorPicker(
-                                    activeColor:
-                                        _controller.activeColor,
-                                    onColorSelected:
-                                        _controller.setActiveColor,
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        // Botón pantalla completa
-                        Positioned(
-                          top: 8,
-                          left: 8,
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _isFullscreen = !_isFullscreen;
-                              });
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: AppTheme.deepBlack
-                                    .withOpacity(0.8),
-                                borderRadius:
-                                    BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: AppTheme.borderColor,
-                                  width: 1,
-                                ),
-                              ),
-                              child: Icon(
-                                _isFullscreen
-                                    ? Icons.fullscreen_exit
-                                    : Icons.fullscreen,
-                                color: AppTheme.textWhite,
-                                size: 18,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+            // Canvas principal ocupa toda la pantalla
+            _buildCanvas(),
+
+            // Barra superior flotante
+            if (!_isFullscreen)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: _buildTopBar(),
               ),
+
+            // Panel de pinceles izquierda
+            if (!_isFullscreen)
+              Positioned(
+                left: 0,
+                top: 56,
+                bottom: 56,
+                child: AnimatedBuilder(
+                  animation: _controller,
+                  builder: (context, child) {
+                    return BrushSelector(
+                      activeBrush: _controller.activeBrush,
+                      brushes: _brushes,
+                      onBrushSelected: _controller.setActiveBrush,
+                      onSizeChanged: _controller.setBrushSize,
+                      onOpacityChanged: _controller.setBrushOpacity,
+                    );
+                  },
+                ),
+              ),
+
+            // Botón capas derecha (burbuja)
+            if (!_isFullscreen)
+              Positioned(
+                right: 8,
+                top: 70,
+                child: _buildLayersBubble(),
+              ),
+
+            // Panel de capas expandido
+            if (_showLayers && !_isFullscreen)
+              Positioned(
+                right: 0,
+                top: 56,
+                bottom: 56,
+                child: AnimatedBuilder(
+                  animation: _controller,
+                  builder: (context, child) {
+                    return LayerPanel(
+                      layers: _controller.layers,
+                      activeLayerId: _controller.activeLayerId,
+                      onLayerSelected: _controller.setActiveLayer,
+                      onLayerVisibilityToggled:
+                          _controller.toggleLayerVisibility,
+                      onLayerDeleted: _controller.removeLayer,
+                      onLayerAdded: _controller.addLayer,
+                    );
+                  },
+                ),
+              ),
+
+            // Selector de color (burbuja esquina derecha abajo)
+            if (!_isFullscreen)
+              Positioned(
+                right: 8,
+                bottom: 64,
+                child: _buildColorBubble(),
+              ),
+
+            // Panel de colores expandido
+            if (_showColors && !_isFullscreen)
+              Positioned(
+                right: 8,
+                bottom: 120,
+                child: AnimatedBuilder(
+                  animation: _controller,
+                  builder: (context, child) {
+                    return ColorPicker(
+                      activeColor: _controller.activeColor,
+                      onColorSelected: _controller.setActiveColor,
+                    );
+                  },
+                ),
+              ),
+
+            // Barra inferior flotante
+            if (!_isFullscreen)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _buildBottomBar(),
+              ),
+
+            // Botón pantalla completa
+            Positioned(
+              top: _isFullscreen ? 8 : 64,
+              left: _isFullscreen ? 8 : 68,
+              child: _buildFullscreenButton(),
             ),
-            if (!_isFullscreen) _buildBottomBar(),
           ],
         ),
       ),
@@ -161,52 +156,32 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildTopBar() {
     return Container(
-      height: 48,
+      height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: const BoxDecoration(
-        color: AppTheme.deepBlack,
-        border: Border(
+      decoration: BoxDecoration(
+        color: AppTheme.deepBlack.withOpacity(0.95),
+        border: const Border(
           bottom: BorderSide(
             color: AppTheme.borderColor,
-            width: 1,
+            width: 0.5,
           ),
         ),
       ),
       child: Row(
         children: [
           // Botón regresar
-          IconButton(
-            icon: const Icon(
-              Icons.arrow_back,
-              color: AppTheme.textWhite,
-              size: 20,
-            ),
-            onPressed: () => context.go('/home'),
+          _buildTopButton(
+            icon: Icons.arrow_back,
+            onTap: () => context.go('/home'),
           ),
-          // Título
-          const Expanded(
-            child: Text(
-              'NUEVO DISEÑO',
-              style: TextStyle(
-                fontFamily: 'BlackOpsOne',
-                fontSize: 14,
-                color: AppTheme.textWhite,
-                letterSpacing: 2,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
+          const SizedBox(width: 4),
           // Deshacer
           AnimatedBuilder(
             animation: _controller,
             builder: (context, child) {
-              return IconButton(
-                icon: const Icon(
-                  Icons.undo,
-                  color: AppTheme.textWhite,
-                  size: 20,
-                ),
-                onPressed: _controller.undo,
+              return _buildTopButton(
+                icon: Icons.undo,
+                onTap: _controller.undo,
               );
             },
           ),
@@ -214,33 +189,202 @@ class _CanvasScreenState extends State<CanvasScreen> {
           AnimatedBuilder(
             animation: _controller,
             builder: (context, child) {
-              return IconButton(
-                icon: const Icon(
-                  Icons.redo,
-                  color: AppTheme.textWhite,
-                  size: 20,
-                ),
-                onPressed: _controller.redo,
+              return _buildTopButton(
+                icon: Icons.redo,
+                onTap: _controller.redo,
+              );
+            },
+          ),
+          const Spacer(),
+          // Título
+          const Text(
+            'NUEVO DISEÑO',
+            style: TextStyle(
+              fontFamily: 'BlackOpsOne',
+              fontSize: 13,
+              color: AppTheme.textWhite,
+              letterSpacing: 2,
+            ),
+          ),
+          const Spacer(),
+          // Cuadrícula
+          _buildTopButton(
+            icon: _showGrid ? Icons.grid_on : Icons.grid_off,
+            isActive: _showGrid,
+            onTap: () => setState(() => _showGrid = !_showGrid),
+          ),
+          // Simetría
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              return _buildTopButton(
+                icon: Icons.flip,
+                isActive: _controller.symmetryEnabled,
+                onTap: _controller.toggleSymmetry,
               );
             },
           ),
           // Guardar
-          IconButton(
-            icon: const Icon(
-              Icons.save_outlined,
-              color: AppTheme.accentRed,
-              size: 20,
-            ),
-            onPressed: _saveDesign,
+          _buildTopButton(
+            icon: Icons.save_outlined,
+            color: AppTheme.accentRed,
+            onTap: _saveDesign,
           ),
         ],
       ),
     );
   }
 
+  Widget _buildTopButton({
+    required IconData icon,
+    VoidCallback? onTap,
+    bool isActive = false,
+    Color? color,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(
+          color: isActive
+              ? AppTheme.accentRed.withOpacity(0.2)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: isActive
+              ? Border.all(
+                  color: AppTheme.accentRed,
+                  width: 1,
+                )
+              : null,
+        ),
+        child: Icon(
+          icon,
+          color: color ?? (isActive
+              ? AppTheme.accentRed
+              : AppTheme.textWhite),
+          size: 18,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLayersBubble() {
+    return GestureDetector(
+      onTap: () => setState(() {
+        _showLayers = !_showLayers;
+        if (_showLayers) _showColors = false;
+      }),
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: _showLayers
+              ? AppTheme.accentRed
+              : AppTheme.deepBlack.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: _showLayers
+                ? AppTheme.accentRed
+                : AppTheme.borderColor,
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.layers_outlined,
+              color: Colors.white,
+              size: 18,
+            ),
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) {
+                return Text(
+                  '${_controller.layers.length}',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: Colors.white,
+                    fontFamily: 'Raleway',
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColorBubble() {
+    return GestureDetector(
+      onTap: () => setState(() {
+        _showColors = !_showColors;
+        if (_showColors) _showLayers = false;
+      }),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: _controller.activeColor,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _showColors
+                    ? Colors.white
+                    : AppTheme.borderColor,
+                width: _showColors ? 2 : 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFullscreenButton() {
+    return GestureDetector(
+      onTap: () => setState(() => _isFullscreen = !_isFullscreen),
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: AppTheme.deepBlack.withOpacity(0.7),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: AppTheme.borderColor,
+            width: 0.5,
+          ),
+        ),
+        child: Icon(
+          _isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+          color: AppTheme.textWhite,
+          size: 16,
+        ),
+      ),
+    );
+  }
+
   Widget _buildCanvas() {
-    return Container(
-      color: const Color(0xFF444444),
+    return Positioned.fill(
       child: InteractiveViewer(
         transformationController: _transformationController,
         minScale: 0.1,
@@ -249,16 +393,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
           animation: _controller,
           builder: (context, child) {
             return GestureDetector(
-              onPanStart: (details) {
-                _controller.startStroke(
-                  details.localPosition,
-                );
-              },
-              onPanUpdate: (details) {
-                _controller.continueStroke(
-                  details.localPosition,
-                );
-              },
+              onPanStart: (details) =>
+                  _controller.startStroke(details.localPosition),
+              onPanUpdate: (details) =>
+                  _controller.continueStroke(details.localPosition),
               onPanEnd: (_) => _controller.endStroke(),
               child: CustomPaint(
                 painter: CanvasPainter(
@@ -284,86 +422,54 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return Container(
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: const BoxDecoration(
-        color: AppTheme.deepBlack,
-        border: Border(
+      decoration: BoxDecoration(
+        color: AppTheme.deepBlack.withOpacity(0.95),
+        border: const Border(
           top: BorderSide(
             color: AppTheme.borderColor,
-            width: 1,
+            width: 0.5,
           ),
         ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Color
-          _buildToolButton(
-            emoji: '🎨',
-            label: 'Color',
-            isActive: _showColors,
-            onTap: () {
-              setState(() {
-                _showColors = !_showColors;
-                if (_showColors) _showLayers = false;
-              });
-            },
-          ),
-          // Capas
-          _buildToolButton(
-            emoji: '🗂️',
-            label: 'Capas',
-            isActive: _showLayers,
-            onTap: () {
-              setState(() {
-                _showLayers = !_showLayers;
-                if (_showLayers) _showColors = false;
-              });
-            },
-          ),
-          // Cuadrícula
-          _buildToolButton(
-            emoji: '⊞',
-            label: 'Grilla',
-            isActive: _showGrid,
-            onTap: () {
-              setState(() => _showGrid = !_showGrid);
-            },
-          ),
-          // Simetría
-          AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              return _buildToolButton(
-                emoji: '🔄',
-                label: 'Sim.',
-                isActive: _controller.symmetryEnabled,
-                onTap: _controller.toggleSymmetry,
-              );
-            },
-          ),
-          // Limpiar
-          _buildToolButton(
-            emoji: '🗑️',
-            label: 'Limpiar',
-            isActive: false,
-            onTap: () => _showClearDialog(),
-          ),
+          _buildBottomButton('✏️', 'Liner',
+              _controller.activeBrush.id == 'liner_fine', () {
+            _controller.setActiveBrush(_brushes[0]);
+          }),
+          _buildBottomButton('🖌️', 'Shader',
+              _controller.activeBrush.id == 'shader_soft', () {
+            _controller.setActiveBrush(_brushes[2]);
+          }),
+          _buildBottomButton(
+              '⚫', 'Dotwork',
+              _controller.activeBrush.id == 'dotwork', () {
+            _controller.setActiveBrush(_brushes[3]);
+          }),
+          _buildBottomButton(
+              '🧹', 'Borrador',
+              _controller.activeBrush.id == 'eraser', () {
+            _controller.setActiveBrush(_brushes[5]);
+          }),
+          _buildBottomButton('🗑️', 'Limpiar', false,
+              () => _showClearDialog()),
         ],
       ),
     );
   }
 
-  Widget _buildToolButton({
-    required String emoji,
-    required String label,
-    required bool isActive,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildBottomButton(
+    String emoji,
+    String label,
+    bool isActive,
+    VoidCallback onTap,
+  ) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(
-          horizontal: 12,
+          horizontal: 10,
           vertical: 4,
         ),
         decoration: BoxDecoration(
@@ -381,12 +487,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 18)),
+            Text(emoji, style: const TextStyle(fontSize: 20)),
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 9,
-                color: AppTheme.textGrey,
+                color: isActive
+                    ? AppTheme.accentRed
+                    : AppTheme.textGrey,
                 fontFamily: 'Raleway',
               ),
             ),
