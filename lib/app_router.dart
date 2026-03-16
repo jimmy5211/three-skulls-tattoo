@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'screens/splash_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/canvas_screen.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -17,6 +18,12 @@ class AppRouter {
         path: '/home',
         builder: (BuildContext context, GoRouterState state) {
           return const HomeScreen();
+        },
+      ),
+      GoRoute(
+        path: '/canvas',
+        builder: (BuildContext context, GoRouterState state) {
+          return const CanvasScreen();
         },
       ),
     ],
