@@ -8,6 +8,7 @@ class CanvasPainter extends CustomPainter {
   final bool showGrid;
   final bool showSymmetryLine;
   final bool symmetryEnabled;
+  final int activeLayerId;
 
   CanvasPainter({
     required this.layers,
@@ -15,54 +16,58 @@ class CanvasPainter extends CustomPainter {
     this.showGrid = false,
     this.showSymmetryLine = false,
     this.symmetryEnabled = false,
+    this.activeLayerId = 0,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Fondo blanco del canvas
+    // Fondo blanco
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, size.height),
       Paint()..color = Colors.white,
     );
 
-    // Dibujar cuadrícula si está activada
+    // Cuadrícula
     if (showGrid) {
       _drawGrid(canvas, size);
     }
 
-    // SaveLayer para que el borrador funcione correctamente
-    canvas.saveLayer(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint(),
-    );
-
-    // Dibujar capas
+    // Dibujar cada capa por separado
     for (final layer in layers) {
       if (!layer.isVisible) continue;
-      for (final stroke in layer.strokes) {
-        _drawStroke(canvas, stroke, layer.opacity);
-      }
+      _drawLayer(canvas, size, layer);
     }
 
-    // Dibujar trazo actual
-    if (currentStroke != null) {
-      _drawStroke(canvas, currentStroke!, 1.0);
-    }
-
-    // Restaurar layer
-    canvas.restore();
-
-    // Dibujar línea de simetría encima
+    // Línea de simetría
     if (symmetryEnabled && showSymmetryLine) {
       _drawSymmetryLine(canvas, size);
     }
   }
 
-  void _drawStroke(
-    Canvas canvas,
-    StrokeModel stroke,
-    double layerOpacity,
-  ) {
+  void _drawLayer(Canvas canvas, Size size, LayerModel layer) {
+    // Cada capa tiene su propio saveLayer
+    // para que el borrador no afecte otras capas
+    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
+
+    final layerPaint = Paint()
+      ..color = Colors.white.withOpacity(layer.opacity);
+
+    canvas.saveLayer(rect, layerPaint);
+
+    // Dibujar trazos de esta capa
+    for (final stroke in layer.strokes) {
+      _drawStroke(canvas, stroke);
+    }
+
+    // Si es la capa activa dibujar el trazo actual
+    if (layer.id == activeLayerId && currentStroke != null) {
+      _drawStroke(canvas, currentStroke!);
+    }
+
+    canvas.restore();
+  }
+
+  void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
 
     final paint = Paint()
@@ -71,17 +76,16 @@ class CanvasPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
 
-    // Configurar borrador correctamente
     if (stroke.type == StrokeType.eraser) {
+      // Borrador real usando BlendMode.clear
+      // Solo afecta la capa actual gracias al saveLayer
       paint
-        ..color = Colors.white
         ..blendMode = BlendMode.clear
+        ..strokeWidth = stroke.strokeWidth * 2
         ..style = PaintingStyle.stroke;
     } else {
       paint
-        ..color = stroke.color.withOpacity(
-          stroke.opacity * layerOpacity,
-        )
+        ..color = stroke.color.withOpacity(stroke.opacity)
         ..blendMode = BlendMode.srcOver;
     }
 
@@ -97,7 +101,6 @@ class CanvasPainter extends CustomPainter {
         _drawSmoothStroke(canvas, stroke, paint);
         break;
       case StrokeType.eraser:
-        paint.strokeWidth = stroke.strokeWidth * 2;
         _drawSmoothStroke(canvas, stroke, paint);
         break;
       default:
@@ -165,7 +168,7 @@ class CanvasPainter extends CustomPainter {
 
   void _drawGrid(Canvas canvas, Size size) {
     final gridPaint = Paint()
-      ..color = Colors.grey.withOpacity(0.2)
+      ..color = Colors.grey.withOpacity(0.15)
       ..strokeWidth = 0.5;
 
     const gridSize = 50.0;
@@ -188,20 +191,18 @@ class CanvasPainter extends CustomPainter {
   }
 
   void _drawSymmetryLine(Canvas canvas, Size size) {
-    final symmetryPaint = Paint()
-      ..color = Colors.blue.withOpacity(0.5)
+    final paint = Paint()
+      ..color = Colors.blue.withOpacity(0.4)
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
 
     canvas.drawLine(
       Offset(size.width / 2, 0),
       Offset(size.width / 2, size.height),
-      symmetryPaint,
+      paint,
     );
   }
 
   @override
-  bool shouldRepaint(CanvasPainter oldDelegate) {
-    return true;
-  }
+  bool shouldRepaint(CanvasPainter oldDelegate) => true;
 }
