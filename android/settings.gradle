@@ -6,9 +6,7 @@ pluginManagement {
         assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
         return flutterSdkPath
     }()
-
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
-
     repositories {
         google()
         mavenCentral()
@@ -21,3 +19,17 @@ plugins {
 }
 
 include ":app"
+
+def localPropertiesFile = new File(rootProject.projectDir, "local.properties")
+def properties = new Properties()
+assert localPropertiesFile.exists()
+localPropertiesFile.text.split('\n').each { line ->
+    if (line.contains('=')) {
+        def key = line.split('=')[0].trim()
+        def value = line.split('=')[1].trim()
+        properties[key] = value
+    }
+}
+
+def flutterSdkPath = properties.getProperty("flutter.sdk")
+apply from: "$flutterSdkPath/packages/flutter_tools/gradle/app_plugin_loader.gradle"
