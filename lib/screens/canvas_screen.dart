@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/app_theme.dart';
 import '../controllers/canvas_controller.dart';
@@ -23,34 +24,19 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _showColors = false;
   bool _showGrid = false;
   bool _isFullscreen = false;
-  bool _isPanning = false;
-  double _currentScale = 1.0;
 
-  final TransformationController _transformationController =
-      TransformationController();
+  // Zoom y paneo
+  double _scale = 1.0;
+  double _previousScale = 1.0;
+  Offset _offset = Offset.zero;
+  Offset _previousOffset = Offset.zero;
+  int _pointerCount = 0;
 
   @override
   void initState() {
     super.initState();
     _controller = CanvasController();
     _brushes = BrushModel.defaultBrushes();
-  }
-
-  @override
-  void dispose() {
-    _transformationController.dispose();
-    super.dispose();
-  }
-
-  Offset _transformToCanvas(Offset localPosition) {
-    final matrix = _transformationController.value;
-    final scale = matrix.getMaxScaleOnAxis();
-    final tx = matrix.getTranslation().x;
-    final ty = matrix.getTranslation().y;
-    return Offset(
-      (localPosition.dx - tx) / scale,
-      (localPosition.dy - ty) / scale,
-    );
   }
 
   @override
@@ -84,7 +70,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     return BrushSelector(
                       activeBrush: _controller.activeBrush,
                       brushes: _brushes,
-                      onBrushSelected: _controller.setActiveBrush,
+                      onBrushSelected:
+                          _controller.setActiveBrush,
                       onSizeChanged: _controller.setBrushSize,
                       onOpacityChanged:
                           _controller.setBrushOpacity,
@@ -93,7 +80,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
 
-            // Burbuja capas derecha arriba
+            // Burbuja capas
             if (!_isFullscreen)
               Positioned(
                 right: 8,
@@ -101,7 +88,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildLayersBubble(),
               ),
 
-            // Panel capas expandido
+            // Panel capas
             if (_showLayers && !_isFullscreen)
               Positioned(
                 right: 0,
@@ -124,19 +111,19 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
 
-            // Burbuja color derecha abajo
+            // Burbuja color
             if (!_isFullscreen)
               Positioned(
                 right: 8,
-                bottom: 80,
+                bottom: 50,
                 child: _buildColorBubble(),
               ),
 
-            // Panel colores expandido
+            // Panel colores
             if (_showColors && !_isFullscreen)
               Positioned(
                 right: 8,
-                bottom: 134,
+                bottom: 110,
                 child: AnimatedBuilder(
                   animation: _controller,
                   builder: (context, child) {
@@ -149,11 +136,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
 
-            // Indicador de zoom
+            // Indicador zoom
             if (!_isFullscreen)
               Positioned(
                 right: 8,
-                bottom: 40,
+                bottom: 12,
                 child: _buildZoomIndicator(),
               ),
 
@@ -173,69 +160,91 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return Positioned.fill(
       child: Listener(
         onPointerDown: (event) {
-          // Detectar si hay 2 o más dedos
-          if (event.buttons > 1) {
-            setState(() => _isPanning = true);
-          }
+          setState(() => _pointerCount++);
         },
         onPointerUp: (event) {
-          setState(() => _isPanning = false);
+          setState(() {
+            _pointerCount--;
+            if (_pointerCount < 0) _pointerCount = 0;
+          });
         },
-        child: InteractiveViewer(
-          transformationController: _transformationController,
-          minScale: 0.1,
-          maxScale: 20.0,
-          panEnabled: _isPanning,
-          scaleEnabled: true,
-          onInteractionUpdate: (details) {
-            setState(() {
-              _currentScale =
-                  _transformationController.value
-                      .getMaxScaleOnAxis();
-              if (details.pointerCount >= 2) {
-                _isPanning = true;
-                _controller.endStroke();
-              }
-            });
+        onPointerCancel: (event) {
+          setState(() {
+            _pointerCount--;
+            if (_pointerCount < 0) _pointerCount = 0;
+          });
+        },
+        child: GestureDetector(
+          // 1 dedo = dibujar
+          onPanStart: (details) {
+            if (_pointerCount == 1) {
+              final canvasPoint = _screenToCanvas(
+                details.localPosition,
+              );
+              _controller.startStroke(canvasPoint);
+            }
           },
-          onInteractionEnd: (details) {
-            setState(() => _isPanning = false);
+          onPanUpdate: (details) {
+            if (_pointerCount == 1) {
+              final canvasPoint = _screenToCanvas(
+                details.localPosition,
+              );
+              _controller.continueStroke(canvasPoint);
+            } else if (_pointerCount == 2) {
+              // 2 dedos = mover canvas
+              setState(() {
+                _offset += details.delta;
+              });
+            }
           },
-          child: GestureDetector(
-            onPanStart: (details) {
-              if (!_isPanning) {
-                _controller.startStroke(
-                  _transformToCanvas(details.localPosition),
-                );
-              }
-            },
-            onPanUpdate: (details) {
-              if (!_isPanning) {
-                _controller.continueStroke(
-                  _transformToCanvas(details.localPosition),
-                );
-              }
-            },
-            onPanEnd: (_) {
-              if (!_isPanning) {
-                _controller.endStroke();
-              }
-            },
+          onPanEnd: (details) {
+            if (_pointerCount <= 1) {
+              _controller.endStroke();
+            }
+          },
+          // 2 dedos = zoom
+          onScaleStart: (details) {
+            _previousScale = _scale;
+            _previousOffset = _offset;
+            _controller.endStroke();
+          },
+          onScaleUpdate: (details) {
+            if (details.pointerCount >= 2) {
+              setState(() {
+                _scale = (_previousScale * details.scale)
+                    .clamp(0.1, 10.0);
+                _offset = _previousOffset +
+                    details.focalPointDelta;
+              });
+            }
+          },
+          onScaleEnd: (details) {
+            _previousScale = _scale;
+            _previousOffset = _offset;
+          },
+          child: ClipRect(
             child: AnimatedBuilder(
               animation: _controller,
               builder: (context, child) {
-                return CustomPaint(
-                  painter: CanvasPainter(
-                    layers: _controller.layers,
-                    currentStroke: _controller.currentStroke,
-                    showGrid: _showGrid,
-                    showSymmetryLine:
-                        _controller.symmetryEnabled,
-                    symmetryEnabled: _controller.symmetryEnabled,
-                  ),
-                  size: Size(
-                    MediaQuery.of(context).size.width,
-                    MediaQuery.of(context).size.height,
+                return Transform(
+                  transform: Matrix4.identity()
+                    ..translate(_offset.dx, _offset.dy)
+                    ..scale(_scale),
+                  child: CustomPaint(
+                    painter: CanvasPainter(
+                      layers: _controller.layers,
+                      currentStroke: _controller.currentStroke,
+                      showGrid: _showGrid,
+                      showSymmetryLine:
+                          _controller.symmetryEnabled,
+                      symmetryEnabled:
+                          _controller.symmetryEnabled,
+                      activeLayerId: _controller.activeLayerId,
+                    ),
+                    size: Size(
+                      MediaQuery.of(context).size.width,
+                      MediaQuery.of(context).size.height,
+                    ),
                   ),
                 );
               },
@@ -243,6 +252,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Offset _screenToCanvas(Offset screenPoint) {
+    return Offset(
+      (screenPoint.dx - _offset.dx) / _scale,
+      (screenPoint.dy - _offset.dy) / _scale,
     );
   }
 
@@ -265,13 +281,23 @@ class _CanvasScreenState extends State<CanvasScreen> {
             icon: Icons.arrow_back_ios,
             onTap: () => context.go('/home'),
           ),
-          _buildTopButton(
-            icon: Icons.undo,
-            onTap: _controller.undo,
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              return _buildTopButton(
+                icon: Icons.undo,
+                onTap: _controller.undo,
+              );
+            },
           ),
-          _buildTopButton(
-            icon: Icons.redo,
-            onTap: _controller.redo,
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              return _buildTopButton(
+                icon: Icons.redo,
+                onTap: _controller.redo,
+              );
+            },
           ),
           const Spacer(),
           const Text(
@@ -285,9 +311,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
           const Spacer(),
           _buildTopButton(
-            icon: _showGrid
-                ? Icons.grid_on
-                : Icons.grid_off,
+            icon: _showGrid ? Icons.grid_on : Icons.grid_off,
             isActive: _showGrid,
             onTap: () =>
                 setState(() => _showGrid = !_showGrid),
@@ -443,9 +467,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget _buildZoomIndicator() {
     return GestureDetector(
       onTap: () {
-        _transformationController.value =
-            Matrix4.identity();
-        setState(() => _currentScale = 1.0);
+        setState(() {
+          _scale = 1.0;
+          _offset = Offset.zero;
+          _previousScale = 1.0;
+          _previousOffset = Offset.zero;
+        });
       },
       child: Container(
         padding: const EdgeInsets.symmetric(
@@ -461,7 +488,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
         ),
         child: Text(
-          '${(_currentScale * 100).round()}%',
+          '${(_scale * 100).round()}%',
           style: const TextStyle(
             fontFamily: 'Raleway',
             fontSize: 10,
@@ -494,48 +521,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
           color: AppTheme.textWhite,
           size: 18,
         ),
-      ),
-    );
-  }
-
-  void _showClearDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.cardColor,
-        title: const Text(
-          '💀 Limpiar Canvas',
-          style: TextStyle(
-            fontFamily: 'BlackOpsOne',
-            color: AppTheme.textWhite,
-          ),
-        ),
-        content: const Text(
-          '¿Limpiar toda la capa activa?',
-          style: TextStyle(
-            color: AppTheme.textGrey,
-            fontFamily: 'Raleway',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancelar',
-              style: TextStyle(color: AppTheme.textGrey),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              _controller.clearActiveLayer();
-              Navigator.pop(context);
-            },
-            child: const Text(
-              'Limpiar',
-              style: TextStyle(color: AppTheme.accentRed),
-            ),
-          ),
-        ],
       ),
     );
   }
