@@ -4,6 +4,11 @@ import 'screens/splash_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/canvas_screen.dart';
 import 'screens/stencil_screen.dart';
+import 'screens/brushes_screen.dart';
+import 'screens/fonts_screen.dart';
+import 'screens/projects_screen.dart';
+import 'screens/ai_studio_screen.dart';
+import 'screens/settings_screen.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -31,6 +36,36 @@ class AppRouter {
         path: '/stencil',
         builder: (BuildContext context, GoRouterState state) {
           return const StencilScreen();
+        },
+      ),
+      GoRoute(
+        path: '/brushes',
+        builder: (BuildContext context, GoRouterState state) {
+          return const BrushesScreen();
+        },
+      ),
+      GoRoute(
+        path: '/fonts',
+        builder: (BuildContext context, GoRouterState state) {
+          return const FontsScreen();
+        },
+      ),
+      GoRoute(
+        path: '/projects',
+        builder: (BuildContext context, GoRouterState state) {
+          return const ProjectsScreen();
+        },
+      ),
+      GoRoute(
+        path: '/ai-studio',
+        builder: (BuildContext context, GoRouterState state) {
+          return const AiStudioScreen();
+        },
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (BuildContext context, GoRouterState state) {
+          return const SettingsScreen();
         },
       ),
     ],
