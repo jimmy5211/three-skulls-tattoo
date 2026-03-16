@@ -21,9 +21,9 @@ class AppRouter {
       ),
     ],
     errorBuilder: (BuildContext context, GoRouterState state) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF000000),
-        body: const Center(
+      return const Scaffold(
+        backgroundColor: Color(0xFF000000),
+        body: Center(
           child: Text(
             'Página no encontrada',
             style: TextStyle(
