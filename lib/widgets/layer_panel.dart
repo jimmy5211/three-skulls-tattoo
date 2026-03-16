@@ -9,6 +9,7 @@ class LayerPanel extends StatelessWidget {
   final Function(int) onLayerVisibilityToggled;
   final Function(int) onLayerDeleted;
   final VoidCallback onLayerAdded;
+  final VoidCallback onClose;
 
   const LayerPanel({
     super.key,
@@ -18,6 +19,7 @@ class LayerPanel extends StatelessWidget {
     required this.onLayerVisibilityToggled,
     required this.onLayerDeleted,
     required this.onLayerAdded,
+    required this.onClose,
   });
 
   @override
@@ -35,20 +37,15 @@ class LayerPanel extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _buildHeader(context),
+          _buildHeader(),
           Expanded(
-            child: ReorderableListView.builder(
+            child: ListView.builder(
               padding: const EdgeInsets.symmetric(vertical: 4),
               itemCount: layers.length,
-              onReorder: (oldIndex, newIndex) {},
               itemBuilder: (context, index) {
                 final layer =
                     layers.reversed.toList()[index];
-                return _buildLayerItem(
-                  context,
-                  layer,
-                  index,
-                );
+                return _buildLayerItem(context, layer);
               },
             ),
           ),
@@ -58,7 +55,7 @@ class LayerPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: 12,
@@ -74,6 +71,28 @@ class LayerPanel extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // Botón cerrar X izquierda
+          GestureDetector(
+            onTap: onClose,
+            child: Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceColor,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: AppTheme.borderColor,
+                  width: 0.5,
+                ),
+              ),
+              child: const Icon(
+                Icons.close,
+                color: AppTheme.textGrey,
+                size: 16,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           const Text(
             'CAPAS',
             style: TextStyle(
@@ -84,7 +103,7 @@ class LayerPanel extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          // Botón agregar capa
+          // Botón agregar capa + derecha
           GestureDetector(
             onTap: onLayerAdded,
             child: Container(
@@ -109,11 +128,9 @@ class LayerPanel extends StatelessWidget {
   Widget _buildLayerItem(
     BuildContext context,
     LayerModel layer,
-    int index,
   ) {
     final isActive = layer.id == activeLayerId;
     return GestureDetector(
-      key: ValueKey(layer.id),
       onTap: () => onLayerSelected(layer.id),
       child: Container(
         margin: const EdgeInsets.symmetric(
@@ -138,7 +155,7 @@ class LayerPanel extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               child: Row(
                 children: [
-                  // Miniatura de la capa
+                  // Miniatura
                   Container(
                     width: 44,
                     height: 44,
@@ -163,7 +180,7 @@ class LayerPanel extends StatelessWidget {
                           ),
                   ),
                   const SizedBox(width: 8),
-                  // Info de la capa
+                  // Info
                   Expanded(
                     child: Column(
                       crossAxisAlignment:
@@ -197,7 +214,6 @@ class LayerPanel extends StatelessWidget {
                   // Acciones
                   Column(
                     children: [
-                      // Visibilidad
                       GestureDetector(
                         onTap: () =>
                             onLayerVisibilityToggled(layer.id),
@@ -212,7 +228,6 @@ class LayerPanel extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      // Eliminar
                       GestureDetector(
                         onTap: () => layers.length > 1
                             ? onLayerDeleted(layer.id)
@@ -230,7 +245,7 @@ class LayerPanel extends StatelessWidget {
                 ],
               ),
             ),
-            // Slider de opacidad
+            // Slider opacidad
             Padding(
               padding: const EdgeInsets.only(
                 left: 8,
