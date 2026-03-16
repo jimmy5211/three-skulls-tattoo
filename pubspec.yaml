@@ -18,15 +18,25 @@ dependencies:
   shared_preferences: ^2.2.2
   permission_handler: ^11.3.0
   path_provider: ^2.1.2
-  uuid: ^4.3.3   
+  uuid: ^4.3.3
   image_picker: ^1.0.7
   image: ^4.1.7
   http: ^1.2.0
+  file_picker: ^8.0.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/images/icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/images/icon.png"
 
 flutter:
   uses-material-design: true
