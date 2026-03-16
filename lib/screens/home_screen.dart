@@ -115,11 +115,17 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 20,
+        vertical: 16,
+      ),
       decoration: const BoxDecoration(
         color: AppTheme.deepBlack,
         border: Border(
-          bottom: BorderSide(color: AppTheme.borderColor, width: 1),
+          bottom: BorderSide(
+            color: AppTheme.borderColor,
+            width: 1,
+          ),
         ),
       ),
       child: Row(
@@ -156,11 +162,18 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildSyncIndicator() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 20,
+        vertical: 8,
+      ),
       color: AppTheme.surfaceColor,
       child: Row(
         children: [
-          const Icon(Icons.cloud_done_outlined, size: 16, color: Colors.green),
+          const Icon(
+            Icons.cloud_done_outlined,
+            size: 16,
+            color: Colors.green,
+          ),
           const SizedBox(width: 8),
           Text(
             'Sincronizado con Google Drive',
@@ -186,14 +199,20 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildMenuList() {
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 12,
+      ),
       itemCount: _menuItems.length,
       itemBuilder: (context, index) {
         return AnimatedBuilder(
           animation: _itemAnimations[index],
           builder: (context, child) {
             return Transform.translate(
-              offset: Offset(50 * (1 - _itemAnimations[index].value), 0),
+              offset: Offset(
+                50 * (1 - _itemAnimations[index].value),
+                0,
+              ),
               child: Opacity(
                 opacity: _itemAnimations[index].value,
                 child: MenuItem(
@@ -204,12 +223,30 @@ class _HomeScreenState extends State<HomeScreen>
                   onTap: () {
                     final title =
                         _menuItems[index]['title'] as String;
-                    if (title == 'NUEVO DISEÑO') {
-                      context.go('/canvas');
-                    } else if (title == 'CREAR ESTENCIL') {
-                      context.go('/stencil');
-                    } else {
-                      _showComingSoon(context, title);
+                    switch (title) {
+                      case 'NUEVO DISEÑO':
+                        context.go('/canvas');
+                        break;
+                      case 'CREAR ESTENCIL':
+                        context.go('/stencil');
+                        break;
+                      case 'MIS PINCELES':
+                        context.go('/brushes');
+                        break;
+                      case 'MIS FUENTES':
+                        context.go('/fonts');
+                        break;
+                      case 'MIS PROYECTOS':
+                        context.go('/projects');
+                        break;
+                      case 'IA STUDIO':
+                        context.go('/ai-studio');
+                        break;
+                      case 'CONFIGURACIÓN':
+                        context.go('/settings');
+                        break;
+                      default:
+                        _showComingSoon(context, title);
                     }
                   },
                 ),
@@ -227,7 +264,10 @@ class _HomeScreenState extends State<HomeScreen>
       decoration: const BoxDecoration(
         color: AppTheme.deepBlack,
         border: Border(
-          top: BorderSide(color: AppTheme.borderColor, width: 1),
+          top: BorderSide(
+            color: AppTheme.borderColor,
+            width: 1,
+          ),
         ),
       ),
       child: Column(
@@ -266,7 +306,10 @@ class _HomeScreenState extends State<HomeScreen>
         decoration: BoxDecoration(
           color: AppTheme.cardColor,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppTheme.borderColor, width: 1),
+          border: Border.all(
+            color: AppTheme.borderColor,
+            width: 1,
+          ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
