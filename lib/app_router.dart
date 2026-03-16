@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'screens/splash_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/canvas_screen.dart';
+import 'screens/stencil_screen.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -24,6 +25,12 @@ class AppRouter {
         path: '/canvas',
         builder: (BuildContext context, GoRouterState state) {
           return const CanvasScreen();
+        },
+      ),
+      GoRoute(
+        path: '/stencil',
+        builder: (BuildContext context, GoRouterState state) {
+          return const StencilScreen();
         },
       ),
     ],
