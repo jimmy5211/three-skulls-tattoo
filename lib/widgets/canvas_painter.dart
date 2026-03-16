@@ -30,9 +30,15 @@ class CanvasPainter extends CustomPainter {
       _drawGrid(canvas, size);
     }
 
+    // SaveLayer para que el borrador funcione correctamente
+    canvas.saveLayer(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint(),
+    );
+
     // Dibujar capas
     for (final layer in layers) {
-      if (!layer.isVisible) continue;
+      if (!layer.isVisible) continue,
       for (final stroke in layer.strokes) {
         _drawStroke(canvas, stroke, layer.opacity);
       }
@@ -43,7 +49,10 @@ class CanvasPainter extends CustomPainter {
       _drawStroke(canvas, currentStroke!, 1.0);
     }
 
-    // Dibujar línea de simetría
+    // Restaurar layer
+    canvas.restore();
+
+    // Dibujar línea de simetría encima
     if (symmetryEnabled && showSymmetryLine) {
       _drawSymmetryLine(canvas, size);
     }
@@ -57,18 +66,23 @@ class CanvasPainter extends CustomPainter {
     if (stroke.points.isEmpty) return;
 
     final paint = Paint()
-      ..color = stroke.type == StrokeType.eraser
-          ? Colors.white
-          : stroke.color.withOpacity(
-              stroke.opacity * layerOpacity,
-            )
       ..strokeWidth = stroke.strokeWidth
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
 
+    // Configurar borrador correctamente
     if (stroke.type == StrokeType.eraser) {
-      paint.blendMode = BlendMode.clear;
+      paint
+        ..color = Colors.white
+        ..blendMode = BlendMode.clear
+        ..style = PaintingStyle.stroke;
+    } else {
+      paint
+        ..color = stroke.color.withOpacity(
+          stroke.opacity * layerOpacity,
+        )
+        ..blendMode = BlendMode.srcOver;
     }
 
     switch (stroke.type) {
@@ -80,6 +94,10 @@ class CanvasPainter extends CustomPainter {
           BlurStyle.normal,
           2.0,
         );
+        _drawSmoothStroke(canvas, stroke, paint);
+        break;
+      case StrokeType.eraser:
+        paint.strokeWidth = stroke.strokeWidth * 2;
         _drawSmoothStroke(canvas, stroke, paint);
         break;
       default:
