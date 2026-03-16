@@ -50,7 +50,7 @@ class CanvasController extends ChangeNotifier {
   }
 
   void continueStroke(Offset point) {
-    if (currentStroke == null) return,
+    if (currentStroke == null) return;
     final newPoints = List<Offset>.from(currentStroke!.points)
       ..add(point);
 
