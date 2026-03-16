@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/brush_model.dart';
+import '../models/stroke_model.dart';
 import '../theme/app_theme.dart';
 
 class BrushCard extends StatelessWidget {
@@ -46,7 +47,6 @@ class BrushCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Preview del pincel
             Container(
               width: 56,
               height: 56,
@@ -63,7 +63,6 @@ class BrushCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            // Info del pincel
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -111,10 +110,7 @@ class BrushCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      _buildStat(
-                        'TAM',
-                        '${brush.size.round()}',
-                      ),
+                      _buildStat('TAM', '${brush.size.round()}'),
                       const SizedBox(width: 12),
                       _buildStat(
                         'OPA',
@@ -130,7 +126,6 @@ class BrushCard extends StatelessWidget {
                 ],
               ),
             ),
-            // Acciones
             Column(
               children: [
                 GestureDetector(
