@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import '../theme/app_theme.dart';
 import '../widgets/menu_item.dart';
 
@@ -12,89 +11,68 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
-  
+
   late AnimationController _animController;
   late List<Animation<double>> _itemAnimations;
 
   final List<Map<String, dynamic>> _menuItems = [
     {
-      'icon': Icons.add_circle_outline,
       'emoji': '✏️',
       'title': 'NUEVO DISEÑO',
       'subtitle': 'Crear desde cero',
       'color': AppTheme.accentRed,
-      'route': '/canvas',
     },
     {
-      'icon': Icons.camera_alt_outlined,
       'emoji': '📸',
       'title': 'CREAR ESTENCIL',
       'subtitle': 'Convertir foto con IA',
       'color': AppTheme.accentRedBright,
-      'route': '/stencil',
     },
     {
-      'icon': Icons.brush_outlined,
       'emoji': '🖌️',
       'title': 'MIS PINCELES',
       'subtitle': 'Gestionar pinceles',
       'color': AppTheme.accentRed,
-      'route': '/brushes',
     },
     {
-      'icon': Icons.text_fields_outlined,
       'emoji': '🔤',
       'title': 'MIS FUENTES',
       'subtitle': 'Gestionar tipografías',
       'color': AppTheme.accentRedDark,
-      'route': '/fonts',
     },
     {
-      'icon': Icons.folder_outlined,
       'emoji': '📁',
       'title': 'MIS PROYECTOS',
       'subtitle': 'Ver todos los diseños',
       'color': AppTheme.accentRed,
-      'route': '/projects',
     },
     {
-      'icon': Icons.auto_awesome_outlined,
       'emoji': '🤖',
       'title': 'IA STUDIO',
       'subtitle': 'Inteligencia artificial',
       'color': AppTheme.accentRedBright,
-      'route': '/ai-studio',
     },
     {
-      'icon': Icons.build_outlined,
       'emoji': '🔧',
       'title': 'HERRAMIENTAS',
       'subtitle': 'Todas las herramientas',
       'color': AppTheme.accentRed,
-      'route': '/tools',
     },
     {
-      'icon': Icons.settings_outlined,
       'emoji': '⚙️',
       'title': 'CONFIGURACIÓN',
       'subtitle': 'Ajustes de la app',
       'color': AppTheme.textGrey,
-      'route': '/settings',
     },
   ];
 
   @override
   void initState() {
     super.initState();
-    _initAnimations();
-  }
-
-  void _initAnimations() {
     _animController = AnimationController(
       duration: const Duration(milliseconds: 1200),
       vsync: this,
     );
-
     _itemAnimations = List.generate(
       _menuItems.length,
       (index) => Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -108,7 +86,6 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       ),
     );
-
     _animController.forward();
   }
 
@@ -127,9 +104,7 @@ class _HomeScreenState extends State<HomeScreen>
           children: [
             _buildHeader(),
             _buildSyncIndicator(),
-            Expanded(
-              child: _buildMenuList(),
-            ),
+            Expanded(child: _buildMenuList()),
             _buildRecentProjects(),
           ],
         ),
@@ -139,17 +114,11 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 20,
-        vertical: 16,
-      ),
-      decoration: BoxDecoration(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: const BoxDecoration(
         color: AppTheme.deepBlack,
         border: Border(
-          bottom: BorderSide(
-            color: AppTheme.borderColor,
-            width: 1,
-          ),
+          bottom: BorderSide(color: AppTheme.borderColor, width: 1),
         ),
       ),
       child: Row(
@@ -178,15 +147,7 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ],
           ),
-          Row(
-            children: [
-              // Calaveras pequeñas
-              Text(
-                '💀💀💀',
-                style: TextStyle(fontSize: 20),
-              ),
-            ],
-          ),
+          const Text('💀💀💀', style: TextStyle(fontSize: 20)),
         ],
       ),
     );
@@ -194,18 +155,11 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildSyncIndicator() {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 20,
-        vertical: 8,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       color: AppTheme.surfaceColor,
       child: Row(
         children: [
-          Icon(
-            Icons.cloud_done_outlined,
-            size: 16,
-            color: Colors.green,
-          ),
+          const Icon(Icons.cloud_done_outlined, size: 16, color: Colors.green),
           const SizedBox(width: 8),
           Text(
             'Sincronizado con Google Drive',
@@ -231,31 +185,25 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildMenuList() {
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 12,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       itemCount: _menuItems.length,
       itemBuilder: (context, index) {
         return AnimatedBuilder(
           animation: _itemAnimations[index],
           builder: (context, child) {
             return Transform.translate(
-              offset: Offset(
-                50 * (1 - _itemAnimations[index].value),
-                0,
-              ),
+              offset: Offset(50 * (1 - _itemAnimations[index].value), 0),
               child: Opacity(
                 opacity: _itemAnimations[index].value,
                 child: MenuItem(
-                  emoji: _menuItems[index]['emoji'],
-                  title: _menuItems[index]['title'],
-                  subtitle: _menuItems[index]['subtitle'],
-                  accentColor: _menuItems[index]['color'],
-                  onTap: () {
-                    // Navegación próximamente
-                    _showComingSoon(context, _menuItems[index]['title']);
-                  },
+                  emoji: _menuItems[index]['emoji'] as String,
+                  title: _menuItems[index]['title'] as String,
+                  subtitle: _menuItems[index]['subtitle'] as String,
+                  accentColor: _menuItems[index]['color'] as Color,
+                  onTap: () => _showComingSoon(
+                    context,
+                    _menuItems[index]['title'] as String,
+                  ),
                 ),
               ),
             );
@@ -268,13 +216,10 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildRecentProjects() {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: AppTheme.deepBlack,
         border: Border(
-          top: BorderSide(
-            color: AppTheme.borderColor,
-            width: 1,
-          ),
+          top: BorderSide(color: AppTheme.borderColor, width: 1),
         ),
       ),
       child: Column(
@@ -313,18 +258,12 @@ class _HomeScreenState extends State<HomeScreen>
         decoration: BoxDecoration(
           color: AppTheme.cardColor,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: AppTheme.borderColor,
-            width: 1,
-          ),
+          border: Border.all(color: AppTheme.borderColor, width: 1),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              '🖼️',
-              style: TextStyle(fontSize: 20),
-            ),
+            const Text('🖼️', style: TextStyle(fontSize: 20)),
             Text(
               name,
               style: TextStyle(
@@ -346,15 +285,15 @@ class _HomeScreenState extends State<HomeScreen>
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: AppTheme.accentRed),
+          side: const BorderSide(color: AppTheme.accentRed),
         ),
         content: Row(
           children: [
-            Text('💀', style: TextStyle(fontSize: 20)),
+            const Text('💀', style: TextStyle(fontSize: 20)),
             const SizedBox(width: 12),
             Text(
               '$feature - Próximamente',
-              style: TextStyle(
+              style: const TextStyle(
                 fontFamily: 'Raleway',
                 color: AppTheme.textWhite,
               ),
