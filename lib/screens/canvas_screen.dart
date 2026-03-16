@@ -6,6 +6,7 @@ import '../widgets/brush_selector.dart';
 import '../widgets/layer_panel.dart';
 import '../widgets/color_picker.dart';
 import '../models/brush_model.dart';
+import 'package:go_router/go_router.dart';
 
 class CanvasScreen extends StatefulWidget {
   const CanvasScreen({super.key});
@@ -180,7 +181,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               color: AppTheme.textWhite,
               size: 20,
             ),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => context.go('/home'),
           ),
           // Título
           const Expanded(
