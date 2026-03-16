@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/app_theme.dart';
+import '../services/update_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -13,7 +14,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoSave = true;
   bool _autoSync = true;
   bool _autoUpdate = true;
+  bool _isCheckingUpdate = false;
   String _selectedLanguage = 'Español';
+  String _lastCheckDate = 'Nunca';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLastCheckDate();
+  }
+
+  Future<void> _loadLastCheckDate() async {
+    final date = await UpdateService.getLastCheckDate();
+    if (date != null) {
+      final parsed = DateTime.parse(date);
+      final diff = DateTime.now().difference(parsed);
+      setState(() {
+        if (diff.inMinutes < 60) {
+          _lastCheckDate = 'Hace ${diff.inMinutes} min';
+        } else if (diff.inHours < 24) {
+          _lastCheckDate = 'Hace ${diff.inHours} horas';
+        } else {
+          _lastCheckDate = 'Hace ${diff.inDays} días';
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -82,16 +108,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'Actualización automática',
                         'Actualiza cuando hay versión nueva',
                         _autoUpdate,
-                        (v) => setState(() => _autoUpdate = v),
+                        (v) =>
+                            setState(() => _autoUpdate = v),
                       ),
                       _buildActionTile(
-                        '🔍 Buscar actualizaciones',
-                        'Versión actual: 1.0.0',
-                        () => _checkUpdates(),
+                        _isCheckingUpdate
+                            ? '🔍 Buscando...'
+                            : '🔍 Buscar actualizaciones',
+                        'Última revisión: $_lastCheckDate',
+                        _isCheckingUpdate
+                            ? () {}
+                            : _checkUpdates,
                       ),
                       _buildActionTile(
                         '📋 Notas de la versión',
-                        'Ver cambios recientes',
+                        'Versión actual: ${UpdateService.currentVersion}',
                         () => _showReleaseNotes(),
                       ),
                     ],
@@ -102,11 +133,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     [
                       _buildInfoTile(
                         'Three Skulls Tattoo',
-                        'Versión 1.0.0',
+                        'Versión ${UpdateService.currentVersion}',
                       ),
                       _buildInfoTile(
                         'Desarrollado con',
                         'Flutter + Claude AI 💀',
+                      ),
+                      _buildInfoTile(
+                        'Repositorio',
+                        'github.com/jimmy5211',
                       ),
                     ],
                   ),
@@ -288,11 +323,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
-            const Icon(
-              Icons.chevron_right,
-              color: AppTheme.textGrey,
-              size: 20,
-            ),
+            _isCheckingUpdate &&
+                    title.contains('Buscar')
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppTheme.accentRed,
+                    ),
+                  )
+                : const Icon(
+                    Icons.chevron_right,
+                    color: AppTheme.textGrey,
+                    size: 20,
+                  ),
           ],
         ),
       ),
@@ -385,6 +430,137 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _checkUpdates() async {
+    setState(() => _isCheckingUpdate = true);
+    final updateInfo = await UpdateService.checkForUpdates();
+    setState(() {
+      _isCheckingUpdate = false;
+      _lastCheckDate = 'Hace un momento';
+    });
+    if (updateInfo.isAvailable) {
+      _showUpdateDialog(updateInfo);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: AppTheme.cardColor,
+          content: Row(
+            children: [
+              Text('✅', style: TextStyle(fontSize: 20)),
+              SizedBox(width: 12),
+              Text(
+                'Ya tienes la última versión',
+                style: TextStyle(
+                  fontFamily: 'Raleway',
+                  color: AppTheme.textWhite,
+                ),
+              ),
+            ],
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _showUpdateDialog(UpdateInfo updateInfo) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.cardColor,
+        title: const Text(
+          '🎉 Nueva Versión',
+          style: TextStyle(
+            fontFamily: 'BlackOpsOne',
+            color: AppTheme.textWhite,
+            fontSize: 16,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Versión ${updateInfo.version} disponible',
+              style: const TextStyle(
+                fontFamily: 'BlackOpsOne',
+                color: AppTheme.accentRed,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'NOVEDADES:',
+              style: TextStyle(
+                fontFamily: 'Raleway',
+                color: AppTheme.textGrey,
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              updateInfo.releaseNotes,
+              style: const TextStyle(
+                fontFamily: 'Raleway',
+                color: AppTheme.textWhite,
+                fontSize: 12,
+              ),
+              maxLines: 6,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Después',
+              style: TextStyle(color: AppTheme.textGrey),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _downloadAndInstall(updateInfo.downloadUrl);
+            },
+            child: const Text(
+              '⬇️ Actualizar',
+              style: TextStyle(color: AppTheme.accentRed),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _downloadAndInstall(String url) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        backgroundColor: AppTheme.cardColor,
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppTheme.accentRed,
+              ),
+            ),
+            SizedBox(width: 12),
+            Text(
+              'Descargando actualización...',
+              style: TextStyle(
+                fontFamily: 'Raleway',
+                color: AppTheme.textWhite,
+              ),
+            ),
+          ],
+        ),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
   void _syncNow() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -429,28 +605,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _checkUpdates() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        backgroundColor: AppTheme.cardColor,
-        content: Row(
-          children: [
-            Text('🔍', style: TextStyle(fontSize: 20)),
-            SizedBox(width: 12),
-            Text(
-              'Buscando actualizaciones...',
-              style: TextStyle(
-                fontFamily: 'Raleway',
-                color: AppTheme.textWhite,
-              ),
-            ),
-          ],
-        ),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
   void _showReleaseNotes() {
     showDialog(
       context: context,
@@ -477,12 +631,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             SizedBox(height: 8),
             Text(
-              '• Canvas de dibujo\n'
-              '• Pinceles para tatuaje\n'
+              '• Canvas de dibujo completo\n'
+              '• Zoom y paneo con 2 dedos\n'
               '• Sistema de capas\n'
+              '• Borrador por capa\n'
+              '• Pinceles para tatuaje\n'
               '• Crear estencil con IA\n'
               '• Mis pinceles\n'
-              '• Configuración básica',
+              '• Mis fuentes\n'
+              '• Mis proyectos\n'
+              '• IA Studio\n'
+              '• Herramientas\n'
+              '• Configuración completa\n'
+              '• Auto-update implementado',
               style: TextStyle(
                 fontFamily: 'Raleway',
                 color: AppTheme.textGrey,
