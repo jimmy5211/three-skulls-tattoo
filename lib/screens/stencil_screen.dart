@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import '../services/ai_service.dart';
 import '../widgets/stencil_preview.dart';
+import 'package:go_router/go_router.dart';
 
 class StencilScreen extends StatefulWidget {
   const StencilScreen({super.key});
@@ -65,7 +66,7 @@ class _StencilScreenState extends State<StencilScreen> {
               color: AppTheme.textWhite,
               size: 20,
             ),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => context.go('/home'),
           ),
           const Expanded(
             child: Text(
