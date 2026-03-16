@@ -38,7 +38,7 @@ class CanvasPainter extends CustomPainter {
 
     // Dibujar capas
     for (final layer in layers) {
-      if (!layer.isVisible) continue,
+      if (!layer.isVisible) continue;
       for (final stroke in layer.strokes) {
         _drawStroke(canvas, stroke, layer.opacity);
       }
