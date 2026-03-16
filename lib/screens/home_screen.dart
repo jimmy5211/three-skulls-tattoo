@@ -206,6 +206,8 @@ class _HomeScreenState extends State<HomeScreen>
                         _menuItems[index]['title'] as String;
                     if (title == 'NUEVO DISEÑO') {
                       context.go('/canvas');
+                    } else if (title == 'CREAR ESTENCIL') {
+                      context.go('/stencil');
                     } else {
                       _showComingSoon(context, title);
                     }
