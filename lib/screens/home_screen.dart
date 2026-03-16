@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../theme/app_theme.dart';
 import '../widgets/menu_item.dart';
 
@@ -200,10 +201,15 @@ class _HomeScreenState extends State<HomeScreen>
                   title: _menuItems[index]['title'] as String,
                   subtitle: _menuItems[index]['subtitle'] as String,
                   accentColor: _menuItems[index]['color'] as Color,
-                  onTap: () => _showComingSoon(
-                    context,
-                    _menuItems[index]['title'] as String,
-                  ),
+                  onTap: () {
+                    final title =
+                        _menuItems[index]['title'] as String;
+                    if (title == 'NUEVO DISEÑO') {
+                      context.go('/canvas');
+                    } else {
+                      _showComingSoon(context, title);
+                    }
+                  },
                 ),
               ),
             );
