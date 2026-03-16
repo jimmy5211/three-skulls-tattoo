@@ -23,7 +23,7 @@ class MenuItem extends StatefulWidget {
 
 class _MenuItemState extends State<MenuItem>
     with SingleTickerProviderStateMixin {
-  
+
   late AnimationController _pressController;
   late Animation<double> _scaleAnimation;
   bool _isPressed = false;
@@ -35,10 +35,7 @@ class _MenuItemState extends State<MenuItem>
       duration: const Duration(milliseconds: 150),
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 0.95,
-    ).animate(
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
       CurvedAnimation(
         parent: _pressController,
         curve: Curves.easeInOut,
@@ -102,7 +99,6 @@ class _MenuItemState extends State<MenuItem>
               ),
               child: Row(
                 children: [
-                  // Emoji icono
                   Container(
                     width: 48,
                     height: 48,
@@ -121,17 +117,14 @@ class _MenuItemState extends State<MenuItem>
                       ),
                     ),
                   ),
-                  
                   const SizedBox(width: 16),
-                  
-                  // Texto
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           widget.title,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontFamily: 'BlackOpsOne',
                             fontSize: 14,
                             color: AppTheme.textWhite,
@@ -141,7 +134,7 @@ class _MenuItemState extends State<MenuItem>
                         const SizedBox(height: 2),
                         Text(
                           widget.subtitle,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontFamily: 'Raleway',
                             fontSize: 12,
                             color: AppTheme.textGrey,
@@ -150,8 +143,6 @@ class _MenuItemState extends State<MenuItem>
                       ],
                     ),
                   ),
-                  
-                  // Flecha
                   Icon(
                     Icons.chevron_right,
                     color: _isPressed
