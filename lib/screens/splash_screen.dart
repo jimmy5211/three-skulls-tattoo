@@ -11,7 +11,7 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-  
+
   late AnimationController _skull1Controller;
   late AnimationController _skull2Controller;
   late AnimationController _skull3Controller;
@@ -32,90 +32,65 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _initAnimations() {
-    // Calavera 1
     _skull1Controller = AnimationController(
       duration: const Duration(milliseconds: 600),
       vsync: this,
     );
     _skull1Animation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _skull1Controller,
-        curve: Curves.elasticOut,
-      ),
+      CurvedAnimation(parent: _skull1Controller, curve: Curves.elasticOut),
     );
 
-    // Calavera 2
     _skull2Controller = AnimationController(
       duration: const Duration(milliseconds: 600),
       vsync: this,
     );
     _skull2Animation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _skull2Controller,
-        curve: Curves.elasticOut,
-      ),
+      CurvedAnimation(parent: _skull2Controller, curve: Curves.elasticOut),
     );
 
-    // Calavera 3
     _skull3Controller = AnimationController(
       duration: const Duration(milliseconds: 600),
       vsync: this,
     );
     _skull3Animation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _skull3Controller,
-        curve: Curves.elasticOut,
-      ),
+      CurvedAnimation(parent: _skull3Controller, curve: Curves.elasticOut),
     );
 
-    // Título
     _titleController = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
     _titleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _titleController,
-        curve: Curves.easeInOut,
-      ),
+      CurvedAnimation(parent: _titleController, curve: Curves.easeInOut),
     );
 
-    // Fade out final
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 500),
       vsync: this,
     );
     _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _fadeController,
-        curve: Curves.easeOut,
-      ),
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
     );
   }
 
   Future<void> _startAnimations() async {
-    // Calaveras aparecen una por una
     await Future.delayed(const Duration(milliseconds: 300));
-    _skull1Controller.forward();
-    
+    if (mounted) _skull1Controller.forward();
+
     await Future.delayed(const Duration(milliseconds: 300));
-    _skull2Controller.forward();
-    
+    if (mounted) _skull2Controller.forward();
+
     await Future.delayed(const Duration(milliseconds: 300));
-    _skull3Controller.forward();
-    
-    // Título aparece
+    if (mounted) _skull3Controller.forward();
+
     await Future.delayed(const Duration(milliseconds: 400));
-    _titleController.forward();
-    
-    // Espera y navega al home
+    if (mounted) _titleController.forward();
+
     await Future.delayed(const Duration(milliseconds: 1500));
-    _fadeController.forward();
-    
+    if (mounted) _fadeController.forward();
+
     await Future.delayed(const Duration(milliseconds: 500));
-    if (mounted) {
-      context.go('/home');
-    }
+    if (mounted) context.go('/home');
   }
 
   @override
@@ -141,21 +116,17 @@ class _SplashScreenState extends State<SplashScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Tres calaveras
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildSkull(_skull1Animation, 0),
+                      _buildSkull(_skull1Animation, 60),
                       const SizedBox(width: 16),
-                      _buildSkull(_skull2Animation, 1),
+                      _buildSkull(_skull2Animation, 75),
                       const SizedBox(width: 16),
-                      _buildSkull(_skull3Animation, 2),
+                      _buildSkull(_skull3Animation, 60),
                     ],
                   ),
-                  
                   const SizedBox(height: 32),
-                  
-                  // Título
                   AnimatedBuilder(
                     animation: _titleAnimation,
                     builder: (context, child) {
@@ -168,7 +139,7 @@ class _SplashScreenState extends State<SplashScreen>
                           ),
                           child: Column(
                             children: [
-                              Text(
+                              const Text(
                                 'THREE SKULLS',
                                 style: TextStyle(
                                   fontFamily: 'BlackOpsOne',
@@ -177,7 +148,7 @@ class _SplashScreenState extends State<SplashScreen>
                                   letterSpacing: 4,
                                 ),
                               ),
-                              Text(
+                              const Text(
                                 'TATTOO',
                                 style: TextStyle(
                                   fontFamily: 'BlackOpsOne',
@@ -193,7 +164,7 @@ class _SplashScreenState extends State<SplashScreen>
                                 color: AppTheme.accentRed,
                               ),
                               const SizedBox(height: 8),
-                              Text(
+                              const Text(
                                 'PROFESSIONAL TATTOO STUDIO',
                                 style: TextStyle(
                                   fontFamily: 'Raleway',
@@ -217,14 +188,7 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
-  Widget _buildSkull(Animation<double> animation, int index) {
-    final List<double> sizes = [60, 75, 60];
-    final List<Color> colors = [
-      AppTheme.textGrey,
-      AppTheme.textWhite,
-      AppTheme.textGrey,
-    ];
-
+  Widget _buildSkull(Animation<double> animation, double size) {
     return AnimatedBuilder(
       animation: animation,
       builder: (context, child) {
@@ -232,9 +196,7 @@ class _SplashScreenState extends State<SplashScreen>
           scale: animation.value,
           child: Text(
             '💀',
-            style: TextStyle(
-              fontSize: sizes[index],
-            ),
+            style: TextStyle(fontSize: size),
           ),
         );
       },
