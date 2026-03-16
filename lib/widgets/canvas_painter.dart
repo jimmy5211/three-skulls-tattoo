@@ -32,38 +32,46 @@ class CanvasPainter extends CustomPainter {
       _drawGrid(canvas, size);
     }
 
-    // Dibujar cada capa por separado
-    for (final layer in layers) {
+    // Dibujar capas en orden correcto
+    // index 0 = fondo, último index = frente
+    for (int i = 0; i < layers.length; i++) {
+      final layer = layers[i];
       if (!layer.isVisible) continue;
       _drawLayer(canvas, size, layer);
     }
 
-    // Línea de simetría
+    // Línea de simetría encima de todo
     if (symmetryEnabled && showSymmetryLine) {
       _drawSymmetryLine(canvas, size);
     }
   }
 
   void _drawLayer(Canvas canvas, Size size, LayerModel layer) {
-    // Cada capa tiene su propio saveLayer
-    // para que el borrador no afecte otras capas
     final rect = Rect.fromLTWH(0, 0, size.width, size.height);
+    final layerPaint = Paint();
 
-    final layerPaint = Paint()
+    // SaveLayer para que el borrador
+    // no afecte otras capas
+    canvas.saveLayer(rect, layerPaint);
+
+    // Aplicar opacidad de la capa
+    final opacityPaint = Paint()
       ..color = Colors.white.withOpacity(layer.opacity);
 
-    canvas.saveLayer(rect, layerPaint);
+    canvas.saveLayer(rect, opacityPaint);
 
     // Dibujar trazos de esta capa
     for (final stroke in layer.strokes) {
       _drawStroke(canvas, stroke);
     }
 
-    // Si es la capa activa dibujar el trazo actual
-    if (layer.id == activeLayerId && currentStroke != null) {
+    // Si es la capa activa dibujar trazo actual
+    if (layer.id == activeLayerId &&
+        currentStroke != null) {
       _drawStroke(canvas, currentStroke!);
     }
 
+    canvas.restore();
     canvas.restore();
   }
 
@@ -77,8 +85,6 @@ class CanvasPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     if (stroke.type == StrokeType.eraser) {
-      // Borrador real usando BlendMode.clear
-      // Solo afecta la capa actual gracias al saveLayer
       paint
         ..blendMode = BlendMode.clear
         ..strokeWidth = stroke.strokeWidth * 2
@@ -98,9 +104,6 @@ class CanvasPainter extends CustomPainter {
           BlurStyle.normal,
           2.0,
         );
-        _drawSmoothStroke(canvas, stroke, paint);
-        break;
-      case StrokeType.eraser:
         _drawSmoothStroke(canvas, stroke, paint);
         break;
       default:
