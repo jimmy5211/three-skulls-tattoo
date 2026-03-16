@@ -26,11 +26,17 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Increment version code
+        run: |
+          BUILD_NUMBER=${{ github.run_number }}
+          sed -i "s/versionCode [0-9]*/versionCode $BUILD_NUMBER/" android/app/build.gradle
+          echo "Version code set to: $BUILD_NUMBER"
+
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: three-skulls-tattoo
+          name: three-skulls-tattoo-v${{ github.run_number }}
           path: build/app/outputs/flutter-apk/app-release.apk
