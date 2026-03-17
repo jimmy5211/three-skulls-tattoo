@@ -124,12 +124,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ),
 
             // Burbuja color
-            if (!_isFullscreen)
-              Positioned(
-                right: 8,
-                bottom: 50,
-                child: _buildColorBubble(),
-              ),
+           // Se oculta cuando capas está abierto
+          if (!_isFullscreen && !_showLayers)
+          Positioned(
+          right: 8,
+          bottom: 50,
+          child: _buildColorBubble(),
+          ),
 
             // Panel colores
             if (_showColors && !_isFullscreen)
