@@ -133,7 +133,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
 
             // Panel colores
-            if (_showColors && !_isFullscreen)
+            if (_showColors && !_isFullscreen && !_showLayers)
               Positioned(
                 right: 8,
                 bottom: 110,
