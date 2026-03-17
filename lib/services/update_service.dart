@@ -29,7 +29,8 @@ class UpdateService {
       final response = await http.get(
         Uri.parse(_versionUrl),
         headers: {
-          'X-Access-Key': '',
+          'X-Master-Key':
+              r'$2a$10$Rj40cjH3ckcXtxo9CmUY9e9MUXgigpAOoQwLj9nhcTsD/QQZAdwM.',
           'X-Bin-Meta': 'false',
         },
       ).timeout(const Duration(seconds: 15));
