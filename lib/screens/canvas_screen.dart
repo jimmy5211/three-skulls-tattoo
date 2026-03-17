@@ -95,7 +95,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildLayersBubble(),
               ),
 
-            // Panel capas con botón cerrar
+            // Panel capas con onClose
             if (_showLayers && !_isFullscreen)
               Positioned(
                 right: 0,
@@ -104,45 +104,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: AnimatedBuilder(
                   animation: _controller,
                   builder: (context, child) {
-                    return Stack(
-                      children: [
-                        LayerPanel(
-                          layers: _controller.layers,
-                          activeLayerId:
-                              _controller.activeLayerId,
-                          onLayerSelected:
-                              _controller.setActiveLayer,
-                          onLayerVisibilityToggled: _controller
-                              .toggleLayerVisibility,
-                          onLayerDeleted:
-                              _controller.removeLayer,
-                          onLayerAdded: _controller.addLayer,
-                        ),
-                        // Botón cerrar capas
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: GestureDetector(
-                            onTap: () => setState(
-                              () => _showLayers = false,
-                            ),
-                            child: Container(
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color: AppTheme.accentRed,
-                                borderRadius:
-                                    BorderRadius.circular(6),
-                              ),
-                              child: const Icon(
-                                Icons.close,
-                                color: Colors.white,
-                                size: 16,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    return LayerPanel(
+                      layers: _controller.layers,
+                      activeLayerId:
+                          _controller.activeLayerId,
+                      onLayerSelected:
+                          _controller.setActiveLayer,
+                      onLayerVisibilityToggled:
+                          _controller.toggleLayerVisibility,
+                      onLayerDeleted:
+                          _controller.removeLayer,
+                      onLayerAdded: _controller.addLayer,
+                      onClose: () => setState(
+                        () => _showLayers = false,
+                      ),
                     );
                   },
                 ),
@@ -164,38 +139,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: AnimatedBuilder(
                   animation: _controller,
                   builder: (context, child) {
-                    return Stack(
-                      children: [
-                        ColorPicker(
-                          activeColor: _controller.activeColor,
-                          onColorSelected:
-                              _controller.setActiveColor,
-                        ),
-                        // Botón cerrar colores
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: GestureDetector(
-                            onTap: () => setState(
-                              () => _showColors = false,
-                            ),
-                            child: Container(
-                              width: 24,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                color: AppTheme.accentRed,
-                                borderRadius:
-                                    BorderRadius.circular(6),
-                              ),
-                              child: const Icon(
-                                Icons.close,
-                                color: Colors.white,
-                                size: 14,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    return ColorPicker(
+                      activeColor: _controller.activeColor,
+                      onColorSelected:
+                          _controller.setActiveColor,
                     );
                   },
                 ),
@@ -226,14 +173,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
       child: GestureDetector(
         onScaleStart: (details) {
           if (details.pointerCount == 1) {
-            // 1 dedo = dibujar
             _isScaling = false;
             final canvasPoint = _screenToCanvas(
               details.localFocalPoint,
             );
             _controller.startStroke(canvasPoint);
           } else {
-            // 2+ dedos = zoom/paneo
             _isScaling = true;
             _controller.endStroke();
             _startScale = _scale;
@@ -243,19 +188,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
         },
         onScaleUpdate: (details) {
           if (details.pointerCount == 1 && !_isScaling) {
-            // 1 dedo = dibujar
             final canvasPoint = _screenToCanvas(
               details.localFocalPoint,
             );
             _controller.continueStroke(canvasPoint);
           } else if (details.pointerCount >= 2) {
-            // 2 dedos = zoom + paneo
             _isScaling = true;
             setState(() {
-              // Zoom
               _scale = (_startScale * details.scale)
                   .clamp(0.1, 10.0);
-              // Paneo
               final delta = details.localFocalPoint -
                   _startFocalPoint;
               _offset = _startOffset + delta;
@@ -280,6 +221,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   painter: CanvasPainter(
                     layers: _controller.layers,
                     currentStroke: _controller.currentStroke,
+                    currentMirrorStroke:
+                        _controller.currentMirrorStroke,
                     showGrid: _showGrid,
                     showSymmetryLine:
                         _controller.symmetryEnabled,
