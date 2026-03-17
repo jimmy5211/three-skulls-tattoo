@@ -166,7 +166,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ),
 
             // Indicador zoom
-            if (!_isFullscreen)
+            if (!_isFullscreen && !_showLayers)
               Positioned(
                 right: 8,
                 bottom: 12,
