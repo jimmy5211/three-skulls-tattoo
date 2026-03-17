@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/layer_model.dart';
+import '../models/stroke_model.dart';
 import '../theme/app_theme.dart';
 
 class LayerPanel extends StatelessWidget {
@@ -40,7 +41,9 @@ class LayerPanel extends StatelessWidget {
           _buildHeader(),
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(
+                vertical: 4,
+              ),
               itemCount: layers.length,
               itemBuilder: (context, index) {
                 final layer =
@@ -103,7 +106,7 @@ class LayerPanel extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          // Botón agregar capa + derecha
+          // Botón agregar capa
           GestureDetector(
             onTap: onLayerAdded,
             child: Container(
@@ -155,7 +158,7 @@ class LayerPanel extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               child: Row(
                 children: [
-                  // Miniatura
+                  // Miniatura con clip
                   Container(
                     width: 44,
                     height: 44,
@@ -167,17 +170,20 @@ class LayerPanel extends StatelessWidget {
                         width: 0.5,
                       ),
                     ),
-                    child: layer.strokes.isEmpty
-                        ? const Icon(
-                            Icons.image_outlined,
-                            size: 18,
-                            color: AppTheme.borderColor,
-                          )
-                        : CustomPaint(
-                            painter: _LayerThumbnailPainter(
-                              layer: layer,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: layer.strokes.isEmpty
+                          ? const Icon(
+                              Icons.image_outlined,
+                              size: 18,
+                              color: AppTheme.borderColor,
+                            )
+                          : CustomPaint(
+                              painter: _LayerThumbnailPainter(
+                                layer: layer,
+                              ),
                             ),
-                          ),
+                    ),
                   ),
                   const SizedBox(width: 8),
                   // Info
@@ -201,7 +207,7 @@ class LayerPanel extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${layer.strokes.length} trazos',
+                          '${layer.strokes.where((s) => s.type != StrokeType.eraser).length} trazos',
                           style: const TextStyle(
                             fontFamily: 'Raleway',
                             fontSize: 9,
@@ -216,7 +222,9 @@ class LayerPanel extends StatelessWidget {
                     children: [
                       GestureDetector(
                         onTap: () =>
-                            onLayerVisibilityToggled(layer.id),
+                            onLayerVisibilityToggled(
+                          layer.id,
+                        ),
                         child: Icon(
                           layer.isVisible
                               ? Icons.visibility_outlined
@@ -402,11 +410,20 @@ class _LayerThumbnailPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (layer.strokes.isEmpty) return;
 
+    // Fondo blanco
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()..color = Colors.white,
+    );
+
     final scaleX = size.width / 400;
     final scaleY = size.height / 700;
 
+    // Solo dibujar trazos que NO son borrador
     for (final stroke in layer.strokes) {
       if (stroke.points.isEmpty) continue;
+      if (stroke.type == StrokeType.eraser) continue;
+
       final paint = Paint()
         ..color = stroke.color.withOpacity(stroke.opacity)
         ..strokeWidth =
