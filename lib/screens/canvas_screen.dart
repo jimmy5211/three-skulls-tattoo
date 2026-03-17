@@ -6,6 +6,7 @@ import '../widgets/canvas_painter.dart';
 import '../widgets/layer_panel.dart';
 import '../widgets/color_picker.dart';
 import '../models/brush_model.dart';
+import '../models/stroke_model.dart';
 
 class CanvasScreen extends StatefulWidget {
   const CanvasScreen({super.key});
