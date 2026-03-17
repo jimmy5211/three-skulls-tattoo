@@ -33,6 +33,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Offset _startFocalPoint = Offset.zero;
   bool _isScaling = false;
 
+  // Área del lienzo
+  static const double _brushPanelWidth = 64.0;
+  static const double _topBarHeight = 52.0;
+  static const double _layerPanelWidth = 220.0;
+
   @override
   void initState() {
     super.initState();
@@ -47,9 +52,22 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
+  // Verificar si el toque está dentro del lienzo
+  bool _isTouchOnCanvas(Offset point) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final canvasLeft = _brushPanelWidth;
+    final canvasRight = _showLayers
+        ? screenWidth - _layerPanelWidth
+        : screenWidth;
+    final canvasTop = _isFullscreen ? 0.0 : _topBarHeight;
+
+    return point.dx > canvasLeft &&
+        point.dx < canvasRight &&
+        point.dy > canvasTop;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Actualizar tamaño del canvas para simetría
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final size = MediaQuery.of(context).size;
       _controller.updateCanvasSize(size);
@@ -138,7 +156,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ),
 
             // Burbuja color
-            // Se oculta cuando capas está abierto
             if (!_isFullscreen && !_showLayers)
               Positioned(
                 right: 8,
@@ -215,15 +232,27 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return Positioned.fill(
       child: GestureDetector(
         onScaleStart: (details) {
-          if (details.pointerCount >= 2 || _zoomMode) {
-            // 2 dedos o modo zoom = zoom/paneo
+          final touchOnCanvas =
+              _isTouchOnCanvas(details.localFocalPoint);
+
+          if (details.pointerCount >= 2) {
+            // 2 dedos SIEMPRE = zoom/paneo
+            // tanto dentro como fuera del lienzo
+            _isScaling = true;
+            _controller.endStroke();
+            _startScale = _scale;
+            _startOffset = _offset;
+            _startFocalPoint = details.localFocalPoint;
+          } else if (!touchOnCanvas || _zoomMode) {
+            // 1 dedo fuera del lienzo = zoom/paneo
+            // 1 dedo en modo zoom = zoom/paneo
             _isScaling = true;
             _controller.endStroke();
             _startScale = _scale;
             _startOffset = _offset;
             _startFocalPoint = details.localFocalPoint;
           } else {
-            // 1 dedo modo dibujo = dibujar
+            // 1 dedo dentro del lienzo = dibujar
             _isScaling = false;
             final canvasPoint = _screenToCanvas(
               details.localFocalPoint,
@@ -232,8 +261,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
         },
         onScaleUpdate: (details) {
-          if (details.pointerCount >= 2 || _zoomMode) {
-            // Zoom + paneo
+          if (details.pointerCount >= 2) {
+            // 2 dedos = zoom + paneo
             _isScaling = true;
             setState(() {
               _scale = (_startScale * details.scale)
@@ -242,8 +271,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   _startFocalPoint;
               _offset = _startOffset + delta;
             });
-          } else if (!_isScaling) {
-            // Dibujar
+          } else if (_isScaling) {
+            // 1 dedo fuera o modo zoom = paneo
+            setState(() {
+              final delta = details.localFocalPoint -
+                  _startFocalPoint;
+              _offset = _startOffset + delta;
+            });
+          } else {
+            // 1 dedo dentro = dibujar
             final canvasPoint = _screenToCanvas(
               details.localFocalPoint,
             );
@@ -251,7 +287,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
         },
         onScaleEnd: (details) {
-          if (!_isScaling && !_zoomMode) {
+          if (!_isScaling) {
             _controller.endStroke();
           }
           _isScaling = false;
@@ -327,7 +363,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
               );
             },
           ),
-          // Botón modo zoom
           _buildTopButton(
             icon: _zoomMode
                 ? Icons.edit_outlined
