@@ -11,6 +11,10 @@ class LayerPanel extends StatelessWidget {
   final Function(int) onLayerDeleted;
   final VoidCallback onLayerAdded;
   final VoidCallback onClose;
+  final Function(int) onLayerDuplicated;
+  final Function(int) onLayerMergedDown;
+  final Function(int) onLayerLocked;
+  final VoidCallback onLayersFlatten;
 
   const LayerPanel({
     super.key,
@@ -21,6 +25,10 @@ class LayerPanel extends StatelessWidget {
     required this.onLayerDeleted,
     required this.onLayerAdded,
     required this.onClose,
+    required this.onLayerDuplicated,
+    required this.onLayerMergedDown,
+    required this.onLayerLocked,
+    required this.onLayersFlatten,
   });
 
   @override
@@ -74,7 +82,6 @@ class LayerPanel extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Botón cerrar X izquierda
           GestureDetector(
             onTap: onClose,
             child: Container(
@@ -106,7 +113,6 @@ class LayerPanel extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          // Botón agregar capa
           GestureDetector(
             onTap: onLayerAdded,
             child: Container(
@@ -186,24 +192,36 @@ class LayerPanel extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Info
                   Expanded(
                     child: Column(
                       crossAxisAlignment:
                           CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          layer.name,
-                          style: TextStyle(
-                            fontFamily: 'Raleway',
-                            fontSize: 12,
-                            color: isActive
-                                ? AppTheme.textWhite
-                                : AppTheme.textGrey,
-                            fontWeight: isActive
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                layer.name,
+                                style: TextStyle(
+                                  fontFamily: 'Raleway',
+                                  fontSize: 12,
+                                  color: isActive
+                                      ? AppTheme.textWhite
+                                      : AppTheme.textGrey,
+                                  fontWeight: isActive
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                            // Indicador bloqueado
+                            if (layer.isLocked)
+                              const Icon(
+                                Icons.lock,
+                                size: 12,
+                                color: AppTheme.accentRed,
+                              ),
+                          ],
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -217,7 +235,6 @@ class LayerPanel extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Acciones
                   Column(
                     children: [
                       GestureDetector(
@@ -317,6 +334,11 @@ class LayerPanel extends StatelessWidget {
   }
 
   Widget _buildBottomActions(BuildContext context) {
+    final activeLayer = layers.firstWhere(
+      (l) => l.id == activeLayerId,
+      orElse: () => layers.first,
+    );
+
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: const BoxDecoration(
@@ -327,32 +349,48 @@ class LayerPanel extends StatelessWidget {
           ),
         ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      child: Column(
         children: [
-          _buildAction(
-            context,
-            Icons.copy_outlined,
-            'Duplicar',
-            () {},
-          ),
-          _buildAction(
-            context,
-            Icons.merge_outlined,
-            'Combinar',
-            () {},
-          ),
-          _buildAction(
-            context,
-            Icons.lock_outline,
-            'Bloquear',
-            () {},
-          ),
-          _buildAction(
-            context,
-            Icons.layers_clear_outlined,
-            'Aplanar',
-            () {},
+          // Fila 1
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildAction(
+                context,
+                Icons.copy_outlined,
+                'Duplicar',
+                () => onLayerDuplicated(activeLayerId),
+              ),
+              _buildAction(
+                context,
+                Icons.merge_outlined,
+                'Combinar',
+                layers.length > 1
+                    ? () => onLayerMergedDown(activeLayerId)
+                    : () {},
+                enabled: layers.length > 1,
+              ),
+              _buildAction(
+                context,
+                activeLayer.isLocked
+                    ? Icons.lock
+                    : Icons.lock_outline,
+                activeLayer.isLocked
+                    ? 'Bloqueado'
+                    : 'Bloquear',
+                () => onLayerLocked(activeLayerId),
+                isActive: activeLayer.isLocked,
+              ),
+              _buildAction(
+                context,
+                Icons.layers_clear_outlined,
+                'Aplanar',
+                layers.length > 1
+                    ? () => onLayersFlatten()
+                    : () {},
+                enabled: layers.length > 1,
+              ),
+            ],
           ),
         ],
       ),
@@ -363,36 +401,51 @@ class LayerPanel extends StatelessWidget {
     BuildContext context,
     IconData icon,
     String label,
-    VoidCallback onTap,
-  ) {
+    VoidCallback onTap, {
+    bool enabled = true,
+    bool isActive = false,
+  }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       child: Column(
         children: [
           Container(
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: AppTheme.surfaceColor,
+              color: isActive
+                  ? AppTheme.accentRed.withOpacity(0.2)
+                  : AppTheme.surfaceColor,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: AppTheme.borderColor,
+                color: isActive
+                    ? AppTheme.accentRed
+                    : enabled
+                        ? AppTheme.borderColor
+                        : AppTheme.borderColor
+                            .withOpacity(0.3),
                 width: 0.5,
               ),
             ),
             child: Icon(
               icon,
-              color: AppTheme.textGrey,
+              color: isActive
+                  ? AppTheme.accentRed
+                  : enabled
+                      ? AppTheme.textGrey
+                      : AppTheme.borderColor,
               size: 16,
             ),
           ),
           const SizedBox(height: 2),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: 'Raleway',
               fontSize: 8,
-              color: AppTheme.textGrey,
+              color: enabled
+                  ? AppTheme.textGrey
+                  : AppTheme.borderColor,
             ),
           ),
         ],
@@ -410,7 +463,6 @@ class _LayerThumbnailPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (layer.strokes.isEmpty) return;
 
-    // Fondo blanco
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, size.height),
       Paint()..color = Colors.white,
@@ -419,7 +471,6 @@ class _LayerThumbnailPainter extends CustomPainter {
     final scaleX = size.width / 400;
     final scaleY = size.height / 700;
 
-    // Solo dibujar trazos que NO son borrador
     for (final stroke in layer.strokes) {
       if (stroke.points.isEmpty) continue;
       if (stroke.type == StrokeType.eraser) continue;
