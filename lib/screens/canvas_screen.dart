@@ -80,10 +80,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            // Canvas
             _buildCanvas(),
 
-            // Barra lateral izquierda TAM/OPA
             if (!_isFullscreen)
               Positioned(
                 left: 0,
@@ -92,7 +90,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildSideBar(),
               ),
 
-            // Topbar
             if (!_isFullscreen)
               Positioned(
                 top: 0,
@@ -101,7 +98,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildTopBar(),
               ),
 
-            // Burbuja capas
             if (!_isFullscreen)
               Positioned(
                 right: 8,
@@ -109,7 +105,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildLayersBubble(),
               ),
 
-            // Panel capas
             if (_showLayers && !_isFullscreen)
               Positioned(
                 right: 0,
@@ -137,7 +132,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
 
-            // Burbuja color
             if (!_isFullscreen && !_showLayers)
               Positioned(
                 right: 8,
@@ -145,7 +139,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildColorBubble(),
               ),
 
-            // Panel colores
             if (_showColors && !_isFullscreen && !_showLayers)
               Positioned(
                 right: 8,
@@ -161,7 +154,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
 
-            // Indicador zoom
             if (!_isFullscreen && !_showLayers)
               Positioned(
                 right: 8,
@@ -169,11 +161,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildZoomIndicator(),
               ),
 
-            // Panel pinceles overlay estilo Procreate
             if (_showBrushPanel && !_isFullscreen)
               _buildBrushPanelOverlay(),
 
-            // Botón fullscreen
             if (!_showBrushPanel)
               Positioned(
                 top: _isFullscreen ? 8 : 60,
@@ -181,7 +171,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildFullscreenButton(),
               ),
 
-            // Indicador modo zoom
             if (_zoomMode)
               Positioned(
                 top: _isFullscreen ? 8 : 60,
@@ -212,7 +201,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // ─── TOPBAR ────────────────────────────────────────────────
   Widget _buildTopBar() {
     return Container(
       height: _topBarHeight,
@@ -225,7 +213,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
       ),
       child: Row(
         children: [
-          // Izquierda
           _buildTopButton(
             icon: Icons.arrow_back_ios,
             onTap: () => context.go('/home'),
@@ -249,10 +236,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             isActive: _zoomMode,
             onTap: () => setState(() => _zoomMode = !_zoomMode),
           ),
-
           const Spacer(),
-
-          // Centro — nombre
           const Text(
             'NUEVO DISEÑO',
             style: TextStyle(
@@ -262,10 +246,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               letterSpacing: 2,
             ),
           ),
-
           const Spacer(),
-
-          // Derecha
           _buildTopButton(
             icon: _showGrid ? Icons.grid_on : Icons.grid_off,
             isActive: _showGrid,
@@ -279,7 +260,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
               onTap: _controller.toggleSymmetry,
             ),
           ),
-          // Botón pinceles
           GestureDetector(
             onTap: () => setState(() {
               _showBrushPanel = !_showBrushPanel;
@@ -357,7 +337,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // ─── BARRA LATERAL TAM/OPA ─────────────────────────────────
   Widget _buildSideBar() {
     return AnimatedBuilder(
       animation: _controller,
@@ -373,7 +352,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
           child: Column(
             children: [
               const SizedBox(height: 12),
-              // Label TAM
               const Text(
                 'TAM',
                 style: TextStyle(
@@ -385,7 +363,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
               const SizedBox(height: 4),
-              // Valor TAM
               Text(
                 '${_controller.activeBrush.size.round()}',
                 style: const TextStyle(
@@ -396,7 +373,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
               const SizedBox(height: 6),
-              // Slider TAM vertical
               Expanded(
                 flex: 3,
                 child: RotatedBox(
@@ -427,14 +403,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              // Divisor
               Container(
                 height: 0.5,
                 width: 32,
                 color: const Color(0xFF3A3A3C),
               ),
               const SizedBox(height: 8),
-              // Label OPA
               const Text(
                 'OPA',
                 style: TextStyle(
@@ -446,7 +420,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
               const SizedBox(height: 4),
-              // Valor OPA
               Text(
                 '${(_controller.activeBrush.opacity * 100).round()}%',
                 style: const TextStyle(
@@ -457,7 +430,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
               const SizedBox(height: 6),
-              // Slider OPA vertical
               Expanded(
                 flex: 3,
                 child: RotatedBox(
@@ -494,8 +466,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
       },
     );
   }
-
-  // ─── PANEL PINCELES OVERLAY estilo Procreate ───────────────
   Widget _buildBrushPanelOverlay() {
     return Positioned(
       top: _topBarHeight + 4,
@@ -518,7 +488,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
           child: Column(
             children: [
-              // Header
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -556,7 +525,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   ],
                 ),
               ),
-              // Lista de pinceles
               Expanded(
                 child: AnimatedBuilder(
                   animation: _controller,
@@ -567,8 +535,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       itemBuilder: (context, index) {
                         final brush = _brushes[index];
                         final isActive =
-                            _controller.activeBrush.name ==
-                                brush.name;
+                            _controller.activeBrush.name == brush.name;
                         return GestureDetector(
                           onTap: () {
                             _controller.setActiveBrush(brush);
@@ -585,11 +552,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                             ),
                             decoration: BoxDecoration(
                               color: isActive
-                                  ? AppTheme.accentRed
-                                      .withOpacity(0.25)
+                                  ? AppTheme.accentRed.withOpacity(0.25)
                                   : Colors.transparent,
-                              borderRadius:
-                                  BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(10),
                               border: isActive
                                   ? Border.all(
                                       color: AppTheme.accentRed,
@@ -599,17 +564,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
                             ),
                             child: Row(
                               children: [
-                                // Ícono tipo pincel
                                 Container(
                                   width: 32,
                                   height: 32,
                                   decoration: BoxDecoration(
                                     color: isActive
-                                        ? AppTheme.accentRed
-                                            .withOpacity(0.3)
+                                        ? AppTheme.accentRed.withOpacity(0.3)
                                         : const Color(0xFF3A3A3C),
-                                    borderRadius:
-                                        BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Icon(
                                     _getBrushIcon(brush.type),
@@ -632,14 +594,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
                                           fontSize: 14,
                                           color: isActive
                                               ? Colors.white
-                                              : const Color(
-                                                  0xFFE5E5EA),
+                                              : const Color(0xFFE5E5EA),
                                           fontWeight: isActive
                                               ? FontWeight.bold
                                               : FontWeight.normal,
                                         ),
                                       ),
-                                      // Preview línea del pincel
                                       const SizedBox(height: 4),
                                       CustomPaint(
                                         size: const Size(
@@ -647,12 +607,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                                         painter: _BrushPreviewPainter(
                                           color: isActive
                                               ? AppTheme.accentRed
-                                              : const Color(
-                                                  0xFF8E8E93),
+                                              : const Color(0xFF8E8E93),
                                           strokeWidth:
                                               brush.size.clamp(1, 8),
                                           isDashed: brush.type ==
-                                              StrokeType.dotted,
+                                              StrokeType.dotwork,
                                         ),
                                       ),
                                     ],
@@ -682,22 +641,19 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   IconData _getBrushIcon(StrokeType type) {
     switch (type) {
-      case StrokeType.pen:
+      case StrokeType.liner:
         return Icons.edit;
-      case StrokeType.brush:
+      case StrokeType.shader:
         return Icons.brush;
-      case StrokeType.marker:
+      case StrokeType.fill:
         return Icons.format_paint;
       case StrokeType.eraser:
         return Icons.auto_fix_high;
-      case StrokeType.dotted:
+      case StrokeType.dotwork:
         return Icons.more_horiz;
-      default:
-        return Icons.brush;
     }
   }
 
-  // ─── CANVAS ────────────────────────────────────────────────
   Widget _buildCanvas() {
     return Positioned.fill(
       child: GestureDetector(
@@ -737,8 +693,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           if (details.pointerCount >= 2) {
             _isScaling = true;
             setState(() {
-              _scale = (_startScale * details.scale)
-                  .clamp(0.1, 10.0);
+              _scale = (_startScale * details.scale).clamp(0.1, 10.0);
               final delta =
                   details.localFocalPoint - _startFocalPoint;
               _offset = _startOffset + delta;
@@ -791,7 +746,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // ─── BURBUJAS ──────────────────────────────────────────────
   Widget _buildLayersBubble() {
     return GestureDetector(
       onTap: () => setState(() {
@@ -877,8 +831,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ),
               boxShadow: [
                 BoxShadow(
-                  color:
-                      _controller.activeColor.withOpacity(0.4),
+                  color: _controller.activeColor.withOpacity(0.4),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -901,10 +854,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
         });
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 8,
-          vertical: 4,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: const Color(0xFF1C1C1E).withOpacity(0.8),
           borderRadius: BorderRadius.circular(8),
@@ -927,8 +877,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildFullscreenButton() {
     return GestureDetector(
-      onTap: () =>
-          setState(() => _isFullscreen = !_isFullscreen),
+      onTap: () => setState(() => _isFullscreen = !_isFullscreen),
       child: Container(
         width: 34,
         height: 34,
@@ -941,9 +890,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
         ),
         child: Icon(
-          _isFullscreen
-              ? Icons.fullscreen_exit
-              : Icons.fullscreen,
+          _isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
           color: Colors.white,
           size: 18,
         ),
@@ -974,7 +921,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 }
 
-// ─── BRUSH PREVIEW PAINTER ─────────────────────────────────
 class _BrushPreviewPainter extends CustomPainter {
   final Color color;
   final double strokeWidth;
