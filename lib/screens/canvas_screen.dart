@@ -23,6 +23,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _showColors = false;
   bool _showGrid = false;
   bool _isFullscreen = false;
+  bool _zoomMode = false;
 
   // Zoom y paneo
   double _scale = 1.0;
@@ -48,6 +49,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Actualizar tamaño del canvas para simetría
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final size = MediaQuery.of(context).size;
+      _controller.updateCanvasSize(size);
+    });
+
     return Scaffold(
       backgroundColor: const Color(0xFF2C2C2C),
       body: SafeArea(
@@ -95,7 +102,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildLayersBubble(),
               ),
 
-            // Panel capas con onClose
+            // Panel capas
             if (_showLayers && !_isFullscreen)
               Positioned(
                 right: 0,
@@ -118,22 +125,31 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       onClose: () => setState(
                         () => _showLayers = false,
                       ),
+                      onLayerDuplicated:
+                          _controller.duplicateLayer,
+                      onLayerMergedDown:
+                          _controller.mergeDownLayer,
+                      onLayerLocked: _controller.lockLayer,
+                      onLayersFlatten:
+                          _controller.flattenLayers,
                     );
                   },
                 ),
               ),
 
             // Burbuja color
-           // Se oculta cuando capas está abierto
-          if (!_isFullscreen && !_showLayers)
-          Positioned(
-          right: 8,
-          bottom: 50,
-          child: _buildColorBubble(),
-          ),
+            // Se oculta cuando capas está abierto
+            if (!_isFullscreen && !_showLayers)
+              Positioned(
+                right: 8,
+                bottom: 50,
+                child: _buildColorBubble(),
+              ),
 
             // Panel colores
-            if (_showColors && !_isFullscreen && !_showLayers)
+            if (_showColors &&
+                !_isFullscreen &&
+                !_showLayers)
               Positioned(
                 right: 8,
                 bottom: 110,
@@ -163,6 +179,32 @@ class _CanvasScreenState extends State<CanvasScreen> {
               left: _isFullscreen ? 8 : 68,
               child: _buildFullscreenButton(),
             ),
+
+            // Indicador modo zoom
+            if (_zoomMode)
+              Positioned(
+                top: _isFullscreen ? 8 : 60,
+                left: _isFullscreen ? 50 : 110,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.accentRed,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    '🔍 ZOOM',
+                    style: TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 10,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -173,27 +215,25 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return Positioned.fill(
       child: GestureDetector(
         onScaleStart: (details) {
-          if (details.pointerCount == 1) {
-            _isScaling = false;
-            final canvasPoint = _screenToCanvas(
-              details.localFocalPoint,
-            );
-            _controller.startStroke(canvasPoint);
-          } else {
+          if (details.pointerCount >= 2 || _zoomMode) {
+            // 2 dedos o modo zoom = zoom/paneo
             _isScaling = true;
             _controller.endStroke();
             _startScale = _scale;
             _startOffset = _offset;
             _startFocalPoint = details.localFocalPoint;
-          }
-        },
-        onScaleUpdate: (details) {
-          if (details.pointerCount == 1 && !_isScaling) {
+          } else {
+            // 1 dedo modo dibujo = dibujar
+            _isScaling = false;
             final canvasPoint = _screenToCanvas(
               details.localFocalPoint,
             );
-            _controller.continueStroke(canvasPoint);
-          } else if (details.pointerCount >= 2) {
+            _controller.startStroke(canvasPoint);
+          }
+        },
+        onScaleUpdate: (details) {
+          if (details.pointerCount >= 2 || _zoomMode) {
+            // Zoom + paneo
             _isScaling = true;
             setState(() {
               _scale = (_startScale * details.scale)
@@ -202,10 +242,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   _startFocalPoint;
               _offset = _startOffset + delta;
             });
+          } else if (!_isScaling) {
+            // Dibujar
+            final canvasPoint = _screenToCanvas(
+              details.localFocalPoint,
+            );
+            _controller.continueStroke(canvasPoint);
           }
         },
         onScaleEnd: (details) {
-          if (!_isScaling) {
+          if (!_isScaling && !_zoomMode) {
             _controller.endStroke();
           }
           _isScaling = false;
@@ -280,6 +326,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 onTap: _controller.redo,
               );
             },
+          ),
+          // Botón modo zoom
+          _buildTopButton(
+            icon: _zoomMode
+                ? Icons.edit_outlined
+                : Icons.zoom_in,
+            isActive: _zoomMode,
+            onTap: () =>
+                setState(() => _zoomMode = !_zoomMode),
           ),
           const Spacer(),
           const Text(
