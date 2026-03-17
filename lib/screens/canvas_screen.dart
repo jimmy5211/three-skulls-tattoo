@@ -21,6 +21,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   bool _showLayers = false;
   bool _showColors = false;
+  bool _showBrushPanel = false; // nuevo: mini-panel TAM/OPA
   bool _showGrid = false;
   bool _isFullscreen = false;
   bool _zoomMode = false;
@@ -33,7 +34,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Offset _startFocalPoint = Offset.zero;
   bool _isScaling = false;
 
-  // Área del lienzo
   static const double _brushPanelWidth = 64.0;
   static const double _topBarHeight = 52.0;
   static const double _layerPanelWidth = 220.0;
@@ -45,6 +45,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
     _brushes = BrushModel.defaultBrushes();
   }
 
+  bool get _isLandscape {
+    if (!mounted) return false;
+    return MediaQuery.of(context).orientation == Orientation.landscape;
+  }
+
   Offset _screenToCanvas(Offset screenPoint) {
     return Offset(
       (screenPoint.dx - _offset.dx) / _scale,
@@ -52,10 +57,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // Verificar si el toque está dentro del lienzo
   bool _isTouchOnCanvas(Offset point) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final canvasLeft = _brushPanelWidth;
+    final canvasLeft = _isLandscape ? 0.0 : _brushPanelWidth;
     final canvasRight = _showLayers
         ? screenWidth - _layerPanelWidth
         : screenWidth;
@@ -78,7 +82,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            // Canvas principal
             _buildCanvas(),
 
             // Barra superior
@@ -90,8 +93,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildTopBar(),
               ),
 
-            // Panel pinceles izquierda
-            if (!_isFullscreen)
+            // Panel pinceles izquierda — solo en portrait
+            if (!_isFullscreen && !_isLandscape)
               Positioned(
                 left: 0,
                 top: 52,
@@ -102,11 +105,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     return BrushSelector(
                       activeBrush: _controller.activeBrush,
                       brushes: _brushes,
-                      onBrushSelected:
-                          _controller.setActiveBrush,
+                      onBrushSelected: _controller.setActiveBrush,
                       onSizeChanged: _controller.setBrushSize,
-                      onOpacityChanged:
-                          _controller.setBrushOpacity,
+                      onOpacityChanged: _controller.setBrushOpacity,
                     );
                   },
                 ),
@@ -131,25 +132,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   builder: (context, child) {
                     return LayerPanel(
                       layers: _controller.layers,
-                      activeLayerId:
-                          _controller.activeLayerId,
-                      onLayerSelected:
-                          _controller.setActiveLayer,
+                      activeLayerId: _controller.activeLayerId,
+                      onLayerSelected: _controller.setActiveLayer,
                       onLayerVisibilityToggled:
                           _controller.toggleLayerVisibility,
-                      onLayerDeleted:
-                          _controller.removeLayer,
+                      onLayerDeleted: _controller.removeLayer,
                       onLayerAdded: _controller.addLayer,
-                      onClose: () => setState(
-                        () => _showLayers = false,
-                      ),
-                      onLayerDuplicated:
-                          _controller.duplicateLayer,
-                      onLayerMergedDown:
-                          _controller.mergeDownLayer,
+                      onClose: () => setState(() => _showLayers = false),
+                      onLayerDuplicated: _controller.duplicateLayer,
+                      onLayerMergedDown: _controller.mergeDownLayer,
                       onLayerLocked: _controller.lockLayer,
-                      onLayersFlatten:
-                          _controller.flattenLayers,
+                      onLayersFlatten: _controller.flattenLayers,
                     );
                   },
                 ),
@@ -159,27 +152,40 @@ class _CanvasScreenState extends State<CanvasScreen> {
             if (!_isFullscreen && !_showLayers)
               Positioned(
                 right: 8,
-                bottom: 50,
+                bottom: _isLandscape ? 8 : 50,
                 child: _buildColorBubble(),
               ),
 
             // Panel colores
-            if (_showColors &&
-                !_isFullscreen &&
-                !_showLayers)
+            if (_showColors && !_isFullscreen && !_showLayers)
               Positioned(
                 right: 8,
-                bottom: 110,
+                bottom: _isLandscape ? 68 : 110,
                 child: AnimatedBuilder(
                   animation: _controller,
                   builder: (context, child) {
                     return ColorPicker(
                       activeColor: _controller.activeColor,
-                      onColorSelected:
-                          _controller.setActiveColor,
+                      onColorSelected: _controller.setActiveColor,
                     );
                   },
                 ),
+              ),
+
+            // Burbuja TAM/OPA — solo en landscape
+            if (!_isFullscreen && !_showLayers && _isLandscape)
+              Positioned(
+                right: 8,
+                bottom: 68,
+                child: _buildBrushBubble(),
+              ),
+
+            // Mini-panel TAM/OPA
+            if (_showBrushPanel && !_isFullscreen && !_showLayers && _isLandscape)
+              Positioned(
+                right: 68,
+                bottom: 60,
+                child: _buildBrushMiniPanel(),
               ),
 
             // Indicador zoom
@@ -193,7 +199,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             // Botón pantalla completa
             Positioned(
               top: _isFullscreen ? 8 : 60,
-              left: _isFullscreen ? 8 : 68,
+              left: _isFullscreen ? 8 : (_isLandscape ? 8 : 68),
               child: _buildFullscreenButton(),
             ),
 
@@ -201,7 +207,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             if (_zoomMode)
               Positioned(
                 top: _isFullscreen ? 8 : 60,
-                left: _isFullscreen ? 50 : 110,
+                left: _isFullscreen ? 50 : (_isLandscape ? 50 : 110),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -236,53 +242,43 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _isTouchOnCanvas(details.localFocalPoint);
 
           if (details.pointerCount >= 2) {
-            // 2 dedos SIEMPRE = zoom/paneo
-            // tanto dentro como fuera del lienzo
             _isScaling = true;
             _controller.endStroke();
             _startScale = _scale;
             _startOffset = _offset;
             _startFocalPoint = details.localFocalPoint;
           } else if (!touchOnCanvas || _zoomMode) {
-            // 1 dedo fuera del lienzo = zoom/paneo
-            // 1 dedo en modo zoom = zoom/paneo
             _isScaling = true;
             _controller.endStroke();
             _startScale = _scale;
             _startOffset = _offset;
             _startFocalPoint = details.localFocalPoint;
           } else {
-            // 1 dedo dentro del lienzo = dibujar
             _isScaling = false;
-            final canvasPoint = _screenToCanvas(
-              details.localFocalPoint,
-            );
+            final canvasPoint =
+                _screenToCanvas(details.localFocalPoint);
             _controller.startStroke(canvasPoint);
           }
         },
         onScaleUpdate: (details) {
           if (details.pointerCount >= 2) {
-            // 2 dedos = zoom + paneo
             _isScaling = true;
             setState(() {
-              _scale = (_startScale * details.scale)
-                  .clamp(0.1, 10.0);
-              final delta = details.localFocalPoint -
-                  _startFocalPoint;
+              _scale =
+                  (_startScale * details.scale).clamp(0.1, 10.0);
+              final delta =
+                  details.localFocalPoint - _startFocalPoint;
               _offset = _startOffset + delta;
             });
           } else if (_isScaling) {
-            // 1 dedo fuera o modo zoom = paneo
             setState(() {
-              final delta = details.localFocalPoint -
-                  _startFocalPoint;
+              final delta =
+                  details.localFocalPoint - _startFocalPoint;
               _offset = _startOffset + delta;
             });
           } else {
-            // 1 dedo dentro = dibujar
-            final canvasPoint = _screenToCanvas(
-              details.localFocalPoint,
-            );
+            final canvasPoint =
+                _screenToCanvas(details.localFocalPoint);
             _controller.continueStroke(canvasPoint);
           }
         },
@@ -309,8 +305,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     showGrid: _showGrid,
                     showSymmetryLine:
                         _controller.symmetryEnabled,
-                    symmetryEnabled:
-                        _controller.symmetryEnabled,
+                    symmetryEnabled: _controller.symmetryEnabled,
                     activeLayerId: _controller.activeLayerId,
                   ),
                   size: Size(
@@ -333,10 +328,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
       decoration: BoxDecoration(
         color: AppTheme.deepBlack.withOpacity(0.97),
         border: const Border(
-          bottom: BorderSide(
-            color: AppTheme.borderColor,
-            width: 0.5,
-          ),
+          bottom: BorderSide(color: AppTheme.borderColor, width: 0.5),
         ),
       ),
       child: Row(
@@ -364,12 +356,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
             },
           ),
           _buildTopButton(
-            icon: _zoomMode
-                ? Icons.edit_outlined
-                : Icons.zoom_in,
+            icon: _zoomMode ? Icons.edit_outlined : Icons.zoom_in,
             isActive: _zoomMode,
-            onTap: () =>
-                setState(() => _zoomMode = !_zoomMode),
+            onTap: () => setState(() => _zoomMode = !_zoomMode),
           ),
           const Spacer(),
           const Text(
@@ -385,8 +374,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           _buildTopButton(
             icon: _showGrid ? Icons.grid_on : Icons.grid_off,
             isActive: _showGrid,
-            onTap: () =>
-                setState(() => _showGrid = !_showGrid),
+            onTap: () => setState(() => _showGrid = !_showGrid),
           ),
           AnimatedBuilder(
             animation: _controller,
@@ -426,18 +414,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: isActive
-              ? Border.all(
-                  color: AppTheme.accentRed,
-                  width: 1,
-                )
+              ? Border.all(color: AppTheme.accentRed, width: 1)
               : null,
         ),
         child: Icon(
           icon,
           color: color ??
-              (isActive
-                  ? AppTheme.accentRed
-                  : AppTheme.textWhite),
+              (isActive ? AppTheme.accentRed : AppTheme.textWhite),
           size: 18,
         ),
       ),
@@ -448,7 +431,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return GestureDetector(
       onTap: () => setState(() {
         _showLayers = !_showLayers;
-        if (_showLayers) _showColors = false;
+        if (_showLayers) {
+          _showColors = false;
+          _showBrushPanel = false;
+        }
       }),
       child: AnimatedBuilder(
         animation: _controller,
@@ -504,7 +490,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return GestureDetector(
       onTap: () => setState(() {
         _showColors = !_showColors;
-        if (_showColors) _showLayers = false;
+        if (_showColors) {
+          _showLayers = false;
+          _showBrushPanel = false;
+        }
       }),
       child: AnimatedBuilder(
         animation: _controller,
@@ -523,8 +512,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _controller.activeColor
-                      .withOpacity(0.4),
+                  color: _controller.activeColor.withOpacity(0.4),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -533,6 +521,206 @@ class _CanvasScreenState extends State<CanvasScreen> {
           );
         },
       ),
+    );
+  }
+
+  // ─── BURBUJA TAM/OPA (landscape) ───────────────────────────
+  Widget _buildBrushBubble() {
+    return GestureDetector(
+      onTap: () => setState(() {
+        _showBrushPanel = !_showBrushPanel;
+        if (_showBrushPanel) {
+          _showColors = false;
+          _showLayers = false;
+        }
+      }),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: _showBrushPanel
+                  ? AppTheme.accentRed.withOpacity(0.2)
+                  : AppTheme.deepBlack.withOpacity(0.92),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _showBrushPanel
+                    ? AppTheme.accentRed
+                    : AppTheme.borderColor,
+                width: _showBrushPanel ? 2 : 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.4),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.brush_outlined,
+                  color: _showBrushPanel
+                      ? AppTheme.accentRed
+                      : Colors.white,
+                  size: 20,
+                ),
+                Text(
+                  '${_controller.activeBrush.size.round()}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: _showBrushPanel
+                        ? AppTheme.accentRed
+                        : Colors.white,
+                    fontFamily: 'Raleway',
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ─── MINI-PANEL TAM/OPA ─────────────────────────────────────
+  Widget _buildBrushMiniPanel() {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Container(
+          width: 180,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
+          decoration: BoxDecoration(
+            color: AppTheme.deepBlack.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: AppTheme.borderColor,
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.5),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // TAM
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'TAM',
+                    style: TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 10,
+                      color: AppTheme.textGrey,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  Text(
+                    '${_controller.activeBrush.size.round()}',
+                    style: const TextStyle(fontFamily: 'Raleway',
+                      fontSize: 10,
+                      color: AppTheme.textWhite,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: AppTheme.accentRed,
+                  inactiveTrackColor:
+                      AppTheme.borderColor,
+                  thumbColor: AppTheme.accentRed,
+                  overlayColor:
+                      AppTheme.accentRed.withOpacity(0.2),
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 7,
+                  ),
+                  trackHeight: 3,
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 14,
+                  ),
+                ),
+                child: Slider(
+                  value: _controller.activeBrush.size,
+                  min: 1,
+                  max: 100,
+                  onChanged: (v) => setState(
+                    () => _controller.setBrushSize(v),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              // OPA
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'OPA',
+                    style: TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 10,
+                      color: AppTheme.textGrey,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  Text(
+                    '${(_controller.activeBrush.opacity * 100).round()}%',
+                    style: const TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 10,
+                      color: AppTheme.textWhite,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: AppTheme.accentRed,
+                  inactiveTrackColor: AppTheme.borderColor,
+                  thumbColor: AppTheme.accentRed,
+                  overlayColor:
+                      AppTheme.accentRed.withOpacity(0.2),
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 7,
+                  ),
+                  trackHeight: 3,
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 14,
+                  ),
+                ),
+                child: Slider(
+                  value: _controller.activeBrush.opacity,
+                  min: 0.01,
+                  max: 1.0,
+                  onChanged: (v) => setState(
+                    () => _controller.setBrushOpacity(v),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -587,9 +775,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
         ),
         child: Icon(
-          _isFullscreen
-              ? Icons.fullscreen_exit
-              : Icons.fullscreen,
+          _isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
           color: AppTheme.textWhite,
           size: 18,
         ),
@@ -619,3 +805,4 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 }
+            
