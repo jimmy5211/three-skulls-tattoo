@@ -35,15 +35,16 @@ jobs:
         run: |
           BUILD_NUMBER=${{ github.run_number }}
           VERSION_CODE=$((1000 + BUILD_NUMBER))
+          VERSION_NAME="1.0.$BUILD_NUMBER"
           sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/" android/app/build.gradle
-          echo "Version code set to: $VERSION_CODE"
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
-          echo "VERSION_NAME=1.0.$BUILD_NUMBER" >> $GITHUB_ENV
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
 
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
 
-      - name: Create Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v1.0.${{ github.run_number }}
@@ -51,18 +52,28 @@ jobs:
           body: |
             ## 💀 Three Skulls Tattoo
             ### Versión 1.0.${{ github.run_number }}
-            
             #### Novedades:
-            - Mejoras en el canvas de dibujo
+            - Mejoras en canvas de dibujo
+            - Zoom y paneo con 2 dedos
+            - Simetría corregida
             - Corrección de bugs
-            - Mejoras de rendimiento
-            
-            #### Instalación:
-            1. Descarga el archivo app-release.apk
-            2. Instala en tu dispositivo Android
           files: build/app/outputs/flutter-apk/app-release.apk
           draft: false
           prerelease: false
+
+      - name: Update JSONBin version
+        run: |
+          curl -X PUT \
+            https://api.jsonbin.io/v3/b/69b8b65eaa77b81da9ef4f41 \
+            -H 'Content-Type: application/json' \
+            -H 'X-Master-Key: ${{ secrets.JSONBIN_API_KEY }}' \
+            -d "{
+              \"version\": \"1.0.${{ github.run_number }}\",
+              \"versionCode\": $((1000 + ${{ github.run_number }})),
+              \"releaseNotes\": \"Mejoras en canvas\nZoom y paneo\nSimetria corregida\nBug fixes\",
+              \"downloadUrl\": \"https://github.com/jimmy5211/three-skulls-tattoo/releases/latest/download/app-release.apk\",
+              \"mandatory\": false
+            }"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
