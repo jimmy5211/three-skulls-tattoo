@@ -5,6 +5,7 @@ import '../models/layer_model.dart';
 class CanvasPainter extends CustomPainter {
   final List<LayerModel> layers;
   final StrokeModel? currentStroke;
+  final StrokeModel? currentMirrorStroke;
   final bool showGrid;
   final bool showSymmetryLine;
   final bool symmetryEnabled;
@@ -13,6 +14,7 @@ class CanvasPainter extends CustomPainter {
   CanvasPainter({
     required this.layers,
     this.currentStroke,
+    this.currentMirrorStroke,
     this.showGrid = false,
     this.showSymmetryLine = false,
     this.symmetryEnabled = false,
@@ -33,7 +35,6 @@ class CanvasPainter extends CustomPainter {
     }
 
     // Dibujar capas en orden correcto
-    // index 0 = fondo, último index = frente
     for (int i = 0; i < layers.length; i++) {
       final layer = layers[i];
       if (!layer.isVisible) continue;
@@ -46,29 +47,37 @@ class CanvasPainter extends CustomPainter {
     }
   }
 
-  void _drawLayer(Canvas canvas, Size size, LayerModel layer) {
-    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
-    final layerPaint = Paint();
+  void _drawLayer(
+    Canvas canvas,
+    Size size,
+    LayerModel layer,
+  ) {
+    final rect =
+        Rect.fromLTWH(0, 0, size.width, size.height);
 
-    // SaveLayer para que el borrador
-    // no afecte otras capas
-    canvas.saveLayer(rect, layerPaint);
+    // SaveLayer para borrador por capa
+    canvas.saveLayer(rect, Paint());
 
-    // Aplicar opacidad de la capa
-    final opacityPaint = Paint()
-      ..color = Colors.white.withOpacity(layer.opacity);
+    // Opacidad de la capa
+    canvas.saveLayer(
+      rect,
+      Paint()
+        ..color = Colors.white.withOpacity(layer.opacity),
+    );
 
-    canvas.saveLayer(rect, opacityPaint);
-
-    // Dibujar trazos de esta capa
+    // Dibujar trazos guardados
     for (final stroke in layer.strokes) {
       _drawStroke(canvas, stroke);
     }
 
-    // Si es la capa activa dibujar trazo actual
-    if (layer.id == activeLayerId &&
-        currentStroke != null) {
-      _drawStroke(canvas, currentStroke!);
+    // Si es la capa activa dibujar trazos actuales
+    if (layer.id == activeLayerId) {
+      if (currentStroke != null) {
+        _drawStroke(canvas, currentStroke!);
+      }
+      if (currentMirrorStroke != null) {
+        _drawStroke(canvas, currentMirrorStroke!);
+      }
     }
 
     canvas.restore();
