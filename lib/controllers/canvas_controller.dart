@@ -34,7 +34,6 @@ class CanvasController extends ChangeNotifier {
     if (activeLayer.isLocked) return;
     _saveToHistory();
 
-    // Trazo principal
     currentStroke = StrokeModel(
       points: [point],
       color: activeBrush.type == StrokeType.eraser
@@ -48,7 +47,6 @@ class CanvasController extends ChangeNotifier {
       layerId: activeLayerId,
     );
 
-    // Trazo espejo en MISMA capa
     if (symmetryEnabled) {
       final mirroredPoint = _getMirroredPoint(point);
       currentMirrorStroke = StrokeModel(
@@ -61,7 +59,7 @@ class CanvasController extends ChangeNotifier {
             ? 1.0
             : activeBrush.opacity,
         type: activeBrush.type,
-        layerId: activeLayerId, // misma capa ✅
+        layerId: activeLayerId,
       );
     } else {
       currentMirrorStroke = null;
@@ -98,7 +96,7 @@ class CanvasController extends ChangeNotifier {
         strokeWidth: currentMirrorStroke!.strokeWidth,
         opacity: currentMirrorStroke!.opacity,
         type: currentMirrorStroke!.type,
-        layerId: activeLayerId, // misma capa ✅
+        layerId: activeLayerId,
       );
     }
 
@@ -117,7 +115,6 @@ class CanvasController extends ChangeNotifier {
         layers[layerIndex].strokes,
       )..add(currentStroke!);
 
-      // Agregar trazo espejo en misma capa
       if (symmetryEnabled && currentMirrorStroke != null) {
         updatedStrokes.add(currentMirrorStroke!);
       }
@@ -212,6 +209,73 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Duplicar capa
+  void duplicateLayer(int layerId) {
+    final index = layers.indexWhere((l) => l.id == layerId);
+    if (index == -1) return;
+    _saveToHistory();
+    final newId = layers.last.id + 1;
+    final original = layers[index];
+    final duplicate = LayerModel(
+      id: newId,
+      name: '${original.name} copia',
+      isVisible: original.isVisible,
+      isLocked: false,
+      opacity: original.opacity,
+      strokes: List<StrokeModel>.from(original.strokes),
+    );
+    layers.insert(index + 1, duplicate);
+    activeLayerId = newId;
+    notifyListeners();
+  }
+
+  // Combinar capa con la de abajo
+  void mergeDownLayer(int layerId) {
+    final index = layers.indexWhere((l) => l.id == layerId);
+    if (index <= 0) return;
+    _saveToHistory();
+    final current = layers[index];
+    final below = layers[index - 1];
+    final mergedStrokes = [
+      ...below.strokes,
+      ...current.strokes,
+    ];
+    layers[index - 1] = below.copyWith(
+      strokes: mergedStrokes,
+    );
+    layers.removeAt(index);
+    activeLayerId = layers[index - 1].id;
+    notifyListeners();
+  }
+
+  // Bloquear/desbloquear capa
+  void lockLayer(int layerId) {
+    final index = layers.indexWhere((l) => l.id == layerId);
+    if (index == -1) return;
+    layers[index] = layers[index].copyWith(
+      isLocked: !layers[index].isLocked,
+    );
+    notifyListeners();
+  }
+
+  // Aplanar todas las capas en una
+  void flattenLayers() {
+    if (layers.length <= 1) return;
+    _saveToHistory();
+    final allStrokes = layers
+        .expand((l) => l.strokes)
+        .toList();
+    layers = [
+      LayerModel(
+        id: 0,
+        name: 'Capa 1',
+        strokes: allStrokes,
+      ),
+    ];
+    activeLayerId = 0;
+    notifyListeners();
+  }
+
   void setActiveLayer(int layerId) {
     activeLayerId = layerId;
     notifyListeners();
@@ -257,6 +321,10 @@ class CanvasController extends ChangeNotifier {
   void setSymmetryType(SymmetryType type) {
     symmetryType = type;
     notifyListeners();
+  }
+
+  void updateCanvasSize(Size size) {
+    canvasSize = size;
   }
 
   void clearActiveLayer() {
