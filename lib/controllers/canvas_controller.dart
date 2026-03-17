@@ -48,7 +48,7 @@ class CanvasController extends ChangeNotifier {
       layerId: activeLayerId,
     );
 
-    // Trazo espejo separado
+    // Trazo espejo en MISMA capa
     if (symmetryEnabled) {
       final mirroredPoint = _getMirroredPoint(point);
       currentMirrorStroke = StrokeModel(
@@ -61,8 +61,10 @@ class CanvasController extends ChangeNotifier {
             ? 1.0
             : activeBrush.opacity,
         type: activeBrush.type,
-        layerId: activeLayerId,
+        layerId: activeLayerId, // misma capa ✅
       );
+    } else {
+      currentMirrorStroke = null;
     }
 
     notifyListeners();
@@ -71,7 +73,6 @@ class CanvasController extends ChangeNotifier {
   void continueStroke(Offset point) {
     if (currentStroke == null) return;
 
-    // Continuar trazo principal
     final newPoints = List<Offset>.from(
       currentStroke!.points,
     )..add(point);
@@ -85,7 +86,6 @@ class CanvasController extends ChangeNotifier {
       layerId: activeLayerId,
     );
 
-    // Continuar trazo espejo
     if (symmetryEnabled && currentMirrorStroke != null) {
       final mirroredPoint = _getMirroredPoint(point);
       final mirrorPoints = List<Offset>.from(
@@ -98,7 +98,7 @@ class CanvasController extends ChangeNotifier {
         strokeWidth: currentMirrorStroke!.strokeWidth,
         opacity: currentMirrorStroke!.opacity,
         type: currentMirrorStroke!.type,
-        layerId: activeLayerId,
+        layerId: activeLayerId, // misma capa ✅
       );
     }
 
@@ -117,7 +117,7 @@ class CanvasController extends ChangeNotifier {
         layers[layerIndex].strokes,
       )..add(currentStroke!);
 
-      // Agregar trazo espejo también
+      // Agregar trazo espejo en misma capa
       if (symmetryEnabled && currentMirrorStroke != null) {
         updatedStrokes.add(currentMirrorStroke!);
       }
@@ -218,7 +218,8 @@ class CanvasController extends ChangeNotifier {
   }
 
   void toggleLayerVisibility(int layerId) {
-    final index = layers.indexWhere((l) => l.id == layerId);
+    final index =
+        layers.indexWhere((l) => l.id == layerId);
     if (index != -1) {
       layers[index] = layers[index].copyWith(
         isVisible: !layers[index].isVisible,
@@ -249,6 +250,7 @@ class CanvasController extends ChangeNotifier {
 
   void toggleSymmetry() {
     symmetryEnabled = !symmetryEnabled;
+    currentMirrorStroke = null;
     notifyListeners();
   }
 
