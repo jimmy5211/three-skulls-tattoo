@@ -7,56 +7,56 @@ class UpdateInfo {
   final String downloadUrl;
   final String releaseNotes;
   final bool isAvailable;
+  final bool mandatory;
 
   UpdateInfo({
     required this.version,
     required this.downloadUrl,
     required this.releaseNotes,
     required this.isAvailable,
+    this.mandatory = false,
   });
 }
 
 class UpdateService {
-  static const String _repoOwner = 'jimmy5211';
-  static const String _repoName = 'three-skulls-tattoo';
+  static const String _versionUrl =
+      'https://api.jsonbin.io/v3/b/69b8b65eaa77b81da9ef4f41';
   static const String _currentVersion = '1.0.0';
   static const String _lastCheckKey = 'last_update_check';
 
   static Future<UpdateInfo> checkForUpdates() async {
     try {
       final response = await http.get(
-        Uri.parse(
-          'https://api.github.com/repos/$_repoOwner/$_repoName/releases/latest',
-        ),
+        Uri.parse(_versionUrl),
         headers: {
-          'Accept': 'application/vnd.github.v3+json',
+          'X-Access-Key': '',
+          'X-Bin-Meta': 'false',
         },
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final latestVersion = data['tag_name']
-            .toString()
-            .replaceAll('v', '');
+        final raw = jsonDecode(response.body);
+
+        // JSONBin devuelve dentro de 'record'
+        // si X-Bin-Meta es false devuelve directo
+        final data = raw is Map && raw.containsKey('record')
+            ? raw['record']
+            : raw;
+
+        final latestVersion =
+            data['version']?.toString() ?? _currentVersion;
         final releaseNotes =
-            data['body']?.toString() ?? 'Sin notas';
-        final assets = data['assets'] as List;
+            data['releaseNotes']?.toString() ?? '';
+        final downloadUrl =
+            data['downloadUrl']?.toString() ?? '';
+        final mandatory =
+            data['mandatory'] as bool? ?? false;
 
-        String downloadUrl = '';
-        for (final asset in assets) {
-          if (asset['name']
-              .toString()
-              .endsWith('.apk')) {
-            downloadUrl =
-                asset['browser_download_url'].toString();
-            break;
-          }
-        }
+        final isAvailable = _isNewerVersion(
+          latestVersion,
+          _currentVersion,
+        );
 
-        final isAvailable =
-            _isNewerVersion(latestVersion, _currentVersion);
-
-        // Guardar fecha del último check
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(
           _lastCheckKey,
@@ -68,6 +68,7 @@ class UpdateService {
           downloadUrl: downloadUrl,
           releaseNotes: releaseNotes,
           isAvailable: isAvailable,
+          mandatory: mandatory,
         );
       }
 
@@ -92,13 +93,23 @@ class UpdateService {
     String current,
   ) {
     try {
-      final latestParts = latest.split('.').map(int.parse).toList();
-      final currentParts =
-          current.split('.').map(int.parse).toList();
+      final latestParts = latest
+          .replaceAll('v', '')
+          .trim()
+          .split('.')
+          .map((p) => int.tryParse(p) ?? 0)
+          .toList();
+      final currentParts = current
+          .replaceAll('v', '')
+          .trim()
+          .split('.')
+          .map((p) => int.tryParse(p) ?? 0)
+          .toList();
 
-      for (int i = 0;
-          i < latestParts.length && i < currentParts.length;
-          i++) {
+      while (latestParts.length < 3) latestParts.add(0);
+      while (currentParts.length < 3) currentParts.add(0);
+
+      for (int i = 0; i < 3; i++) {
         if (latestParts[i] > currentParts[i]) return true;
         if (latestParts[i] < currentParts[i]) return false;
       }
@@ -108,9 +119,24 @@ class UpdateService {
     }
   }
 
-  static Future<String?> getLastCheckDate() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_lastCheckKey);
+  static Future<String> getLastCheckDate() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final date = prefs.getString(_lastCheckKey);
+      if (date == null) return 'Nunca';
+      final parsed = DateTime.parse(date);
+      final diff = DateTime.now().difference(parsed);
+      if (diff.inMinutes < 1) return 'Hace un momento';
+      if (diff.inMinutes < 60) {
+        return 'Hace ${diff.inMinutes} min';
+      }
+      if (diff.inHours < 24) {
+        return 'Hace ${diff.inHours} horas';
+      }
+      return 'Hace ${diff.inDays} días';
+    } catch (e) {
+      return 'Nunca';
+    }
   }
 
   static String get currentVersion => _currentVersion;
