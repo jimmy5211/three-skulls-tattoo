@@ -1,5 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
 import '../theme/app_theme.dart';
 import '../services/update_service.dart';
 
@@ -15,6 +19,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoSync = true;
   bool _autoUpdate = true;
   bool _isCheckingUpdate = false;
+  bool _isDownloading = false;
+  double _downloadProgress = 0.0;
   String _selectedLanguage = 'Español';
   String _lastCheckDate = 'Nunca';
 
@@ -26,19 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadLastCheckDate() async {
     final date = await UpdateService.getLastCheckDate();
-    if (date != null) {
-      final parsed = DateTime.parse(date);
-      final diff = DateTime.now().difference(parsed);
-      setState(() {
-        if (diff.inMinutes < 60) {
-          _lastCheckDate = 'Hace ${diff.inMinutes} min';
-        } else if (diff.inHours < 24) {
-          _lastCheckDate = 'Hace ${diff.inHours} horas';
-        } else {
-          _lastCheckDate = 'Hace ${diff.inDays} días';
-        }
-      });
-    }
+    setState(() => _lastCheckDate = date);
   }
 
   @override
@@ -94,9 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'Idioma de la app',
                         _selectedLanguage,
                         ['Español', 'English', 'Português'],
-                        (v) => setState(
-                          () => _selectedLanguage = v!,
-                        ),
+                        (v) => setState(() => _selectedLanguage = v!),
                       ),
                     ],
                   ),
@@ -108,17 +100,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'Actualización automática',
                         'Actualiza cuando hay versión nueva',
                         _autoUpdate,
-                        (v) =>
-                            setState(() => _autoUpdate = v),
+                        (v) => setState(() => _autoUpdate = v),
                       ),
                       _buildActionTile(
                         _isCheckingUpdate
                             ? '🔍 Buscando...'
                             : '🔍 Buscar actualizaciones',
                         'Última revisión: $_lastCheckDate',
-                        _isCheckingUpdate
-                            ? () {}
-                            : _checkUpdates,
+                        _isCheckingUpdate ? () {} : _checkUpdates,
                       ),
                       _buildActionTile(
                         '📋 Notas de la versión',
@@ -127,6 +116,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ],
                   ),
+                  // Barra de progreso descarga
+                  if (_isDownloading)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cardColor,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppTheme.borderColor,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppTheme.accentRed,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Descargando... ${(_downloadProgress * 100).round()}%',
+                                style: const TextStyle(
+                                  fontFamily: 'Raleway',
+                                  color: AppTheme.textWhite,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          LinearProgressIndicator(
+                            value: _downloadProgress,
+                            backgroundColor: AppTheme.borderColor,
+                            color: AppTheme.accentRed,
+                            minHeight: 4,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ],
+                      ),
+                    ),
                   const SizedBox(height: 16),
                   _buildSection(
                     '💀 ACERCA DE',
@@ -161,10 +197,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       decoration: const BoxDecoration(
         color: AppTheme.deepBlack,
         border: Border(
-          bottom: BorderSide(
-            color: AppTheme.borderColor,
-            width: 1,
-          ),
+          bottom: BorderSide(color: AppTheme.borderColor, width: 1),
         ),
       ),
       child: Row(
@@ -213,10 +246,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           decoration: BoxDecoration(
             color: AppTheme.cardColor,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: AppTheme.borderColor,
-              width: 1,
-            ),
+            border: Border.all(color: AppTheme.borderColor, width: 1),
           ),
           child: Column(children: children),
         ),
@@ -231,16 +261,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Function(bool) onChanged,
   ) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 8,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: const BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: AppTheme.borderColor,
-            width: 0.5,
-          ),
+          bottom: BorderSide(color: AppTheme.borderColor, width: 0.5),
         ),
       ),
       child: Row(
@@ -286,16 +310,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: const BoxDecoration(
           border: Border(
-            bottom: BorderSide(
-              color: AppTheme.borderColor,
-              width: 0.5,
-            ),
+            bottom: BorderSide(color: AppTheme.borderColor, width: 0.5),
           ),
         ),
         child: Row(
@@ -323,8 +341,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
-            _isCheckingUpdate &&
-                    title.contains('Buscar')
+            _isCheckingUpdate && title.contains('Buscar')
                 ? const SizedBox(
                     width: 16,
                     height: 16,
@@ -351,10 +368,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Function(String?) onChanged,
   ) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 8,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           Expanded(
@@ -375,10 +389,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               fontSize: 13,
               color: AppTheme.textWhite,
             ),
-            underline: Container(
-              height: 1,
-              color: AppTheme.accentRed,
-            ),
+            underline: Container(height: 1, color: AppTheme.accentRed),
             items: options.map((option) {
               return DropdownMenuItem(
                 value: option,
@@ -394,16 +405,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildInfoTile(String title, String value) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 12,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: AppTheme.borderColor,
-            width: 0.5,
-          ),
+          bottom: BorderSide(color: AppTheme.borderColor, width: 0.5),
         ),
       ),
       child: Row(
@@ -440,6 +445,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (updateInfo.isAvailable) {
       _showUpdateDialog(updateInfo);
     } else {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           backgroundColor: AppTheme.cardColor,
@@ -533,32 +539,72 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _downloadAndInstall(String url) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        backgroundColor: AppTheme.cardColor,
-        content: Row(
-          children: [
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppTheme.accentRed,
+    setState(() {
+      _isDownloading = true;
+      _downloadProgress = 0.0;
+    });
+
+    try {
+      final request = http.Request('GET', Uri.parse(url));
+      final response = await request.send().timeout(
+        const Duration(minutes: 10),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Error HTTP: ${response.statusCode}');
+      }
+
+      final contentLength = response.contentLength ?? 0;
+      final dir = await getTemporaryDirectory();
+      final apkPath = '${dir.path}/three_skulls_update.apk';
+      final file = File(apkPath);
+      final sink = file.openWrite();
+
+      int downloaded = 0;
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        downloaded += chunk.length;
+        if (contentLength > 0) {
+          setState(() {
+            _downloadProgress = downloaded / contentLength;
+          });
+        }
+      }
+      await sink.close();
+
+      setState(() {
+        _isDownloading = false;
+        _downloadProgress = 1.0;
+      });
+
+      // Lanzar instalador
+      await OpenFile.open(apkPath);
+
+    } catch (e) {
+      setState(() => _isDownloading = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppTheme.cardColor,
+          content: Row(
+            children: [
+              const Text('❌', style: TextStyle(fontSize: 20)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Error: $e',
+                  style: const TextStyle(
+                    fontFamily: 'Raleway',
+                    color: AppTheme.textWhite,
+                  ),
+                ),
               ),
-            ),
-            SizedBox(width: 12),
-            Text(
-              'Descargando actualización...',
-              style: TextStyle(
-                fontFamily: 'Raleway',
-                color: AppTheme.textWhite,
-              ),
-            ),
-          ],
+            ],
+          ),
+          duration: const Duration(seconds: 4),
         ),
-        duration: Duration(seconds: 3),
-      ),
-    );
+      );
+    }
   }
 
   void _syncNow() {
@@ -663,5 +709,3 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-  }
-}
