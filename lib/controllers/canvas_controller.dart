@@ -9,12 +9,11 @@ class CanvasController extends ChangeNotifier {
   BrushModel activeBrush = BrushModel.defaultBrushes()[0];
   Color activeColor = Colors.black;
   StrokeModel? currentStroke;
+  StrokeModel? currentMirrorStroke;
   List<List<LayerModel>> _undoHistory = [];
   List<List<LayerModel>> _redoHistory = [];
   bool symmetryEnabled = false;
   SymmetryType symmetryType = SymmetryType.horizontal;
-  double scale = 1.0;
-  Offset offset = Offset.zero;
   Size canvasSize = const Size(1080, 1920);
 
   CanvasController() {
@@ -34,6 +33,8 @@ class CanvasController extends ChangeNotifier {
   void startStroke(Offset point) {
     if (activeLayer.isLocked) return;
     _saveToHistory();
+
+    // Trazo principal
     currentStroke = StrokeModel(
       points: [point],
       color: activeBrush.type == StrokeType.eraser
@@ -46,18 +47,34 @@ class CanvasController extends ChangeNotifier {
       type: activeBrush.type,
       layerId: activeLayerId,
     );
+
+    // Trazo espejo separado
+    if (symmetryEnabled) {
+      final mirroredPoint = _getMirroredPoint(point);
+      currentMirrorStroke = StrokeModel(
+        points: [mirroredPoint],
+        color: activeBrush.type == StrokeType.eraser
+            ? Colors.white
+            : activeColor,
+        strokeWidth: activeBrush.size,
+        opacity: activeBrush.type == StrokeType.eraser
+            ? 1.0
+            : activeBrush.opacity,
+        type: activeBrush.type,
+        layerId: activeLayerId,
+      );
+    }
+
     notifyListeners();
   }
 
   void continueStroke(Offset point) {
     if (currentStroke == null) return;
-    final newPoints = List<Offset>.from(currentStroke!.points)
-      ..add(point);
 
-    if (symmetryEnabled) {
-      final mirroredPoint = _getMirroredPoint(point);
-      newPoints.add(mirroredPoint);
-    }
+    // Continuar trazo principal
+    final newPoints = List<Offset>.from(
+      currentStroke!.points,
+    )..add(point);
 
     currentStroke = StrokeModel(
       points: newPoints,
@@ -67,38 +84,72 @@ class CanvasController extends ChangeNotifier {
       type: currentStroke!.type,
       layerId: activeLayerId,
     );
+
+    // Continuar trazo espejo
+    if (symmetryEnabled && currentMirrorStroke != null) {
+      final mirroredPoint = _getMirroredPoint(point);
+      final mirrorPoints = List<Offset>.from(
+        currentMirrorStroke!.points,
+      )..add(mirroredPoint);
+
+      currentMirrorStroke = StrokeModel(
+        points: mirrorPoints,
+        color: currentMirrorStroke!.color,
+        strokeWidth: currentMirrorStroke!.strokeWidth,
+        opacity: currentMirrorStroke!.opacity,
+        type: currentMirrorStroke!.type,
+        layerId: activeLayerId,
+      );
+    }
+
+    notifyListeners();
+  }
+
+  void endStroke() {
+    if (currentStroke == null) return;
+
+    final layerIndex = layers.indexWhere(
+      (l) => l.id == activeLayerId,
+    );
+
+    if (layerIndex != -1) {
+      final updatedStrokes = List<StrokeModel>.from(
+        layers[layerIndex].strokes,
+      )..add(currentStroke!);
+
+      // Agregar trazo espejo también
+      if (symmetryEnabled && currentMirrorStroke != null) {
+        updatedStrokes.add(currentMirrorStroke!);
+      }
+
+      layers[layerIndex] = layers[layerIndex].copyWith(
+        strokes: updatedStrokes,
+      );
+    }
+
+    currentStroke = null;
+    currentMirrorStroke = null;
     notifyListeners();
   }
 
   Offset _getMirroredPoint(Offset point) {
     switch (symmetryType) {
       case SymmetryType.horizontal:
-        return Offset(canvasSize.width - point.dx, point.dy);
+        return Offset(
+          canvasSize.width - point.dx,
+          point.dy,
+        );
       case SymmetryType.vertical:
-        return Offset(point.dx, canvasSize.height - point.dy);
+        return Offset(
+          point.dx,
+          canvasSize.height - point.dy,
+        );
       case SymmetryType.radial:
         return Offset(
           canvasSize.width - point.dx,
           canvasSize.height - point.dy,
         );
     }
-  }
-
-  void endStroke() {
-    if (currentStroke == null) return;
-    final layerIndex = layers.indexWhere(
-      (l) => l.id == activeLayerId,
-    );
-    if (layerIndex != -1) {
-      final updatedStrokes = List<StrokeModel>.from(
-        layers[layerIndex].strokes,
-      )..add(currentStroke!);
-      layers[layerIndex] = layers[layerIndex].copyWith(
-        strokes: updatedStrokes,
-      );
-    }
-    currentStroke = null;
-    notifyListeners();
   }
 
   void _saveToHistory() {
@@ -198,6 +249,11 @@ class CanvasController extends ChangeNotifier {
 
   void toggleSymmetry() {
     symmetryEnabled = !symmetryEnabled;
+    notifyListeners();
+  }
+
+  void setSymmetryType(SymmetryType type) {
+    symmetryType = type;
     notifyListeners();
   }
 
