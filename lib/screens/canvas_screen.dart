@@ -543,8 +543,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
             ),
           ),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const SizedBox(height: 12),
               // TAM
               Text('TAM',
                   style: TextStyle(
@@ -561,8 +561,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       color: _textPrimary,
                       fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              Expanded(
-                flex: 1,
+              SizedBox(
+                height: 120,
                 child: RotatedBox(
                   quarterTurns: 3,
                   child: SliderTheme(
@@ -594,7 +594,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: Container(height: 0.5, color: _borderColor),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 8),
               // OPA
               Text('OPA',
                   style: TextStyle(
@@ -612,8 +612,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       color: _textPrimary,
                       fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              Expanded(
-                flex: 1,
+              SizedBox(
+                height: 120,
                 child: RotatedBox(
                   quarterTurns: 3,
                   child: SliderTheme(
@@ -640,7 +640,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
             ],
           ),
         );
