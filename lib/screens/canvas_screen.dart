@@ -728,7 +728,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
           const SizedBox(height: 12),
           _buildSettingRow(
-              Icons.feather, 'Suavizado de bordes',
+              Icons.blur_on, 'Suavizado de bordes',
               'Suaviza los bordes de la selección'),
           _buildSettingRow(
               Icons.invert_colors, 'Invertir selección',
