@@ -13,39 +13,30 @@ class BrushesScreen extends StatefulWidget {
   State<BrushesScreen> createState() => _BrushesScreenState();
 }
 
-class _BrushesScreenState extends State<BrushesScreen>
-    with SingleTickerProviderStateMixin {
-
-  late TabController _tabController;
-  List<BrushModel> _defaultBrushes = [];
-  List<BrushModel> _customBrushes = [];
-  List<String> _favorites = [];
-  String? _activeBrushId;
+class _BrushesScreenState extends State<BrushesScreen> {
+  List<BrushModel> _brushes = [];
+  BrushModel? _activeBrush;
+  BrushCategory _selectedCategory = BrushCategory.todos;
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
     _loadBrushes();
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
   Future<void> _loadBrushes() async {
-    setState(() => _isLoading = true);
-    final customBrushes = await BrushService.loadCustomBrushes();
-    final favorites = await BrushService.loadFavorites();
+    final brushes = await BrushService.loadBrushes();
     setState(() {
-      _defaultBrushes = BrushModel.defaultBrushes();
-      _customBrushes = customBrushes;
-      _favorites = favorites;
+      _brushes = brushes;
+      _activeBrush = brushes.isNotEmpty ? brushes.first : null;
       _isLoading = false;
     });
+  }
+
+  List<BrushModel> get _filteredBrushes {
+    if (_selectedCategory == BrushCategory.todos) return _brushes;
+    return _brushes.where((b) => b.category == _selectedCategory).toList();
   }
 
   @override
@@ -56,7 +47,7 @@ class _BrushesScreenState extends State<BrushesScreen>
         child: Column(
           children: [
             _buildTopBar(),
-            _buildTabBar(),
+            _buildCategoryTabs(),
             Expanded(
               child: _isLoading
                   ? const Center(
@@ -64,14 +55,14 @@ class _BrushesScreenState extends State<BrushesScreen>
                         color: AppTheme.accentRed,
                       ),
                     )
-                  : TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildAllBrushes(),
-                        _buildCustomBrushes(),
-                        _buildFavorites(),
-                      ],
-                    ),
+                  : _filteredBrushes.isEmpty
+                      ? _buildEmptyState()
+                      : Row(
+                          children: [
+                            _buildCategorySidebar(),
+                            Expanded(child: _buildBrushList()),
+                          ],
+                        ),
             ),
           ],
         ),
@@ -79,10 +70,7 @@ class _BrushesScreenState extends State<BrushesScreen>
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppTheme.accentRed,
         onPressed: _showCreateBrushDialog,
-        child: const Icon(
-          Icons.add,
-          color: Colors.white,
-        ),
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
@@ -94,20 +82,14 @@ class _BrushesScreenState extends State<BrushesScreen>
       decoration: const BoxDecoration(
         color: AppTheme.deepBlack,
         border: Border(
-          bottom: BorderSide(
-            color: AppTheme.borderColor,
-            width: 1,
-          ),
+          bottom: BorderSide(color: AppTheme.borderColor, width: 1),
         ),
       ),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(
-              Icons.arrow_back,
-              color: AppTheme.textWhite,
-              size: 20,
-            ),
+            icon: const Icon(Icons.arrow_back,
+                color: AppTheme.textWhite, size: 20),
             onPressed: () => context.go('/home'),
           ),
           const Expanded(
@@ -123,117 +105,146 @@ class _BrushesScreenState extends State<BrushesScreen>
             ),
           ),
           IconButton(
-            icon: const Icon(
-              Icons.search,
-              color: AppTheme.textGrey,
-              size: 20,
-            ),
-            onPressed: _showSearch,
+            icon: const Icon(Icons.sort,
+                color: AppTheme.textWhite, size: 20),
+            onPressed: _showSortOptions,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTabBar() {
+  Widget _buildCategoryTabs() {
     return Container(
+      height: 40,
       color: AppTheme.deepBlack,
-      child: TabBar(
-        controller: _tabController,
-        indicatorColor: AppTheme.accentRed,
-        labelColor: AppTheme.textWhite,
-        unselectedLabelColor: AppTheme.textGrey,
-        labelStyle: const TextStyle(
-          fontFamily: 'Raleway',
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-        tabs: const [
-          Tab(text: 'TODOS'),
-          Tab(text: 'CREADOS'),
-          Tab(text: '⭐ FAVORITOS'),
-        ],
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        children: BrushCategory.values.map((cat) {
+          final isActive = _selectedCategory == cat;
+          return GestureDetector(
+            onTap: () => setState(() => _selectedCategory = cat),
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? AppTheme.accentRed
+                    : AppTheme.cardColor,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isActive
+                      ? AppTheme.accentRed
+                      : AppTheme.borderColor,
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    BrushModel.categoryEmoji(cat),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    BrushModel.categoryName(cat),
+                    style: TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 11,
+                      color: isActive
+                          ? Colors.white
+                          : AppTheme.textGrey,
+                      fontWeight: isActive
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
 
-  Widget _buildAllBrushes() {
-    final allBrushes = [..._defaultBrushes, ..._customBrushes];
-    if (allBrushes.isEmpty) {
-      return _buildEmptyState('No hay pinceles');
-    }
+  Widget _buildCategorySidebar() {
+    return Container(
+      width: 70,
+      color: AppTheme.deepBlack,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        children: BrushCategory.values.map((cat) {
+          final isActive = _selectedCategory == cat;
+          return GestureDetector(
+            onTap: () => setState(() => _selectedCategory = cat),
+            child: Container(
+              margin: const EdgeInsets.symmetric(
+                  horizontal: 6, vertical: 3),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? AppTheme.accentRed.withOpacity(0.2)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                border: isActive
+                    ? Border.all(
+                        color: AppTheme.accentRed, width: 1)
+                    : null,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    BrushModel.categoryEmoji(cat),
+                    style: const TextStyle(fontSize: 18),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    BrushModel.categoryName(cat),
+                    style: TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 8,
+                      color: isActive
+                          ? AppTheme.accentRed
+                          : AppTheme.textGrey,
+                      fontWeight: isActive
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildBrushList() {
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: allBrushes.length,
+      padding: const EdgeInsets.all(8),
+      itemCount: _filteredBrushes.length,
       itemBuilder: (context, index) {
-        final brush = allBrushes[index];
-        final isCustom = index >= _defaultBrushes.length;
+        final brush = _filteredBrushes[index];
+        final isActive = _activeBrush?.id == brush.id;
         return BrushCard(
           brush: brush,
-          isActive: brush.id == _activeBrushId,
-          isFavorite: _favorites.contains(brush.id),
-          isCustom: isCustom,
-          onTap: () => setState(() => _activeBrushId = brush.id),
-          onFavoriteToggle: () => _toggleFavorite(brush.id),
-          onDelete: () => _deleteBrush(brush.id),
+          isActive: isActive,
+          onTap: () => setState(() => _activeBrush = brush),
+          onLongPress: () => _showBrushOptions(brush),
         );
       },
     );
   }
 
-  Widget _buildCustomBrushes() {
-    if (_customBrushes.isEmpty) {
-      return _buildEmptyState(
-        'No hay pinceles creados\nToca + para crear uno',
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: _customBrushes.length,
-      itemBuilder: (context, index) {
-        final brush = _customBrushes[index];
-        return BrushCard(
-          brush: brush,
-          isActive: brush.id == _activeBrushId,
-          isFavorite: _favorites.contains(brush.id),
-          isCustom: true,
-          onTap: () => setState(() => _activeBrushId = brush.id),
-          onFavoriteToggle: () => _toggleFavorite(brush.id),
-          onDelete: () => _deleteBrush(brush.id),
-        );
-      },
-    );
-  }
-
-  Widget _buildFavorites() {
-    final favoriteBrushes = [
-      ..._defaultBrushes,
-      ..._customBrushes,
-    ].where((b) => _favorites.contains(b.id)).toList();
-
-    if (favoriteBrushes.isEmpty) {
-      return _buildEmptyState(
-        'No hay favoritos\nToca ⭐ para agregar',
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: favoriteBrushes.length,
-      itemBuilder: (context, index) {
-        final brush = favoriteBrushes[index];
-        return BrushCard(
-          brush: brush,
-          isActive: brush.id == _activeBrushId,
-          isFavorite: true,
-          onTap: () => setState(() => _activeBrushId = brush.id),
-          onFavoriteToggle: () => _toggleFavorite(brush.id),
-          onDelete: () => _deleteBrush(brush.id),
-        );
-      },
-    );
-  }
-
-  Widget _buildEmptyState(String message) {
+  Widget _buildEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -241,63 +252,166 @@ class _BrushesScreenState extends State<BrushesScreen>
           const Text('🖌️', style: TextStyle(fontSize: 48)),
           const SizedBox(height: 16),
           Text(
-            message,
+            'No hay pinceles en\n${BrushModel.categoryName(_selectedCategory)}',
             style: const TextStyle(
               fontFamily: 'Raleway',
-              fontSize: 14,
+              fontSize: 16,
               color: AppTheme.textGrey,
             ),
             textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.accentRed,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: _showCreateBrushDialog,
+            icon: const Icon(Icons.add, color: Colors.white),
+            label: const Text(
+              'Crear Pincel',
+              style: TextStyle(
+                fontFamily: 'Raleway',
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
-
-  Future<void> _toggleFavorite(String brushId) async {
-    await BrushService.toggleFavorite(brushId);
-    await _loadBrushes();
+  void _showBrushOptions(BrushModel brush) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 36,
+            height: 4,
+            margin: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: AppTheme.borderColor,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Text(
+            brush.name,
+            style: const TextStyle(
+              fontFamily: 'BlackOpsOne',
+              fontSize: 14,
+              color: AppTheme.textWhite,
+              letterSpacing: 1.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildOptionItem(
+            Icons.edit_outlined,
+            'Modificar pincel',
+            'Editar nombre, tamaño y opacidad',
+            () {
+              Navigator.pop(context);
+              _showEditBrushDialog(brush);
+            },
+          ),
+          _buildOptionItem(
+            Icons.copy_outlined,
+            'Duplicar pincel',
+            'Crear una copia de este pincel',
+            () {
+              Navigator.pop(context);
+              _duplicateBrush(brush);
+            },
+          ),
+          _buildOptionItem(
+            Icons.push_pin_outlined,
+            'Fijar en favoritos',
+            'Acceso rápido desde el canvas',
+            () {
+              Navigator.pop(context);
+            },
+          ),
+          _buildOptionItem(
+            Icons.delete_outline,
+            'Eliminar pincel',
+            'Eliminar permanentemente',
+            () {
+              Navigator.pop(context);
+              _deleteBrush(brush);
+            },
+            isDestructive: true,
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
   }
 
-  Future<void> _deleteBrush(String brushId) async {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.cardColor,
-        title: const Text(
-          '💀 Eliminar Pincel',
-          style: TextStyle(
-            fontFamily: 'BlackOpsOne',
-            color: AppTheme.textWhite,
+  Widget _buildOptionItem(
+    IconData icon,
+    String title,
+    String subtitle,
+    VoidCallback onTap, {
+    bool isDestructive = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: 20, vertical: 12),
+        decoration: const BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+                color: AppTheme.borderColor, width: 0.5),
           ),
         ),
-        content: const Text(
-          '¿Eliminar este pincel?',
-          style: TextStyle(
-            color: AppTheme.textGrey,
-            fontFamily: 'Raleway',
-          ),
+        child: Row(
+          children: [
+            Icon(icon,
+                color: isDestructive
+                    ? Colors.red
+                    : AppTheme.textGrey,
+                size: 22),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 14,
+                      color: isDestructive
+                          ? Colors.red
+                          : AppTheme.textWhite,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 11,
+                      color: AppTheme.textGrey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right,
+                color: AppTheme.textGrey, size: 18),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancelar',
-              style: TextStyle(color: AppTheme.textGrey),
-            ),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await BrushService.deleteBrush(brushId);
-              await _loadBrushes();
-            },
-            child: const Text(
-              'Eliminar',
-              style: TextStyle(color: AppTheme.accentRed),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -305,271 +419,358 @@ class _BrushesScreenState extends State<BrushesScreen>
   void _showCreateBrushDialog() {
     final nameController = TextEditingController();
     StrokeType selectedType = StrokeType.liner;
+    BrushCategory selectedCategory = BrushCategory.todos;
     double size = 5.0;
     double opacity = 1.0;
 
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      backgroundColor: AppTheme.cardColor,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(16),
-        ),
-      ),
       builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) {
-          return Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom,
-              left: 16,
-              right: 16,
-              top: 16,
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AppTheme.cardColor,
+          title: const Text(
+            '➕ Nuevo Pincel',
+            style: TextStyle(
+              fontFamily: 'BlackOpsOne',
+              color: AppTheme.textWhite,
+              fontSize: 16,
             ),
+          ),
+          content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '✏️ CREAR PINCEL',
-                  style: TextStyle(
-                    fontFamily: 'BlackOpsOne',
-                    fontSize: 16,
-                    color: AppTheme.textWhite,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // Nombre
                 TextField(
                   controller: nameController,
-                  style: const TextStyle(color: AppTheme.textWhite),
+                  style: const TextStyle(
+                      color: AppTheme.textWhite),
                   decoration: InputDecoration(
-                    hintText: 'Nombre del pincel',
-                    hintStyle: const TextStyle(
-                      color: AppTheme.textGrey,
-                    ),
-                    filled: true,
-                    fillColor: AppTheme.surfaceColor,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(
-                        color: AppTheme.borderColor,
-                      ),
-                    ),
+                    labelText: 'Nombre del pincel',
+                    labelStyle: const TextStyle(
+                        color: AppTheme.textGrey),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
                       borderSide: const BorderSide(
-                        color: AppTheme.borderColor,
-                      ),
+                          color: AppTheme.borderColor),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: const BorderSide(
+                          color: AppTheme.accentRed),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
-                // Tipo
-                const Text(
-                  'TIPO:',
-                  style: TextStyle(
-                    fontFamily: 'Raleway',
-                    fontSize: 11,
-                    color: AppTheme.textGrey,
-                  ),
-                ),
+                const SizedBox(height: 16),
+                const Text('Categoría',
+                    style: TextStyle(
+                        fontFamily: 'Raleway',
+                        color: AppTheme.textGrey,
+                        fontSize: 12)),
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: StrokeType.values.map((type) {
-                    final isSelected = type == selectedType;
-                    return GestureDetector(
-                      onTap: () => setModalState(
-                        () => selectedType = type,
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? AppTheme.accentRed
-                              : AppTheme.surfaceColor,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: isSelected
-                                ? AppTheme.accentRed
-                                : AppTheme.borderColor,
-                          ),
-                        ),
-                        child: Text(
-                          type.name,
-                          style: TextStyle(
-                            fontFamily: 'Raleway',
-                            fontSize: 12,
-                            color: isSelected
-                                ? Colors.white
-                                : AppTheme.textGrey,
-                          ),
-                        ),
-                      ),
+                DropdownButton<BrushCategory>(
+                  value: selectedCategory,
+                  dropdownColor: AppTheme.cardColor,
+                  isExpanded: true,
+                  style: const TextStyle(
+                      color: AppTheme.textWhite,
+                      fontFamily: 'Raleway'),
+                  items: BrushCategory.values.map((cat) {
+                    return DropdownMenuItem(
+                      value: cat,
+                      child: Text(
+                          '${BrushModel.categoryEmoji(cat)} ${BrushModel.categoryName(cat)}'),
                     );
                   }).toList(),
-                ),
-                const SizedBox(height: 12),
-                // Tamaño
-                Row(
-                  children: [
-                    const SizedBox(
-                      width: 60,
-                      child: Text(
-                        'Tamaño',
-                        style: TextStyle(
-                          fontFamily: 'Raleway',
-                          fontSize: 11,
-                          color: AppTheme.textGrey,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Slider(
-                        value: size,
-                        min: 1,
-                        max: 50,
-                        activeColor: AppTheme.accentRed,
-                        onChanged: (v) =>
-                            setModalState(() => size = v),
-                      ),
-                    ),
-                    Text(
-                      '${size.round()}',
-                      style: const TextStyle(
-                        color: AppTheme.textWhite,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-                // Opacidad
-                Row(
-                  children: [
-                    const SizedBox(
-                      width: 60,
-                      child: Text(
-                        'Opacidad',
-                        style: TextStyle(
-                          fontFamily: 'Raleway',
-                          fontSize: 11,
-                          color: AppTheme.textGrey,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Slider(
-                        value: opacity,
-                        min: 0.1,
-                        max: 1.0,
-                        activeColor: AppTheme.accentRed,
-                        onChanged: (v) =>
-                            setModalState(() => opacity = v),
-                      ),
-                    ),
-                    Text(
-                      '${(opacity * 100).round()}%',
-                      style: const TextStyle(
-                        color: AppTheme.textWhite,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(
+                          () => selectedCategory = val);
+                    }
+                  },
                 ),
                 const SizedBox(height: 16),
-                // Botones
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text(
-                          'Cancelar',
-                          style: TextStyle(
-                            color: AppTheme.textGrey,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.accentRed,
-                        ),
-                        onPressed: () async {
-                          if (nameController.text.isEmpty) return;
-                          final newBrush = BrushModel(
-                            id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
-                            name: nameController.text,
-                            emoji: '🖌️',
-                            type: selectedType,
-                            size: size,
-                            opacity: opacity,
-                          );
-                          await BrushService.saveBrush(newBrush);
-                          Navigator.pop(context);
-                          await _loadBrushes();
-                        },
-                        child: const Text(
-                          'Crear',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  ],
+                const Text('Tipo',
+                    style: TextStyle(
+                        fontFamily: 'Raleway',
+                        color: AppTheme.textGrey,
+                        fontSize: 12)),
+                const SizedBox(height: 8),
+                DropdownButton<StrokeType>(
+                  value: selectedType,
+                  dropdownColor: AppTheme.cardColor,
+                  isExpanded: true,
+                  style: const TextStyle(
+                      color: AppTheme.textWhite,
+                      fontFamily: 'Raleway'),
+                  items: StrokeType.values.map((type) {
+                    return DropdownMenuItem(
+                      value: type,
+                      child: Text(type.name),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(
+                          () => selectedType = val);
+                    }
+                  },
                 ),
                 const SizedBox(height: 16),
+                Text('Tamaño: ${size.round()}',
+                    style: const TextStyle(
+                        fontFamily: 'Raleway',
+                        color: AppTheme.textGrey,
+                        fontSize: 12)),
+                Slider(
+                  value: size,
+                  min: 1,
+                  max: 100,
+                  activeColor: AppTheme.accentRed,
+                  onChanged: (v) =>
+                      setDialogState(() => size = v),
+                ),
+                Text(
+                    'Opacidad: ${(opacity * 100).round()}%',
+                    style: const TextStyle(
+                        fontFamily: 'Raleway',
+                        color: AppTheme.textGrey,
+                        fontSize: 12)),
+                Slider(
+                  value: opacity,
+                  min: 0.1,
+                  max: 1.0,
+                  activeColor: AppTheme.accentRed,
+                  onChanged: (v) =>
+                      setDialogState(() => opacity = v),
+                ),
               ],
             ),
-          );
-        },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar',
+                  style:
+                      TextStyle(color: AppTheme.textGrey)),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (nameController.text.isEmpty) return;
+                final newBrush = BrushModel(
+                  id: DateTime.now()
+                      .millisecondsSinceEpoch
+                      .toString(),
+                  name: nameController.text,
+                  emoji: '🖌️',
+                  type: selectedType,
+                  category: selectedCategory,
+                  size: size,
+                  opacity: opacity,
+                );
+                await BrushService.saveBrush(newBrush);
+                Navigator.pop(context);
+                _loadBrushes();
+              },
+              child: const Text('Crear',
+                  style: TextStyle(
+                      color: AppTheme.accentRed)),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  void _showSearch() {
+  void _showEditBrushDialog(BrushModel brush) {
+    final nameController =
+        TextEditingController(text: brush.name);
+    double size = brush.size;
+    double opacity = brush.opacity;
+
     showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AppTheme.cardColor,
+          title: const Text(
+            '✏️ Editar Pincel',
+            style: TextStyle(
+              fontFamily: 'BlackOpsOne',
+              color: AppTheme.textWhite,
+              fontSize: 16,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                style: const TextStyle(
+                    color: AppTheme.textWhite),
+                decoration: InputDecoration(
+                  labelText: 'Nombre',
+                  labelStyle: const TextStyle(
+                      color: AppTheme.textGrey),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(
+                        color: AppTheme.borderColor),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(
+                        color: AppTheme.accentRed),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Tamaño: ${size.round()}',
+                  style: const TextStyle(
+                      fontFamily: 'Raleway',
+                      color: AppTheme.textGrey)),
+              Slider(
+                value: size,
+                min: 1,
+                max: 100,
+                activeColor: AppTheme.accentRed,
+                onChanged: (v) =>
+                    setDialogState(() => size = v),
+              ),
+              Text(
+                  'Opacidad: ${(opacity * 100).round()}%',
+                  style: const TextStyle(
+                      fontFamily: 'Raleway',
+                      color: AppTheme.textGrey)),
+              Slider(
+                value: opacity,
+                min: 0.1,
+                max: 1.0,
+                activeColor: AppTheme.accentRed,
+                onChanged: (v) =>
+                    setDialogState(() => opacity = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar',
+                  style:
+                      TextStyle(color: AppTheme.textGrey)),
+            ),
+            TextButton(
+              onPressed: () async {
+                final updated = brush.copyWith(
+                  name: nameController.text,
+                  size: size,
+                  opacity: opacity,
+                );
+                await BrushService.updateBrush(updated);
+                Navigator.pop(context);
+                _loadBrushes();
+              },
+              child: const Text('Guardar',
+                  style: TextStyle(
+                      color: AppTheme.accentRed)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _duplicateBrush(BrushModel brush) async {
+    final duplicate = brush.copyWith(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: '${brush.name} copia',
+    );
+    await BrushService.saveBrush(duplicate);
+    _loadBrushes();
+  }
+
+  Future<void> _deleteBrush(BrushModel brush) async {
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.cardColor,
-        title: const Text(
-          '🔍 Buscar Pincel',
-          style: TextStyle(
-            fontFamily: 'BlackOpsOne',
-            color: AppTheme.textWhite,
-          ),
-        ),
-        content: TextField(
-          style: const TextStyle(color: AppTheme.textWhite),
-          decoration: InputDecoration(
-            hintText: 'Nombre del pincel...',
-            hintStyle: const TextStyle(color: AppTheme.textGrey),
-            filled: true,
-            fillColor: AppTheme.surfaceColor,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(
-                color: AppTheme.borderColor,
-              ),
-            ),
-          ),
-          onChanged: (value) {
-            // Implementar búsqueda
-          },
+        title: const Text('Eliminar pincel',
+            style: TextStyle(
+                fontFamily: 'BlackOpsOne',
+                color: AppTheme.textWhite)),
+        content: Text(
+          '¿Eliminar "${brush.name}"?',
+          style: const TextStyle(
+              fontFamily: 'Raleway',
+              color: AppTheme.textGrey),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cerrar',
-              style: TextStyle(color: AppTheme.accentRed),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar',
+                style: TextStyle(color: AppTheme.textGrey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Eliminar',
+                style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await BrushService.deleteBrush(brush.id);
+      _loadBrushes();
+    }
+  }
+
+  void _showSortOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 36,
+            height: 4,
+            margin: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: AppTheme.borderColor,
+              borderRadius: BorderRadius.circular(2),
             ),
           ),
+          const Text('ORDENAR PINCELES',
+              style: TextStyle(
+                  fontFamily: 'BlackOpsOne',
+                  fontSize: 13,
+                  color: AppTheme.textWhite,
+                  letterSpacing: 1.5)),
+          const SizedBox(height: 12),
+          _buildOptionItem(
+              Icons.sort_by_alpha, 'Por nombre', 'A-Z', () {
+            setState(() => _brushes.sort(
+                (a, b) => a.name.compareTo(b.name)));
+            Navigator.pop(context);
+          }),
+          _buildOptionItem(
+              Icons.straighten, 'Por tamaño', 'Mayor a menor',
+              () {
+            setState(() => _brushes
+                .sort((a, b) => b.size.compareTo(a.size)));
+            Navigator.pop(context);
+          }),
+          _buildOptionItem(Icons.category_outlined,
+              'Por categoría', 'Agrupados por tipo', () {
+            setState(() => _brushes.sort((a, b) =>
+                a.category.name.compareTo(b.category.name)));
+            Navigator.pop(context);
+          }),
+          const SizedBox(height: 16),
         ],
       ),
     );
