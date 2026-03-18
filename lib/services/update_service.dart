@@ -30,7 +30,7 @@ class UpdateService {
         Uri.parse(_versionUrl),
         headers: {
           'X-Master-Key':
-              r'$2a$10$Rj40cjH3ckcXtxo9CmUY9e9MUXgigpAOoQwLj9nhcTsD/QQZAdwM.',
+              $2a$10$FOj0uoW3syBnsFzUfq2P9ujG3wIwwTiERr9zVll9emK1RCIL6AvtG',
           'X-Bin-Meta': 'false',
         },
       ).timeout(const Duration(seconds: 15));
