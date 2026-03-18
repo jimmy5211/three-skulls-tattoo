@@ -8,7 +8,6 @@ import '../widgets/color_picker.dart';
 import '../models/brush_model.dart';
 import '../models/stroke_model.dart';
 
-// Secciones del panel de pinceles
 enum BrushPanelTab { todos, descargados, creados, sellos }
 enum SelloTab { creados, descargados }
 
@@ -31,7 +30,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _zoomMode = false;
   bool _eraserMode = false;
 
-  // Subventanas panel pinceles
   BrushPanelTab _brushTab = BrushPanelTab.todos;
   SelloTab _selloTab = SelloTab.creados;
 
@@ -81,17 +79,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
         point.dy > canvasTop;
   }
 
-  // Filtrar pinceles según tab activo
   List<BrushModel> get _filteredBrushes {
     switch (_brushTab) {
       case BrushPanelTab.todos:
         return _brushes;
       case BrushPanelTab.descargados:
-        return []; // futuro
+        return [];
       case BrushPanelTab.creados:
-        return []; // futuro
+        return [];
       case BrushPanelTab.sellos:
-        return []; // futuro
+        return [];
     }
   }
 
@@ -198,7 +195,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // ─── TOPBAR ───────────────────────────────────────────────
   Widget _buildTopBar() {
     return Container(
       height: _topBarHeight,
@@ -424,8 +420,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               : null,
         ),
         child: Icon(Icons.auto_fix_high,
-            color:
-                _eraserMode ? AppTheme.accentRed : _textPrimary,
+            color: _eraserMode ? AppTheme.accentRed : _textPrimary,
             size: 20),
       ),
     );
@@ -457,7 +452,79 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
           child: Stack(
             alignment: Alignment.center,
-Widget _buildSideBar() {
+            children: [
+              Icon(Icons.layers_outlined,
+                  color: _showLayers
+                      ? AppTheme.accentRed
+                      : _textPrimary,
+                  size: 20),
+              Positioned(
+                right: 4,
+                top: 4,
+                child: Container(
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: _showLayers
+                        ? AppTheme.accentRed
+                        : _borderColor,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${_controller.layers.length}',
+                      style: const TextStyle(
+                        fontSize: 8,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColorBtn() {
+    return GestureDetector(
+      onTap: () => setState(() {
+        _showColors = !_showColors;
+        if (_showColors) {
+          _showLayers = false;
+          _showBrushPanel = false;
+        }
+      }),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (c, _) => Container(
+          width: 34,
+          height: 34,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: _controller.activeColor,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: _showColors
+                  ? Colors.white
+                  : Colors.white.withOpacity(0.4),
+              width: _showColors ? 2.5 : 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: _controller.activeColor.withOpacity(0.5),
+                blurRadius: 8,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  Widget _buildSideBar() {
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
@@ -472,7 +539,6 @@ Widget _buildSideBar() {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              // TAM
               Text('TAM',
                   style: TextStyle(
                       fontFamily: 'Raleway',
@@ -489,7 +555,7 @@ Widget _buildSideBar() {
                       fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               SizedBox(
-                height: _isLandscape ? 80 : 120,
+                height: _isLandscape ? 70 : 110,
                 child: RotatedBox(
                   quarterTurns: 3,
                   child: SliderTheme(
@@ -521,7 +587,6 @@ Widget _buildSideBar() {
                 child: Container(height: 0.5, color: _borderColor),
               ),
               const SizedBox(height: 8),
-              // OPA
               Text('OPA',
                   style: TextStyle(
                       fontFamily: 'Raleway',
@@ -539,7 +604,7 @@ Widget _buildSideBar() {
                       fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               SizedBox(
-                height: _isLandscape ? 80 : 120,
+                height: _isLandscape ? 70 : 110,
                 child: RotatedBox(
                   quarterTurns: 3,
                   child: SliderTheme(
@@ -573,125 +638,7 @@ Widget _buildSideBar() {
       },
     );
   }
-// ─── SIDEBAR TAM/OPA compacto ─────────────────────────────
-  Widget _buildSideBar() {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Container(
-          width: _sideBarWidth,
-          decoration: BoxDecoration(
-            color: _panelColor.withOpacity(0.95),
-            border: Border(
-              right: BorderSide(color: _borderColor, width: 0.5),
-            ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // TAM
-              Text('TAM',
-                  style: TextStyle(
-                      fontFamily: 'Raleway',
-                      fontSize: 9,
-                      color: _textSecondary,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1)),
-              const SizedBox(height: 2),
-              Text('${_controller.activeBrush.size.round()}',
-                  style: const TextStyle(
-                      fontFamily: 'Raleway',
-                      fontSize: 12,
-                      color: _textPrimary,
-                      fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              SizedBox(
-                height: 120,
-                child: RotatedBox(
-                  quarterTurns: 3,
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: AppTheme.accentRed,
-                      inactiveTrackColor: _borderColor,
-                      thumbColor: Colors.white,
-                      overlayColor:
-                          AppTheme.accentRed.withOpacity(0.15),
-                      thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 7),
-                      trackHeight: 3,
-                      overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 14),
-                    ),
-                    child: Slider(
-                      value: _controller.activeBrush.size
-                          .clamp(1, 100),
-                      min: 1,
-                      max: 100,
-                      onChanged: (v) => setState(
-                          () => _controller.setBrushSize(v)),
-                    ),
-                  ),
-                ),
-              ),
-              // Divisor
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Container(height: 0.5, color: _borderColor),
-              ),
-              const SizedBox(height: 8),
-              // OPA
-              Text('OPA',
-                  style: TextStyle(
-                      fontFamily: 'Raleway',
-                      fontSize: 9,
-                      color: _textSecondary,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1)),
-              const SizedBox(height: 2),
-              Text(
-                  '${(_controller.activeBrush.opacity * 100).round()}%',
-                  style: const TextStyle(
-                      fontFamily: 'Raleway',
-                      fontSize: 12,
-                      color: _textPrimary,
-                      fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              SizedBox(
-                height: 120,
-                child: RotatedBox(
-                  quarterTurns: 3,
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: AppTheme.accentRed,
-                      inactiveTrackColor: _borderColor,
-                      thumbColor: Colors.white,
-                      overlayColor:
-                          AppTheme.accentRed.withOpacity(0.15),
-                      thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 7),
-                      trackHeight: 3,
-                      overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 14),
-                    ),
-                    child: Slider(
-                      value: _controller.activeBrush.opacity
-                          .clamp(0.01, 1.0),
-                      min: 0.01,
-                      max: 1.0,
-                      onChanged: (v) => setState(
-                          () => _controller.setBrushOpacity(v)),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
-  // ─── PANEL PINCELES con tabs y opciones ───────────────────
   Widget _buildBrushPanelOverlay() {
     return Positioned(
       top: _topBarHeight + 4,
@@ -714,11 +661,8 @@ Widget _buildSideBar() {
           ),
           child: Column(
             children: [
-              // Header
               _buildBrushPanelHeader(),
-              // Tabs
               _buildBrushTabs(),
-              // Contenido según tab
               Expanded(
                 child: _brushTab == BrushPanelTab.sellos
                     ? _buildSelloContent()
@@ -751,7 +695,6 @@ Widget _buildSideBar() {
             ),
           ),
           const Spacer(),
-          // Botón ... opciones
           GestureDetector(
             onTap: () => _showBrushOptions(),
             child: Container(
@@ -766,9 +709,9 @@ Widget _buildSideBar() {
                   color: _textSecondary, size: 18),
             ),
           ),
-          // Botón cerrar
           GestureDetector(
-            onTap: () => setState(() => _showBrushPanel = false),
+            onTap: () =>
+                setState(() => _showBrushPanel = false),
             child: Container(
               width: 30,
               height: 30,
@@ -821,7 +764,8 @@ Widget _buildSideBar() {
               style: TextStyle(
                 fontFamily: 'Raleway',
                 fontSize: 10,
-                color: isActive ? _textPrimary : _textSecondary,
+                color:
+                    isActive ? _textPrimary : _textSecondary,
                 fontWeight: isActive
                     ? FontWeight.bold
                     : FontWeight.normal,
@@ -842,28 +786,21 @@ Widget _buildSideBar() {
             Icon(Icons.brush_outlined,
                 color: _textSecondary, size: 40),
             const SizedBox(height: 12),
-            Text(
-              'No hay pinceles aquí',
-              style: TextStyle(
-                fontFamily: 'Raleway',
-                fontSize: 13,
-                color: _textSecondary,
-              ),
-            ),
+            Text('No hay pinceles aquí',
+                style: TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 13,
+                    color: _textSecondary)),
             const SizedBox(height: 6),
-            Text(
-              'Toca ··· para agregar',
-              style: TextStyle(
-                fontFamily: 'Raleway',
-                fontSize: 11,
-                color: _textSecondary.withOpacity(0.6),
-              ),
-            ),
+            Text('Toca ··· para agregar',
+                style: TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 11,
+                    color: _textSecondary.withOpacity(0.6))),
           ],
         ),
       );
     }
-
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
@@ -884,7 +821,6 @@ Widget _buildSideBar() {
   Widget _buildSelloContent() {
     return Column(
       children: [
-        // Sub-tabs sellos
         Container(
           height: 34,
           margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
@@ -895,11 +831,11 @@ Widget _buildSideBar() {
           child: Row(
             children: [
               _buildSelloTab('Creados', SelloTab.creados),
-              _buildSelloTab('Descargados', SelloTab.descargados),
+              _buildSelloTab(
+                  'Descargados', SelloTab.descargados),
             ],
           ),
         ),
-        // Lista vacía por ahora
         Expanded(
           child: Center(
             child: Column(
@@ -908,23 +844,18 @@ Widget _buildSideBar() {
                 Icon(Icons.interests_outlined,
                     color: _textSecondary, size: 40),
                 const SizedBox(height: 12),
-                Text(
-                  'No hay sellos aquí',
-                  style: TextStyle(
-                    fontFamily: 'Raleway',
-                    fontSize: 13,
-                    color: _textSecondary,
-                  ),
-                ),
+                Text('No hay sellos aquí',
+                    style: TextStyle(
+                        fontFamily: 'Raleway',
+                        fontSize: 13,
+                        color: _textSecondary)),
                 const SizedBox(height: 6),
-                Text(
-                  'Toca ··· para agregar',
-                  style: TextStyle(
-                    fontFamily: 'Raleway',
-                    fontSize: 11,
-                    color: _textSecondary.withOpacity(0.6),
-                  ),
-                ),
+                Text('Toca ··· para agregar',
+                    style: TextStyle(
+                        fontFamily: 'Raleway',
+                        fontSize: 11,
+                        color:
+                            _textSecondary.withOpacity(0.6))),
               ],
             ),
           ),
@@ -950,7 +881,8 @@ Widget _buildSideBar() {
               style: TextStyle(
                 fontFamily: 'Raleway',
                 fontSize: 11,
-                color: isActive ? _textPrimary : _textSecondary,
+                color:
+                    isActive ? _textPrimary : _textSecondary,
                 fontWeight: isActive
                     ? FontWeight.bold
                     : FontWeight.normal,
@@ -1060,44 +992,39 @@ Widget _buildSideBar() {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const Text(
-            'OPCIONES DE PINCELES',
-            style: TextStyle(
-              fontFamily: 'BlackOpsOne',
-              fontSize: 13,
-              color: _textPrimary,
-              letterSpacing: 1.5,
-            ),
-          ),
+          const Text('OPCIONES DE PINCELES',
+              style: TextStyle(
+                  fontFamily: 'BlackOpsOne',
+                  fontSize: 13,
+                  color: _textPrimary,
+                  letterSpacing: 1.5)),
           const SizedBox(height: 12),
-          _buildOptionRow(
-              Icons.add_circle_outline, 'Crear pincel',
-              'Diseña tu propio pincel', () {
+          _buildOptionRow(Icons.add_circle_outline,
+              'Crear pincel', 'Diseña tu propio pincel', () {
             Navigator.pop(context);
           }),
-          _buildOptionRow(
-              Icons.download_outlined, 'Importar pincel',
+          _buildOptionRow(Icons.download_outlined,
+              'Importar pincel',
               'Importa archivo .brush de Procreate', () {
             Navigator.pop(context);
           }),
-          _buildOptionRow(
-              Icons.edit_outlined, 'Modificar pincel',
+          _buildOptionRow(Icons.edit_outlined,
+              'Modificar pincel',
               'Edita el pincel seleccionado', () {
             Navigator.pop(context);
           }),
-          _buildOptionRow(
-              Icons.push_pin_outlined, 'Fijar pincel',
+          _buildOptionRow(Icons.push_pin_outlined,
+              'Fijar pincel',
               'Fija un pincel descargado o creado', () {
             Navigator.pop(context);
           }),
-          _buildOptionRow(
-              Icons.sort, 'Organizar orden',
+          _buildOptionRow(Icons.sort, 'Organizar orden',
               'Reorganiza tus pinceles', () {
             Navigator.pop(context);
           }),
-          _buildOptionRow(
-              Icons.delete_outline, 'Eliminar pincel',
-              'Elimina de acceso rápido', () {
+          _buildOptionRow(Icons.delete_outline,
+              'Eliminar pincel', 'Elimina de acceso rápido',
+              () {
             Navigator.pop(context);
           }),
           const SizedBox(height: 16),
@@ -1106,9 +1033,8 @@ Widget _buildSideBar() {
     );
   }
 
-  Widget _buildOptionRow(
-      IconData icon, String title, String subtitle,
-      VoidCallback onTap) {
+  Widget _buildOptionRow(IconData icon, String title,
+      String subtitle, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -1117,7 +1043,8 @@ Widget _buildSideBar() {
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-                color: _borderColor.withOpacity(0.5), width: 0.5),
+                color: _borderColor.withOpacity(0.5),
+                width: 0.5),
           ),
         ),
         child: Row(
@@ -1149,9 +1076,7 @@ Widget _buildSideBar() {
       ),
     );
   }
-
-  // ─── CANVAS ───────────────────────────────────────────────
-  Widget _buildCanvas() {
+Widget _buildCanvas() {
     return Positioned.fill(
       child: GestureDetector(
         onTap: () {
@@ -1240,7 +1165,6 @@ Widget _buildSideBar() {
     );
   }
 
-  // ─── WIDGETS FLOTANTES ────────────────────────────────────
   Widget _buildLayersBubble() {
     return AnimatedBuilder(
       animation: _controller,
@@ -1398,7 +1322,8 @@ Widget _buildSideBar() {
             SizedBox(width: 12),
             Text('Diseño guardado',
                 style: TextStyle(
-                    fontFamily: 'Raleway', color: Colors.white)),
+                    fontFamily: 'Raleway',
+                    color: Colors.white)),
           ],
         ),
         duration: const Duration(seconds: 2),
@@ -1410,7 +1335,6 @@ Widget _buildSideBar() {
   }
 }
 
-// ─── BRUSH LINE PAINTER ───────────────────────────────────
 class _BrushLinePainter extends CustomPainter {
   final Color color;
   final double strokeWidth;
@@ -1456,5 +1380,6 @@ class _BrushLinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) =>
+      false;
 }
