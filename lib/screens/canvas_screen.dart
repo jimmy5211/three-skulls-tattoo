@@ -25,6 +25,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _showGrid = false;
   bool _isFullscreen = false;
   bool _zoomMode = false;
+  bool _eraserMode = false;
 
   double _scale = 1.0;
   double _startScale = 1.0;
@@ -34,10 +35,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _isScaling = false;
 
   static const double _sideBarWidth = 56.0;
-  static const double _topBarHeight = 52.0;
   static const double _layerPanelWidth = 220.0;
 
-  // Colores estilo Procreate
   static const Color _bgColor = Color(0xFF3A3A3C);
   static const Color _panelColor = Color(0xFF1C1C1E);
   static const Color _cardColor = Color(0xFF2C2C2E);
@@ -52,24 +51,22 @@ class _CanvasScreenState extends State<CanvasScreen> {
     _brushes = BrushModel.defaultBrushes();
   }
 
-  bool get _isLandscape {
-    if (!mounted) return false;
-    return MediaQuery.of(context).orientation == Orientation.landscape;
-  }
+  bool get _isLandscape =>
+      mounted &&
+      MediaQuery.of(context).orientation == Orientation.landscape;
 
-  Offset _screenToCanvas(Offset screenPoint) {
-    return Offset(
-      (screenPoint.dx - _offset.dx) / _scale,
-      (screenPoint.dy - _offset.dy) / _scale,
-    );
-  }
+  double get _topBarHeight => _isLandscape ? 52.0 : 96.0;
+
+  Offset _screenToCanvas(Offset p) => Offset(
+        (p.dx - _offset.dx) / _scale,
+        (p.dy - _offset.dy) / _scale,
+      );
 
   bool _isTouchOnCanvas(Offset point) {
-    final screenWidth = MediaQuery.of(context).size.width;
+    final sw = MediaQuery.of(context).size.width;
     final canvasLeft = _sideBarWidth;
-    final canvasRight = _showLayers
-        ? screenWidth - _layerPanelWidth
-        : screenWidth;
+    final canvasRight =
+        _showLayers ? sw - _layerPanelWidth : sw;
     final canvasTop = _isFullscreen ? 0.0 : _topBarHeight;
     return point.dx > canvasLeft &&
         point.dx < canvasRight &&
@@ -79,8 +76,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final size = MediaQuery.of(context).size;
-      _controller.updateCanvasSize(size);
+      _controller.updateCanvasSize(MediaQuery.of(context).size);
     });
 
     return Scaffold(
@@ -88,10 +84,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            // Canvas
             _buildCanvas(),
 
-            // Sidebar izquierda TAM/OPA
             if (!_isFullscreen)
               Positioned(
                 left: 0,
@@ -100,7 +94,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildSideBar(),
               ),
 
-            // Topbar
             if (!_isFullscreen)
               Positioned(
                 top: 0,
@@ -109,15 +102,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildTopBar(),
               ),
 
-            // Burbuja capas
             if (!_isFullscreen)
               Positioned(
                 right: 8,
-                top: 60,
+                top: _topBarHeight + 8,
                 child: _buildLayersBubble(),
               ),
 
-            // Panel capas
             if (_showLayers && !_isFullscreen)
               Positioned(
                 right: 0,
@@ -125,27 +116,24 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 bottom: 0,
                 child: AnimatedBuilder(
                   animation: _controller,
-                  builder: (context, child) {
-                    return LayerPanel(
-                      layers: _controller.layers,
-                      activeLayerId: _controller.activeLayerId,
-                      onLayerSelected: _controller.setActiveLayer,
-                      onLayerVisibilityToggled:
-                          _controller.toggleLayerVisibility,
-                      onLayerDeleted: _controller.removeLayer,
-                      onLayerAdded: _controller.addLayer,
-                      onClose: () =>
-                          setState(() => _showLayers = false),
-                      onLayerDuplicated: _controller.duplicateLayer,
-                      onLayerMergedDown: _controller.mergeDownLayer,
-                      onLayerLocked: _controller.lockLayer,
-                      onLayersFlatten: _controller.flattenLayers,
-                    );
-                  },
+                  builder: (context, child) => LayerPanel(
+                    layers: _controller.layers,
+                    activeLayerId: _controller.activeLayerId,
+                    onLayerSelected: _controller.setActiveLayer,
+                    onLayerVisibilityToggled:
+                        _controller.toggleLayerVisibility,
+                    onLayerDeleted: _controller.removeLayer,
+                    onLayerAdded: _controller.addLayer,
+                    onClose: () =>
+                        setState(() => _showLayers = false),
+                    onLayerDuplicated: _controller.duplicateLayer,
+                    onLayerMergedDown: _controller.mergeDownLayer,
+                    onLayerLocked: _controller.lockLayer,
+                    onLayersFlatten: _controller.flattenLayers,
+                  ),
                 ),
               ),
 
-            // Burbuja color
             if (!_isFullscreen && !_showLayers)
               Positioned(
                 right: 8,
@@ -153,23 +141,19 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildColorBubble(),
               ),
 
-            // Panel colores
             if (_showColors && !_isFullscreen && !_showLayers)
               Positioned(
                 right: 8,
                 bottom: 110,
                 child: AnimatedBuilder(
                   animation: _controller,
-                  builder: (context, child) {
-                    return ColorPicker(
-                      activeColor: _controller.activeColor,
-                      onColorSelected: _controller.setActiveColor,
-                    );
-                  },
+                  builder: (context, child) => ColorPicker(
+                    activeColor: _controller.activeColor,
+                    onColorSelected: _controller.setActiveColor,
+                  ),
                 ),
               ),
 
-            // Indicador zoom
             if (!_isFullscreen && !_showLayers)
               Positioned(
                 right: 8,
@@ -177,42 +161,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildZoomIndicator(),
               ),
 
-            // Panel pinceles overlay
             if (_showBrushPanel && !_isFullscreen)
               _buildBrushPanelOverlay(),
 
-            // Botón fullscreen
             if (!_showBrushPanel)
               Positioned(
-                top: _isFullscreen ? 8 : 60,
+                top: _isFullscreen ? 8 : _topBarHeight + 8,
                 left: _isFullscreen ? 8 : _sideBarWidth + 8,
                 child: _buildFullscreenButton(),
-              ),
-
-            // Indicador zoom mode
-            if (_zoomMode)
-              Positioned(
-                top: _isFullscreen ? 8 : 60,
-                left: _isFullscreen ? 50 : _sideBarWidth + 50,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.accentRed,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    '🔍 ZOOM',
-                    style: TextStyle(
-                      fontFamily: 'Raleway',
-                      fontSize: 10,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
               ),
           ],
         ),
@@ -220,7 +176,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // ─── TOPBAR estilo Procreate ───────────────────────────────
+  // ─── TOPBAR ───────────────────────────────────────────────
   Widget _buildTopBar() {
     return Container(
       height: _topBarHeight,
@@ -230,68 +186,115 @@ class _CanvasScreenState extends State<CanvasScreen> {
           bottom: BorderSide(color: _borderColor, width: 0.5),
         ),
       ),
-      child: Row(
-        children: [
-          const SizedBox(width: 8),
-          // Izquierda: back + undo/redo + zoom
-          _buildTopBtn(
-            icon: Icons.arrow_back_ios,
-            onTap: () => context.go('/home'),
-          ),
-          _buildTopBtn(
-            icon: Icons.undo,
-            onTap: () => _controller.undo(),
-          ),
-          _buildTopBtn(
-            icon: Icons.redo,
-            onTap: () => _controller.redo(),
-          ),
-          _buildTopBtn(
-            icon: _zoomMode ? Icons.edit_outlined : Icons.zoom_in,
-            isActive: _zoomMode,
-            onTap: () => setState(() => _zoomMode = !_zoomMode),
-          ),
-          const Spacer(),
-          // Centro
-          const Text(
-            'NUEVO DISEÑO',
-            style: TextStyle(
-              fontFamily: 'BlackOpsOne',
-              fontSize: 13,
-              color: _textPrimary,
-              letterSpacing: 2,
-            ),
-          ),
-          const Spacer(),
-          // Derecha: grid + simetría + pinceles + guardar
-          _buildTopBtn(
-            icon: _showGrid ? Icons.grid_on : Icons.grid_off,
-            isActive: _showGrid,
-            onTap: () => setState(() => _showGrid = !_showGrid),
-          ),
-          AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) => _buildTopBtn(
-              icon: Icons.flip,
-              isActive: _controller.symmetryEnabled,
-              onTap: _controller.toggleSymmetry,
-            ),
-          ),
-          // Botón pinceles — destacado
-          _buildBrushTopButton(),
-          _buildTopBtn(
-            icon: Icons.save_outlined,
-            color: AppTheme.accentRed,
-            onTap: _saveDesign,
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
+      child: _isLandscape
+          ? _buildTopBarSingleRow()
+          : _buildTopBarTwoRows(),
     );
   }
 
-  Widget _buildTopBtn({
-    required IconData icon,
+  // Landscape: una sola fila
+  Widget _buildTopBarSingleRow() {
+    return Row(
+      children: [
+        const SizedBox(width: 4),
+        _btn(Icons.arrow_back_ios, onTap: () => context.go('/home')),
+        _btn(Icons.undo, onTap: _controller.undo),
+        _btn(Icons.redo, onTap: _controller.redo),
+        _btn(
+          _zoomMode ? Icons.edit_outlined : Icons.zoom_in,
+          isActive: _zoomMode,
+          onTap: () => setState(() => _zoomMode = !_zoomMode),
+        ),
+        _btn(
+          _showGrid ? Icons.grid_on : Icons.grid_off,
+          isActive: _showGrid,
+          onTap: () => setState(() => _showGrid = !_showGrid),
+        ),
+        AnimatedBuilder(
+          animation: _controller,
+          builder: (c, _) => _btn(
+            Icons.flip,
+            isActive: _controller.symmetryEnabled,
+            onTap: _controller.toggleSymmetry,
+          ),
+        ),
+        const Spacer(),
+        _buildBrushBtn(),
+        _buildEraserBtn(),
+        _buildLayersBtn(),
+        _buildColorBtn(),
+        _btn(Icons.save_outlined,
+            color: AppTheme.accentRed, onTap: _saveDesign),
+        const SizedBox(width: 4),
+      ],
+    );
+  }
+
+  // Portrait: dos filas
+  Widget _buildTopBarTwoRows() {
+    return Column(
+      children: [
+        // Fila 1
+        SizedBox(
+          height: 48,
+          child: Row(
+            children: [
+              const SizedBox(width: 4),
+              _btn(Icons.arrow_back_ios,
+                  onTap: () => context.go('/home')),
+              _btn(Icons.undo, onTap: _controller.undo),
+              _btn(Icons.redo, onTap: _controller.redo),
+              _btn(
+                _zoomMode ? Icons.edit_outlined : Icons.zoom_in,
+                isActive: _zoomMode,
+                onTap: () =>
+                    setState(() => _zoomMode = !_zoomMode),
+              ),
+              _btn(
+                _showGrid ? Icons.grid_on : Icons.grid_off,
+                isActive: _showGrid,
+                onTap: () =>
+                    setState(() => _showGrid = !_showGrid),
+              ),
+              AnimatedBuilder(
+                animation: _controller,
+                builder: (c, _) => _btn(
+                  Icons.flip,
+                  isActive: _controller.symmetryEnabled,
+                  onTap: _controller.toggleSymmetry,
+                ),
+              ),
+              const Spacer(),
+            ],
+          ),
+        ),
+        // Divisor
+        Container(height: 0.5, color: _borderColor),
+        // Fila 2
+        SizedBox(
+          height: 47,
+          child: Row(
+            children: [
+              const SizedBox(width: 4),
+              _buildBrushBtn(),
+              const SizedBox(width: 4),
+              _buildEraserBtn(),
+              const Spacer(),
+              _buildLayersBtn(),
+              _buildColorBtn(),
+              _btn(Icons.save_outlined,
+                  color: AppTheme.accentRed, onTap: _saveDesign),
+              const SizedBox(width: 4),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Botón genérico
+  Widget _btn(
+    IconData icon, {
     VoidCallback? onTap,
     bool isActive = false,
     Color? color,
@@ -321,64 +324,208 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  Widget _buildBrushTopButton() {
+  // Botón pincel
+  Widget _buildBrushBtn() {
     return GestureDetector(
       onTap: () => setState(() {
         _showBrushPanel = !_showBrushPanel;
         if (_showBrushPanel) {
           _showColors = false;
           _showLayers = false;
+          _eraserMode = false;
         }
       }),
       child: AnimatedBuilder(
         animation: _controller,
-        builder: (context, child) {
-          return Container(
-            height: 38,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            margin: const EdgeInsets.symmetric(horizontal: 3),
-            decoration: BoxDecoration(
-              color: _showBrushPanel
-                  ? AppTheme.accentRed.withOpacity(0.15)
-                  : _cardColor,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: _showBrushPanel
+        builder: (c, _) => Container(
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          decoration: BoxDecoration(
+            color: (_showBrushPanel && !_eraserMode)
+                ? AppTheme.accentRed.withOpacity(0.15)
+                : _cardColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: (_showBrushPanel && !_eraserMode)
+                  ? AppTheme.accentRed
+                  : _borderColor,
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.brush,
+                color: (_showBrushPanel && !_eraserMode)
                     ? AppTheme.accentRed
-                    : _borderColor,
-                width: 1,
+                    : _textPrimary,
+                size: 18,
               ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.brush,
-                  color: _showBrushPanel
+              const SizedBox(width: 5),
+              Text(
+                _controller.activeBrush.name.split(' ').first,
+                style: TextStyle(
+                  fontFamily: 'Raleway',
+                  fontSize: 11,
+                  color: (_showBrushPanel && !_eraserMode)
                       ? AppTheme.accentRed
-                      : _textPrimary,
-                  size: 18,
+                      : _textSecondary,
+                  fontWeight: FontWeight.bold,
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  _controller.activeBrush.name.split(' ').first,
-                  style: TextStyle(
-                    fontFamily: 'Raleway',
-                    fontSize: 11,
-                    color: _showBrushPanel
-                        ? AppTheme.accentRed
-                        : _textSecondary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
-// ─── SIDEBAR TAM/OPA estilo Procreate ─────────────────────
+
+  // Botón borrador
+  Widget _buildEraserBtn() {
+    return GestureDetector(
+      onTap: () {
+        setState(() => _eraserMode = !_eraserMode);
+        if (_eraserMode) {
+          final eraser = _brushes.firstWhere(
+            (b) => b.type == StrokeType.eraser,
+            orElse: () => _brushes.last,
+          );
+          _controller.setActiveBrush(eraser);
+        } else {
+          final liner = _brushes.firstWhere(
+            (b) => b.type == StrokeType.liner,
+            orElse: () => _brushes.first,
+          );
+          _controller.setActiveBrush(liner);
+        }
+      },
+      child: Container(
+        width: 40,
+        height: 40,
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(
+          color: _eraserMode
+              ? AppTheme.accentRed.withOpacity(0.15)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: _eraserMode
+              ? Border.all(color: AppTheme.accentRed, width: 1)
+              : null,
+        ),
+        child: Icon(
+          Icons.auto_fix_high,
+          color: _eraserMode ? AppTheme.accentRed : _textPrimary,
+          size: 20,
+        ),
+      ),
+    );
+  }
+
+  // Botón capas
+  Widget _buildLayersBtn() {
+    return GestureDetector(
+      onTap: () => setState(() {
+        _showLayers = !_showLayers;
+        if (_showLayers) {
+          _showColors = false;
+          _showBrushPanel = false;
+        }
+      }),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (c, _) => Container(
+          width: 40,
+          height: 40,
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          decoration: BoxDecoration(
+            color: _showLayers
+                ? AppTheme.accentRed.withOpacity(0.15)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: _showLayers
+                ? Border.all(color: AppTheme.accentRed, width: 1)
+                : null,
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                Icons.layers_outlined,
+                color: _showLayers
+                    ? AppTheme.accentRed
+                    : _textPrimary,
+                size: 20,
+              ),
+              Positioned(
+                right: 4,
+                top: 4,
+                child: Container(
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: _showLayers
+                        ? AppTheme.accentRed
+                        : _borderColor,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${_controller.layers.length}',
+                      style: const TextStyle(
+                        fontSize: 8,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Botón color
+  Widget _buildColorBtn() {
+    return GestureDetector(
+      onTap: () => setState(() {
+        _showColors = !_showColors;
+        if (_showColors) {
+          _showLayers = false;
+          _showBrushPanel = false;
+        }
+      }),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (c, _) => Container(
+          width: 34,
+          height: 34,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: _controller.activeColor,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: _showColors
+                  ? Colors.white
+                  : Colors.white.withOpacity(0.4),
+              width: _showColors ? 2.5 : 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: _controller.activeColor.withOpacity(0.5),
+                blurRadius: 8,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+// ─── SIDEBAR TAM/OPA ──────────────────────────────────────
   Widget _buildSideBar() {
     return AnimatedBuilder(
       animation: _controller,
@@ -394,7 +541,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
           child: Column(
             children: [
               const SizedBox(height: 16),
-              // TAM label + valor
               Text(
                 'TAM',
                 style: TextStyle(
@@ -416,7 +562,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              // Slider TAM vertical
               Expanded(
                 flex: 4,
                 child: RotatedBox(
@@ -426,7 +571,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       activeTrackColor: AppTheme.accentRed,
                       inactiveTrackColor: _borderColor,
                       thumbColor: Colors.white,
-                      overlayColor: AppTheme.accentRed.withOpacity(0.15),
+                      overlayColor:
+                          AppTheme.accentRed.withOpacity(0.15),
                       thumbShape: const RoundSliderThumbShape(
                         enabledThumbRadius: 9,
                       ),
@@ -436,25 +582,21 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       ),
                     ),
                     child: Slider(
-                      value: _controller.activeBrush.size.clamp(1, 100),
+                      value: _controller.activeBrush.size
+                          .clamp(1, 100),
                       min: 1,
                       max: 100,
-                      onChanged: (v) =>
-                          setState(() => _controller.setBrushSize(v)),
+                      onChanged: (v) => setState(
+                          () => _controller.setBrushSize(v)),
                     ),
                   ),
                 ),
               ),
-              // Divisor
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Container(
-                  height: 0.5,
-                  color: _borderColor,
-                ),
+                child: Container(height: 0.5, color: _borderColor),
               ),
               const SizedBox(height: 8),
-              // OPA label + valor
               Text(
                 'OPA',
                 style: TextStyle(
@@ -476,7 +618,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              // Slider OPA vertical
               Expanded(
                 flex: 4,
                 child: RotatedBox(
@@ -486,7 +627,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       activeTrackColor: AppTheme.accentRed,
                       inactiveTrackColor: _borderColor,
                       thumbColor: Colors.white,
-                      overlayColor: AppTheme.accentRed.withOpacity(0.15),
+                      overlayColor:
+                          AppTheme.accentRed.withOpacity(0.15),
                       thumbShape: const RoundSliderThumbShape(
                         enabledThumbRadius: 9,
                       ),
@@ -496,11 +638,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       ),
                     ),
                     child: Slider(
-                      value: _controller.activeBrush.opacity.clamp(0.01, 1.0),
+                      value: _controller.activeBrush.opacity
+                          .clamp(0.01, 1.0),
                       min: 0.01,
                       max: 1.0,
-                      onChanged: (v) =>
-                          setState(() => _controller.setBrushOpacity(v)),
+                      onChanged: (v) => setState(
+                          () => _controller.setBrushOpacity(v)),
                     ),
                   ),
                 ),
@@ -513,16 +656,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // ─── PANEL PINCELES estilo Procreate ──────────────────────
+  // ─── PANEL PINCELES ───────────────────────────────────────
   Widget _buildBrushPanelOverlay() {
     return Positioned(
       top: _topBarHeight + 4,
-      right: 68,
+      right: 8,
       child: Material(
         color: Colors.transparent,
         child: Container(
-          width: _isLandscape ? 380 : 300,
-          height: MediaQuery.of(context).size.height * 0.72,
+          width: _isLandscape ? 360 : 290,
+          height: MediaQuery.of(context).size.height * 0.68,
           decoration: BoxDecoration(
             color: _cardColor,
             borderRadius: BorderRadius.circular(18),
@@ -541,7 +684,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
                 decoration: BoxDecoration(
                   border: Border(
-                    bottom: BorderSide(color: _borderColor, width: 0.5),
+                    bottom:
+                        BorderSide(color: _borderColor, width: 0.5),
                   ),
                 ),
                 child: Row(
@@ -550,7 +694,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       'BIBLIOTECA DE AGUJAS',
                       style: TextStyle(
                         fontFamily: 'BlackOpsOne',
-                        fontSize: 13,
+                        fontSize: 12,
                         color: _textPrimary,
                         letterSpacing: 1.5,
                       ),
@@ -576,18 +720,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   ],
                 ),
               ),
-              // Lista de pinceles
+              // Lista
               Expanded(
                 child: AnimatedBuilder(
                   animation: _controller,
                   builder: (context, child) {
                     return ListView.builder(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 6),
                       itemCount: _brushes.length,
                       itemBuilder: (context, index) {
                         final brush = _brushes[index];
                         final isActive =
-                            _controller.activeBrush.name == brush.name;
+                            _controller.activeBrush.name ==
+                                brush.name;
                         return _buildBrushItem(brush, isActive);
                       },
                     );
@@ -605,11 +751,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return GestureDetector(
       onTap: () {
         _controller.setActiveBrush(brush);
-        setState(() => _showBrushPanel = false);
+        setState(() {
+          _showBrushPanel = false;
+          _eraserMode = brush.type == StrokeType.eraser;
+        });
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        margin:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        padding: const EdgeInsets.symmetric(
+            horizontal: 14, vertical: 11),
         decoration: BoxDecoration(
           color: isActive
               ? const Color(0xFF0A84FF).withOpacity(0.85)
@@ -618,7 +769,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
         ),
         child: Row(
           children: [
-            // Ícono
             Container(
               width: 36,
               height: 36,
@@ -636,7 +786,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            // Nombre + preview
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -653,7 +802,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     ),
                   ),
                   const SizedBox(height: 5),
-                  // Preview línea
                   CustomPaint(
                     size: const Size(double.infinity, 14),
                     painter: _BrushLinePainter(
@@ -661,7 +809,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                           ? Colors.white.withOpacity(0.9)
                           : _textSecondary,
                       strokeWidth: brush.size.clamp(1, 8),
-                      isDotwork: brush.type == StrokeType.dotwork,
+                      isDotwork:
+                          brush.type == StrokeType.dotwork,
                     ),
                   ),
                 ],
@@ -679,41 +828,28 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  IconData _getBrushIcon(StrokeType type) {
-    switch (type) {
-      case StrokeType.liner:
-        return Icons.edit;
-      case StrokeType.shader:
-        return Icons.brush;
-      case StrokeType.fill:
-        return Icons.format_paint;
-      case StrokeType.eraser:
-        return Icons.auto_fix_high;
-      case StrokeType.dotwork:
-        return Icons.more_horiz;
-    }
-  }
-
   // ─── CANVAS ───────────────────────────────────────────────
   Widget _buildCanvas() {
     return Positioned.fill(
       child: GestureDetector(
         onTap: () {
-          if (_showBrushPanel) setState(() => _showBrushPanel = false);
+          if (_showBrushPanel)
+            setState(() => _showBrushPanel = false);
         },
         onScaleStart: (details) {
           if (_showBrushPanel) {
             setState(() => _showBrushPanel = false);
             return;
           }
-          final touchOnCanvas = _isTouchOnCanvas(details.localFocalPoint);
+          final onCanvas =
+              _isTouchOnCanvas(details.localFocalPoint);
           if (details.pointerCount >= 2) {
             _isScaling = true;
             _controller.endStroke();
             _startScale = _scale;
             _startOffset = _offset;
             _startFocalPoint = details.localFocalPoint;
-          } else if (!touchOnCanvas || _zoomMode) {
+          } else if (!onCanvas || _zoomMode) {
             _isScaling = true;
             _controller.endStroke();
             _startScale = _scale;
@@ -721,7 +857,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _startFocalPoint = details.localFocalPoint;
           } else {
             _isScaling = false;
-            _controller.startStroke(_screenToCanvas(details.localFocalPoint));
+            _controller.startStroke(
+                _screenToCanvas(details.localFocalPoint));
           }
         },
         onScaleUpdate: (details) {
@@ -729,15 +866,19 @@ class _CanvasScreenState extends State<CanvasScreen> {
           if (details.pointerCount >= 2) {
             _isScaling = true;
             setState(() {
-              _scale = (_startScale * details.scale).clamp(0.1, 10.0);
-              _offset = _startOffset + (details.localFocalPoint - _startFocalPoint);
+              _scale = (_startScale * details.scale)
+                  .clamp(0.1, 10.0);
+              _offset = _startOffset +
+                  (details.localFocalPoint - _startFocalPoint);
             });
           } else if (_isScaling) {
             setState(() {
-              _offset = _startOffset + (details.localFocalPoint - _startFocalPoint);
+              _offset = _startOffset +
+                  (details.localFocalPoint - _startFocalPoint);
             });
           } else {
-            _controller.continueStroke(_screenToCanvas(details.localFocalPoint));
+            _controller.continueStroke(
+                _screenToCanvas(details.localFocalPoint));
           }
         },
         onScaleEnd: (details) {
@@ -756,9 +897,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   painter: CanvasPainter(
                     layers: _controller.layers,
                     currentStroke: _controller.currentStroke,
-                    currentMirrorStroke: _controller.currentMirrorStroke,
+                    currentMirrorStroke:
+                        _controller.currentMirrorStroke,
                     showGrid: _showGrid,
-                    showSymmetryLine: _controller.symmetryEnabled,
+                    showSymmetryLine:
+                        _controller.symmetryEnabled,
                     symmetryEnabled: _controller.symmetryEnabled,
                     activeLayerId: _controller.activeLayerId,
                   ),
@@ -775,20 +918,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // ─── BURBUJAS ─────────────────────────────────────────────
+  // ─── WIDGETS FLOTANTES ────────────────────────────────────
   Widget _buildLayersBubble() {
-    return GestureDetector(
-      onTap: () => setState(() {
-        _showLayers = !_showLayers;
-        if (_showLayers) {
-          _showColors = false;
-          _showBrushPanel = false;
-        }
-      }),
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          return Container(
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return GestureDetector(
+          onTap: () => setState(() {
+            _showLayers = !_showLayers;
+            if (_showLayers) {
+              _showColors = false;
+              _showBrushPanel = false;
+            }
+          }),
+          child: Container(
             width: 52,
             height: 52,
             decoration: BoxDecoration(
@@ -797,7 +940,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   : _panelColor.withOpacity(0.92),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: _showLayers ? AppTheme.accentRed : _borderColor,
+                color: _showLayers
+                    ? AppTheme.accentRed
+                    : _borderColor,
                 width: 1,
               ),
               boxShadow: [
@@ -811,7 +956,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.layers_outlined, color: Colors.white, size: 20),
+                const Icon(Icons.layers_outlined,
+                    color: Colors.white, size: 20),
                 Text(
                   '${_controller.layers.length}',
                   style: const TextStyle(
@@ -823,9 +969,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ],
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -848,12 +994,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
               color: _controller.activeColor,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: _showColors ? Colors.white : Colors.white.withOpacity(0.3),
+                color: _showColors
+                    ? Colors.white
+                    : Colors.white.withOpacity(0.3),
                 width: _showColors ? 2.5 : 1,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _controller.activeColor.withOpacity(0.5),
+                  color:
+                      _controller.activeColor.withOpacity(0.5),
                   blurRadius: 10,
                   offset: const Offset(0, 3),
                 ),
@@ -874,7 +1023,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
         _startOffset = Offset.zero;
       }),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
           color: _panelColor.withOpacity(0.85),
           borderRadius: BorderRadius.circular(10),
@@ -895,7 +1045,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildFullscreenButton() {
     return GestureDetector(
-      onTap: () => setState(() => _isFullscreen = !_isFullscreen),
+      onTap: () =>
+          setState(() => _isFullscreen = !_isFullscreen),
       child: Container(
         width: 36,
         height: 36,
@@ -905,7 +1056,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
           border: Border.all(color: _borderColor, width: 0.5),
         ),
         child: Icon(
-          _isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+          _isFullscreen
+              ? Icons.fullscreen_exit
+              : Icons.fullscreen,
           color: _textPrimary,
           size: 20,
         ),
@@ -932,7 +1085,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
         ),
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
