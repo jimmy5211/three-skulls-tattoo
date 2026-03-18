@@ -8,6 +8,10 @@ import '../widgets/color_picker.dart';
 import '../models/brush_model.dart';
 import '../models/stroke_model.dart';
 
+// Secciones del panel de pinceles
+enum BrushPanelTab { todos, descargados, creados, sellos }
+enum SelloTab { creados, descargados }
+
 class CanvasScreen extends StatefulWidget {
   const CanvasScreen({super.key});
 
@@ -26,6 +30,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _isFullscreen = false;
   bool _zoomMode = false;
   bool _eraserMode = false;
+
+  // Subventanas panel pinceles
+  BrushPanelTab _brushTab = BrushPanelTab.todos;
+  SelloTab _selloTab = SelloTab.creados;
 
   double _scale = 1.0;
   double _startScale = 1.0;
@@ -71,6 +79,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return point.dx > canvasLeft &&
         point.dx < canvasRight &&
         point.dy > canvasTop;
+  }
+
+  // Filtrar pinceles según tab activo
+  List<BrushModel> get _filteredBrushes {
+    switch (_brushTab) {
+      case BrushPanelTab.todos:
+        return _brushes;
+      case BrushPanelTab.descargados:
+        return []; // futuro
+      case BrushPanelTab.creados:
+        return []; // futuro
+      case BrushPanelTab.sellos:
+        return []; // futuro
+    }
   }
 
   @override
@@ -192,7 +214,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // Landscape: una sola fila
   Widget _buildTopBarSingleRow() {
     return Row(
       children: [
@@ -230,11 +251,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // Portrait: dos filas
   Widget _buildTopBarTwoRows() {
     return Column(
       children: [
-        // Fila 1
         SizedBox(
           height: 48,
           child: Row(
@@ -268,9 +287,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             ],
           ),
         ),
-        // Divisor
         Container(height: 0.5, color: _borderColor),
-        // Fila 2
         SizedBox(
           height: 47,
           child: Row(
@@ -292,9 +309,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // Botón genérico
-  Widget _btn(
-    IconData icon, {
+  Widget _btn(IconData icon, {
     VoidCallback? onTap,
     bool isActive = false,
     Color? color,
@@ -314,17 +329,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ? Border.all(color: AppTheme.accentRed, width: 1)
               : null,
         ),
-        child: Icon(
-          icon,
-          color: color ??
-              (isActive ? AppTheme.accentRed : _textPrimary),
-          size: 20,
-        ),
+        child: Icon(icon,
+            color: color ??
+                (isActive ? AppTheme.accentRed : _textPrimary),
+            size: 20),
       ),
     );
   }
 
-  // Botón pincel
   Widget _buildBrushBtn() {
     return GestureDetector(
       onTap: () => setState(() {
@@ -356,13 +368,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.brush,
-                color: (_showBrushPanel && !_eraserMode)
-                    ? AppTheme.accentRed
-                    : _textPrimary,
-                size: 18,
-              ),
+              Icon(Icons.brush,
+                  color: (_showBrushPanel && !_eraserMode)
+                      ? AppTheme.accentRed
+                      : _textPrimary,
+                  size: 18),
               const SizedBox(width: 5),
               Text(
                 _controller.activeBrush.name.split(' ').first,
@@ -382,7 +392,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // Botón borrador
   Widget _buildEraserBtn() {
     return GestureDetector(
       onTap: () {
@@ -414,16 +423,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ? Border.all(color: AppTheme.accentRed, width: 1)
               : null,
         ),
-        child: Icon(
-          Icons.auto_fix_high,
-          color: _eraserMode ? AppTheme.accentRed : _textPrimary,
-          size: 20,
-        ),
+        child: Icon(Icons.auto_fix_high,
+            color:
+                _eraserMode ? AppTheme.accentRed : _textPrimary,
+            size: 20),
       ),
     );
   }
 
-  // Botón capas
   Widget _buildLayersBtn() {
     return GestureDetector(
       onTap: () => setState(() {
@@ -451,13 +458,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
           child: Stack(
             alignment: Alignment.center,
             children: [
-              Icon(
-                Icons.layers_outlined,
-                color: _showLayers
-                    ? AppTheme.accentRed
-                    : _textPrimary,
-                size: 20,
-              ),
+              Icon(Icons.layers_outlined,
+                  color: _showLayers
+                      ? AppTheme.accentRed
+                      : _textPrimary,
+                  size: 20),
               Positioned(
                 right: 4,
                 top: 4,
@@ -489,7 +494,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // Botón color
   Widget _buildColorBtn() {
     return GestureDetector(
       onTap: () => setState(() {
@@ -525,7 +529,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
       ),
     );
   }
-// ─── SIDEBAR TAM/OPA ──────────────────────────────────────
+// ─── SIDEBAR TAM/OPA compacto ─────────────────────────────
   Widget _buildSideBar() {
     return AnimatedBuilder(
       animation: _controller,
@@ -540,30 +544,25 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
           child: Column(
             children: [
-              const SizedBox(height: 16),
-              Text(
-                'TAM',
-                style: TextStyle(
-                  fontFamily: 'Raleway',
-                  fontSize: 9,
-                  color: _textSecondary,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
-                ),
-              ),
+              const SizedBox(height: 12),
+              // TAM
+              Text('TAM',
+                  style: TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 9,
+                      color: _textSecondary,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1)),
               const SizedBox(height: 2),
-              Text(
-                '${_controller.activeBrush.size.round()}',
-                style: const TextStyle(
-                  fontFamily: 'Raleway',
-                  fontSize: 13,
-                  color: _textPrimary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
+              Text('${_controller.activeBrush.size.round()}',
+                  style: const TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 12,
+                      color: _textPrimary,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
               Expanded(
-                flex: 4,
+                flex: 1,
                 child: RotatedBox(
                   quarterTurns: 3,
                   child: SliderTheme(
@@ -574,12 +573,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       overlayColor:
                           AppTheme.accentRed.withOpacity(0.15),
                       thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 9,
-                      ),
-                      trackHeight: 4,
+                          enabledThumbRadius: 7),
+                      trackHeight: 3,
                       overlayShape: const RoundSliderOverlayShape(
-                        overlayRadius: 18,
-                      ),
+                          overlayRadius: 14),
                     ),
                     child: Slider(
                       value: _controller.activeBrush.size
@@ -592,34 +589,31 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   ),
                 ),
               ),
+              // Divisor
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: Container(height: 0.5, color: _borderColor),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'OPA',
-                style: TextStyle(
-                  fontFamily: 'Raleway',
-                  fontSize: 9,
-                  color: _textSecondary,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
-                ),
-              ),
+              const SizedBox(height: 4),
+              // OPA
+              Text('OPA',
+                  style: TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 9,
+                      color: _textSecondary,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1)),
               const SizedBox(height: 2),
               Text(
-                '${(_controller.activeBrush.opacity * 100).round()}%',
-                style: const TextStyle(
-                  fontFamily: 'Raleway',
-                  fontSize: 13,
-                  color: _textPrimary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
+                  '${(_controller.activeBrush.opacity * 100).round()}%',
+                  style: const TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 12,
+                      color: _textPrimary,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
               Expanded(
-                flex: 4,
+                flex: 1,
                 child: RotatedBox(
                   quarterTurns: 3,
                   child: SliderTheme(
@@ -630,12 +624,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       overlayColor:
                           AppTheme.accentRed.withOpacity(0.15),
                       thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 9,
-                      ),
-                      trackHeight: 4,
+                          enabledThumbRadius: 7),
+                      trackHeight: 3,
                       overlayShape: const RoundSliderOverlayShape(
-                        overlayRadius: 18,
-                      ),
+                          overlayRadius: 14),
                     ),
                     child: Slider(
                       value: _controller.activeBrush.opacity
@@ -648,7 +640,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
             ],
           ),
         );
@@ -656,7 +648,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // ─── PANEL PINCELES ───────────────────────────────────────
+  // ─── PANEL PINCELES con tabs y opciones ───────────────────
   Widget _buildBrushPanelOverlay() {
     return Positioned(
       top: _topBarHeight + 4,
@@ -664,8 +656,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       child: Material(
         color: Colors.transparent,
         child: Container(
-          width: _isLandscape ? 360 : 290,
-          height: MediaQuery.of(context).size.height * 0.68,
+          width: _isLandscape ? 360 : 300,
+          height: MediaQuery.of(context).size.height * 0.75,
           decoration: BoxDecoration(
             color: _cardColor,
             borderRadius: BorderRadius.circular(18),
@@ -680,67 +672,247 @@ class _CanvasScreenState extends State<CanvasScreen> {
           child: Column(
             children: [
               // Header
-              Container(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom:
-                        BorderSide(color: _borderColor, width: 0.5),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Text(
-                      'BIBLIOTECA DE AGUJAS',
-                      style: TextStyle(
-                        fontFamily: 'BlackOpsOne',
-                        fontSize: 12,
-                        color: _textPrimary,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                    const Spacer(),
-                    GestureDetector(
-                      onTap: () =>
-                          setState(() => _showBrushPanel = false),
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: _borderColor.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.close,
-                          color: _textSecondary,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Lista
+              _buildBrushPanelHeader(),
+              // Tabs
+              _buildBrushTabs(),
+              // Contenido según tab
               Expanded(
-                child: AnimatedBuilder(
-                  animation: _controller,
-                  builder: (context, child) {
-                    return ListView.builder(
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 6),
-                      itemCount: _brushes.length,
-                      itemBuilder: (context, index) {
-                        final brush = _brushes[index];
-                        final isActive =
-                            _controller.activeBrush.name ==
-                                brush.name;
-                        return _buildBrushItem(brush, isActive);
-                      },
-                    );
-                  },
-                ),
+                child: _brushTab == BrushPanelTab.sellos
+                    ? _buildSelloContent()
+                    : _buildBrushList(_filteredBrushes),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBrushPanelHeader() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: _borderColor, width: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Text(
+            'BIBLIOTECA DE AGUJAS',
+            style: TextStyle(
+              fontFamily: 'BlackOpsOne',
+              fontSize: 11,
+              color: _textPrimary,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const Spacer(),
+          // Botón ... opciones
+          GestureDetector(
+            onTap: () => _showBrushOptions(),
+            child: Container(
+              width: 30,
+              height: 30,
+              margin: const EdgeInsets.only(right: 6),
+              decoration: BoxDecoration(
+                color: _borderColor.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.more_horiz,
+                  color: _textSecondary, size: 18),
+            ),
+          ),
+          // Botón cerrar
+          GestureDetector(
+            onTap: () => setState(() => _showBrushPanel = false),
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: _borderColor.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.close,
+                  color: _textSecondary, size: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBrushTabs() {
+    return Container(
+      height: 36,
+      margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+      decoration: BoxDecoration(
+        color: _panelColor,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          _buildTab('Todos', BrushPanelTab.todos),
+          _buildTab('Descargados', BrushPanelTab.descargados),
+          _buildTab('Creados', BrushPanelTab.creados),
+          _buildTab('Sellos', BrushPanelTab.sellos),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTab(String label, BrushPanelTab tab) {
+    final isActive = _brushTab == tab;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _brushTab = tab),
+        child: Container(
+          margin: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: isActive ? _cardColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Raleway',
+                fontSize: 10,
+                color: isActive ? _textPrimary : _textSecondary,
+                fontWeight: isActive
+                    ? FontWeight.bold
+                    : FontWeight.normal,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBrushList(List<BrushModel> brushes) {
+    if (brushes.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.brush_outlined,
+                color: _textSecondary, size: 40),
+            const SizedBox(height: 12),
+            Text(
+              'No hay pinceles aquí',
+              style: TextStyle(
+                fontFamily: 'Raleway',
+                fontSize: 13,
+                color: _textSecondary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Toca ··· para agregar',
+              style: TextStyle(
+                fontFamily: 'Raleway',
+                fontSize: 11,
+                color: _textSecondary.withOpacity(0.6),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          itemCount: brushes.length,
+          itemBuilder: (context, index) {
+            final brush = brushes[index];
+            final isActive =
+                _controller.activeBrush.name == brush.name;
+            return _buildBrushItem(brush, isActive);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSelloContent() {
+    return Column(
+      children: [
+        // Sub-tabs sellos
+        Container(
+          height: 34,
+          margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+          decoration: BoxDecoration(
+            color: _panelColor,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              _buildSelloTab('Creados', SelloTab.creados),
+              _buildSelloTab('Descargados', SelloTab.descargados),
+            ],
+          ),
+        ),
+        // Lista vacía por ahora
+        Expanded(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.interests_outlined,
+                    color: _textSecondary, size: 40),
+                const SizedBox(height: 12),
+                Text(
+                  'No hay sellos aquí',
+                  style: TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 13,
+                    color: _textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Toca ··· para agregar',
+                  style: TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 11,
+                    color: _textSecondary.withOpacity(0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSelloTab(String label, SelloTab tab) {
+    final isActive = _selloTab == tab;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selloTab = tab),
+        child: Container(
+          margin: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: isActive ? _cardColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Raleway',
+                fontSize: 11,
+                color: isActive ? _textPrimary : _textSecondary,
+                fontWeight: isActive
+                    ? FontWeight.bold
+                    : FontWeight.normal,
+              ),
+            ),
           ),
         ),
       ),
@@ -757,10 +929,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
         });
       },
       child: Container(
-        margin:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        margin: const EdgeInsets.symmetric(
+            horizontal: 10, vertical: 3),
         padding: const EdgeInsets.symmetric(
-            horizontal: 14, vertical: 11),
+            horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: isActive
               ? const Color(0xFF0A84FF).withOpacity(0.85)
@@ -770,8 +942,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
         child: Row(
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: 34,
+              height: 34,
               decoration: BoxDecoration(
                 color: isActive
                     ? Colors.white.withOpacity(0.2)
@@ -779,10 +951,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Center(
-                child: Text(
-                  brush.emoji,
-                  style: const TextStyle(fontSize: 18),
-                ),
+                child: Text(brush.emoji,
+                    style: const TextStyle(fontSize: 16)),
               ),
             ),
             const SizedBox(width: 12),
@@ -794,16 +964,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     brush.name,
                     style: TextStyle(
                       fontFamily: 'Raleway',
-                      fontSize: 14,
-                      color: isActive ? Colors.white : _textPrimary,
+                      fontSize: 13,
+                      color: isActive
+                          ? Colors.white
+                          : _textPrimary,
                       fontWeight: isActive
                           ? FontWeight.bold
                           : FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 4),
                   CustomPaint(
-                    size: const Size(double.infinity, 14),
+                    size: const Size(double.infinity, 12),
                     painter: _BrushLinePainter(
                       color: isActive
                           ? Colors.white.withOpacity(0.9)
@@ -817,11 +989,118 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ),
             ),
             if (isActive)
-              const Icon(
-                Icons.check_circle,
-                color: Colors.white,
-                size: 18,
+              const Icon(Icons.check_circle,
+                  color: Colors.white, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBrushOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 36,
+            height: 4,
+            margin: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: _borderColor,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const Text(
+            'OPCIONES DE PINCELES',
+            style: TextStyle(
+              fontFamily: 'BlackOpsOne',
+              fontSize: 13,
+              color: _textPrimary,
+              letterSpacing: 1.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildOptionRow(
+              Icons.add_circle_outline, 'Crear pincel',
+              'Diseña tu propio pincel', () {
+            Navigator.pop(context);
+          }),
+          _buildOptionRow(
+              Icons.download_outlined, 'Importar pincel',
+              'Importa archivo .brush de Procreate', () {
+            Navigator.pop(context);
+          }),
+          _buildOptionRow(
+              Icons.edit_outlined, 'Modificar pincel',
+              'Edita el pincel seleccionado', () {
+            Navigator.pop(context);
+          }),
+          _buildOptionRow(
+              Icons.push_pin_outlined, 'Fijar pincel',
+              'Fija un pincel descargado o creado', () {
+            Navigator.pop(context);
+          }),
+          _buildOptionRow(
+              Icons.sort, 'Organizar orden',
+              'Reorganiza tus pinceles', () {
+            Navigator.pop(context);
+          }),
+          _buildOptionRow(
+              Icons.delete_outline, 'Eliminar pincel',
+              'Elimina de acceso rápido', () {
+            Navigator.pop(context);
+          }),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOptionRow(
+      IconData icon, String title, String subtitle,
+      VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+                color: _borderColor.withOpacity(0.5), width: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: _textSecondary, size: 22),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontFamily: 'Raleway',
+                          fontSize: 14,
+                          color: _textPrimary,
+                          fontWeight: FontWeight.bold)),
+                  Text(subtitle,
+                      style: TextStyle(
+                          fontFamily: 'Raleway',
+                          fontSize: 11,
+                          color: _textSecondary)),
+                ],
               ),
+            ),
+            Icon(Icons.chevron_right,
+                color: _textSecondary, size: 18),
           ],
         ),
       ),
@@ -1023,8 +1302,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
         _startOffset = Offset.zero;
       }),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        padding: const EdgeInsets.symmetric(
+            horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
           color: _panelColor.withOpacity(0.85),
           borderRadius: BorderRadius.circular(10),
@@ -1074,13 +1353,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
           children: [
             Text('💀', style: TextStyle(fontSize: 20)),
             SizedBox(width: 12),
-            Text(
-              'Diseño guardado',
-              style: TextStyle(
-                fontFamily: 'Raleway',
-                color: Colors.white,
-              ),
-            ),
+            Text('Diseño guardado',
+                style: TextStyle(
+                    fontFamily: 'Raleway', color: Colors.white)),
           ],
         ),
         duration: const Duration(seconds: 2),
