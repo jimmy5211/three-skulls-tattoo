@@ -23,16 +23,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _downloadProgress = 0.0;
   String _selectedLanguage = 'Español';
   String _lastCheckDate = 'Nunca';
+  String _installedVersion = '...';
 
   @override
   void initState() {
     super.initState();
-    _loadLastCheckDate();
+    _loadData();
   }
 
-  Future<void> _loadLastCheckDate() async {
+  Future<void> _loadData() async {
     final date = await UpdateService.getLastCheckDate();
-    setState(() => _lastCheckDate = date);
+    final version = await UpdateService.currentVersion;
+    setState(() {
+      _lastCheckDate = date;
+      _installedVersion = version;
+    });
   }
 
   @override
@@ -111,12 +116,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       _buildActionTile(
                         '📋 Notas de la versión',
-                        'Versión actual: ${UpdateService.currentVersion}',
+                        'Versión actual: $_installedVersion',
                         () => _showReleaseNotes(),
                       ),
                     ],
                   ),
-                  // Barra de progreso descarga
                   if (_isDownloading)
                     Container(
                       margin: const EdgeInsets.only(top: 8),
@@ -124,9 +128,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       decoration: BoxDecoration(
                         color: AppTheme.cardColor,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: AppTheme.borderColor,
-                        ),
+                        border: Border.all(color: AppTheme.borderColor),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,7 +171,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     [
                       _buildInfoTile(
                         'Three Skulls Tattoo',
-                        'Versión ${UpdateService.currentVersion}',
+                        'Versión $_installedVersion',
                       ),
                       _buildInfoTile(
                         'Desarrollado con',
@@ -203,11 +205,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(
-              Icons.arrow_back,
-              color: AppTheme.textWhite,
-              size: 20,
-            ),
+            icon: const Icon(Icons.arrow_back,
+                color: AppTheme.textWhite, size: 20),
             onPressed: () => context.go('/home'),
           ),
           const Expanded(
@@ -273,22 +272,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontFamily: 'Raleway',
-                    fontSize: 14,
-                    color: AppTheme.textWhite,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontFamily: 'Raleway',
-                    fontSize: 11,
-                    color: AppTheme.textGrey,
-                  ),
-                ),
+                Text(title,
+                    style: const TextStyle(
+                        fontFamily: 'Raleway',
+                        fontSize: 14,
+                        color: AppTheme.textWhite)),
+                Text(subtitle,
+                    style: const TextStyle(
+                        fontFamily: 'Raleway',
+                        fontSize: 11,
+                        color: AppTheme.textGrey)),
               ],
             ),
           ),
@@ -310,10 +303,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: const BoxDecoration(
           border: Border(
-            bottom: BorderSide(color: AppTheme.borderColor, width: 0.5),
+            bottom:
+                BorderSide(color: AppTheme.borderColor, width: 0.5),
           ),
         ),
         child: Row(
@@ -322,22 +317,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontFamily: 'Raleway',
-                      fontSize: 14,
-                      color: AppTheme.textWhite,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontFamily: 'Raleway',
-                      fontSize: 11,
-                      color: AppTheme.textGrey,
-                    ),
-                  ),
+                  Text(title,
+                      style: const TextStyle(
+                          fontFamily: 'Raleway',
+                          fontSize: 14,
+                          color: AppTheme.textWhite)),
+                  Text(subtitle,
+                      style: const TextStyle(
+                          fontFamily: 'Raleway',
+                          fontSize: 11,
+                          color: AppTheme.textGrey)),
                 ],
               ),
             ),
@@ -350,11 +339,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       color: AppTheme.accentRed,
                     ),
                   )
-                : const Icon(
-                    Icons.chevron_right,
-                    color: AppTheme.textGrey,
-                    size: 20,
-                  ),
+                : const Icon(Icons.chevron_right,
+                    color: AppTheme.textGrey, size: 20),
           ],
         ),
       ),
@@ -372,30 +358,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(
-                fontFamily: 'Raleway',
-                fontSize: 14,
-                color: AppTheme.textWhite,
-              ),
-            ),
+            child: Text(title,
+                style: const TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 14,
+                    color: AppTheme.textWhite)),
           ),
           DropdownButton<String>(
             value: value,
             dropdownColor: AppTheme.cardColor,
             style: const TextStyle(
-              fontFamily: 'Raleway',
-              fontSize: 13,
-              color: AppTheme.textWhite,
-            ),
-            underline: Container(height: 1, color: AppTheme.accentRed),
-            items: options.map((option) {
-              return DropdownMenuItem(
-                value: option,
-                child: Text(option),
-              );
-            }).toList(),
+                fontFamily: 'Raleway',
+                fontSize: 13,
+                color: AppTheme.textWhite),
+            underline:
+                Container(height: 1, color: AppTheme.accentRed),
+            items: options
+                .map((o) =>
+                    DropdownMenuItem(value: o, child: Text(o)))
+                .toList(),
             onChanged: onChanged,
           ),
         ],
@@ -405,31 +386,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildInfoTile(String title, String value) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: AppTheme.borderColor, width: 0.5),
+          bottom:
+              BorderSide(color: AppTheme.borderColor, width: 0.5),
         ),
       ),
       child: Row(
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontFamily: 'Raleway',
-              fontSize: 14,
-              color: AppTheme.textGrey,
-            ),
-          ),
+          Text(title,
+              style: const TextStyle(
+                  fontFamily: 'Raleway',
+                  fontSize: 14,
+                  color: AppTheme.textGrey)),
           const Spacer(),
-          Text(
-            value,
-            style: const TextStyle(
-              fontFamily: 'Raleway',
-              fontSize: 13,
-              color: AppTheme.textWhite,
-            ),
-          ),
+          Text(value,
+              style: const TextStyle(
+                  fontFamily: 'Raleway',
+                  fontSize: 13,
+                  color: AppTheme.textWhite)),
         ],
       ),
     );
@@ -453,13 +430,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               Text('✅', style: TextStyle(fontSize: 20)),
               SizedBox(width: 12),
-              Text(
-                'Ya tienes la última versión',
-                style: TextStyle(
-                  fontFamily: 'Raleway',
-                  color: AppTheme.textWhite,
-                ),
-              ),
+              Text('Ya tienes la última versión',
+                  style: TextStyle(
+                      fontFamily: 'Raleway',
+                      color: AppTheme.textWhite)),
             ],
           ),
           duration: Duration(seconds: 2),
@@ -473,65 +447,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.cardColor,
-        title: const Text(
-          '🎉 Nueva Versión',
-          style: TextStyle(
-            fontFamily: 'BlackOpsOne',
-            color: AppTheme.textWhite,
-            fontSize: 16,
-          ),
-        ),
+        title: const Text('🎉 Nueva Versión',
+            style: TextStyle(
+                fontFamily: 'BlackOpsOne',
+                color: AppTheme.textWhite,
+                fontSize: 16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Versión ${updateInfo.version} disponible',
-              style: const TextStyle(
-                fontFamily: 'BlackOpsOne',
-                color: AppTheme.accentRed,
-                fontSize: 14,
-              ),
-            ),
+            Text('Versión ${updateInfo.version} disponible',
+                style: const TextStyle(
+                    fontFamily: 'BlackOpsOne',
+                    color: AppTheme.accentRed,
+                    fontSize: 14)),
             const SizedBox(height: 12),
-            const Text(
-              'NOVEDADES:',
-              style: TextStyle(
-                fontFamily: 'Raleway',
-                color: AppTheme.textGrey,
-                fontSize: 11,
-              ),
-            ),
+            const Text('NOVEDADES:',
+                style: TextStyle(
+                    fontFamily: 'Raleway',
+                    color: AppTheme.textGrey,
+                    fontSize: 11)),
             const SizedBox(height: 4),
-            Text(
-              updateInfo.releaseNotes,
-              style: const TextStyle(
-                fontFamily: 'Raleway',
-                color: AppTheme.textWhite,
-                fontSize: 12,
-              ),
-              maxLines: 6,
-              overflow: TextOverflow.ellipsis,
-            ),
+            Text(updateInfo.releaseNotes,
+                style: const TextStyle(
+                    fontFamily: 'Raleway',
+                    color: AppTheme.textWhite,
+                    fontSize: 12),
+                maxLines: 6,
+                overflow: TextOverflow.ellipsis),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Después',
-              style: TextStyle(color: AppTheme.textGrey),
-            ),
+            child: const Text('Después',
+                style: TextStyle(color: AppTheme.textGrey)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               _downloadAndInstall(updateInfo.downloadUrl);
             },
-            child: const Text(
-              '⬇️ Actualizar',
-              style: TextStyle(color: AppTheme.accentRed),
-            ),
+            child: const Text('⬇️ Actualizar',
+                style: TextStyle(color: AppTheme.accentRed)),
           ),
         ],
       ),
@@ -546,9 +504,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       final request = http.Request('GET', Uri.parse(url));
-      final response = await request.send().timeout(
-        const Duration(minutes: 10),
-      );
+      final response = await request
+          .send()
+          .timeout(const Duration(minutes: 10));
 
       if (response.statusCode != 200) {
         throw Exception('Error HTTP: ${response.statusCode}');
@@ -565,9 +523,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         sink.add(chunk);
         downloaded += chunk.length;
         if (contentLength > 0) {
-          setState(() {
-            _downloadProgress = downloaded / contentLength;
-          });
+          setState(
+              () => _downloadProgress = downloaded / contentLength);
         }
       }
       await sink.close();
@@ -577,9 +534,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _downloadProgress = 1.0;
       });
 
-      // Lanzar instalador
       await OpenFile.open(apkPath);
-
     } catch (e) {
       setState(() => _isDownloading = false);
       if (!mounted) return;
@@ -591,13 +546,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Text('❌', style: TextStyle(fontSize: 20)),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  'Error: $e',
-                  style: const TextStyle(
-                    fontFamily: 'Raleway',
-                    color: AppTheme.textWhite,
-                  ),
-                ),
+                child: Text('Error: $e',
+                    style: const TextStyle(
+                        fontFamily: 'Raleway',
+                        color: AppTheme.textWhite)),
               ),
             ],
           ),
@@ -615,13 +567,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Text('☁️', style: TextStyle(fontSize: 20)),
             SizedBox(width: 12),
-            Text(
-              'Sincronizando...',
-              style: TextStyle(
-                fontFamily: 'Raleway',
-                color: AppTheme.textWhite,
-              ),
-            ),
+            Text('Sincronizando...',
+                style: TextStyle(
+                    fontFamily: 'Raleway',
+                    color: AppTheme.textWhite)),
           ],
         ),
         duration: Duration(seconds: 2),
@@ -637,13 +586,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Text('G', style: TextStyle(fontSize: 20)),
             SizedBox(width: 12),
-            Text(
-              'Conectando Google Drive...',
-              style: TextStyle(
-                fontFamily: 'Raleway',
-                color: AppTheme.textWhite,
-              ),
-            ),
+            Text('Conectando Google Drive...',
+                style: TextStyle(
+                    fontFamily: 'Raleway',
+                    color: AppTheme.textWhite)),
           ],
         ),
         duration: Duration(seconds: 2),
@@ -656,58 +602,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.cardColor,
-        title: const Text(
-          '📋 Notas de Versión',
-          style: TextStyle(
-            fontFamily: 'BlackOpsOne',
-            color: AppTheme.textWhite,
-          ),
-        ),
-        content: const Column(
+        title: const Text('📋 Notas de Versión',
+            style: TextStyle(
+                fontFamily: 'BlackOpsOne',
+                color: AppTheme.textWhite)),
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Versión 1.0.0',
-              style: TextStyle(
-                fontFamily: 'BlackOpsOne',
-                color: AppTheme.accentRed,
-                fontSize: 14,
-              ),
+              'Versión $_installedVersion',
+              style: const TextStyle(
+                  fontFamily: 'BlackOpsOne',
+                  color: AppTheme.accentRed,
+                  fontSize: 14),
             ),
-            SizedBox(height: 8),
-            Text(
-              '• Canvas de dibujo completo\n'
+            const SizedBox(height: 8),
+            const Text(
+              '• Canvas rediseñado estilo Procreate\n'
+              '• Panel de pinceles mejorado\n'
+              '• Sliders TAM/OPA en sidebar\n'
               '• Zoom y paneo con 2 dedos\n'
               '• Sistema de capas\n'
-              '• Borrador por capa\n'
-              '• Pinceles para tatuaje\n'
-              '• Crear estencil con IA\n'
-              '• Mis pinceles\n'
-              '• Mis fuentes\n'
-              '• Mis proyectos\n'
-              '• IA Studio\n'
-              '• Herramientas\n'
-              '• Configuración completa\n'
-              '• Auto-update implementado',
+              '• Auto-update mejorado\n'
+              '• Bug fixes',
               style: TextStyle(
-                fontFamily: 'Raleway',
-                color: AppTheme.textGrey,
-                fontSize: 13,
-              ),
+                  fontFamily: 'Raleway',
+                  color: AppTheme.textGrey,
+                  fontSize: 13),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cerrar',
-              style: TextStyle(color: AppTheme.accentRed),
-            ),
+            child: const Text('Cerrar',
+                style: TextStyle(color: AppTheme.accentRed)),
           ),
         ],
       ),
     );
   }
-}
