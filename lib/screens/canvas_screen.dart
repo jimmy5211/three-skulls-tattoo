@@ -457,76 +457,120 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
           child: Stack(
             alignment: Alignment.center,
+Widget _buildSideBar() {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Container(
+          width: _sideBarWidth,
+          decoration: BoxDecoration(
+            color: _panelColor.withOpacity(0.95),
+            border: Border(
+              right: BorderSide(color: _borderColor, width: 0.5),
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Icon(Icons.layers_outlined,
-                  color: _showLayers
-                      ? AppTheme.accentRed
-                      : _textPrimary,
-                  size: 20),
-              Positioned(
-                right: 4,
-                top: 4,
-                child: Container(
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: _showLayers
-                        ? AppTheme.accentRed
-                        : _borderColor,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${_controller.layers.length}',
-                      style: const TextStyle(
-                        fontSize: 8,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
+              // TAM
+              Text('TAM',
+                  style: TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 9,
+                      color: _textSecondary,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1)),
+              const SizedBox(height: 2),
+              Text('${_controller.activeBrush.size.round()}',
+                  style: const TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 12,
+                      color: _textPrimary,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              SizedBox(
+                height: _isLandscape ? 80 : 120,
+                child: RotatedBox(
+                  quarterTurns: 3,
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: AppTheme.accentRed,
+                      inactiveTrackColor: _borderColor,
+                      thumbColor: Colors.white,
+                      overlayColor:
+                          AppTheme.accentRed.withOpacity(0.15),
+                      thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 7),
+                      trackHeight: 3,
+                      overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 14),
+                    ),
+                    child: Slider(
+                      value: _controller.activeBrush.size
+                          .clamp(1, 100),
+                      min: 1,
+                      max: 100,
+                      onChanged: (v) => setState(
+                          () => _controller.setBrushSize(v)),
                     ),
                   ),
                 ),
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildColorBtn() {
-    return GestureDetector(
-      onTap: () => setState(() {
-        _showColors = !_showColors;
-        if (_showColors) {
-          _showLayers = false;
-          _showBrushPanel = false;
-        }
-      }),
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (c, _) => Container(
-          width: 34,
-          height: 34,
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(
-            color: _controller.activeColor,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: _showColors
-                  ? Colors.white
-                  : Colors.white.withOpacity(0.4),
-              width: _showColors ? 2.5 : 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: _controller.activeColor.withOpacity(0.5),
-                blurRadius: 8,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Container(height: 0.5, color: _borderColor),
               ),
+              const SizedBox(height: 8),
+              // OPA
+              Text('OPA',
+                  style: TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 9,
+                      color: _textSecondary,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1)),
+              const SizedBox(height: 2),
+              Text(
+                  '${(_controller.activeBrush.opacity * 100).round()}%',
+                  style: const TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 12,
+                      color: _textPrimary,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              SizedBox(
+                height: _isLandscape ? 80 : 120,
+                child: RotatedBox(
+                  quarterTurns: 3,
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: AppTheme.accentRed,
+                      inactiveTrackColor: _borderColor,
+                      thumbColor: Colors.white,
+                      overlayColor:
+                          AppTheme.accentRed.withOpacity(0.15),
+                      thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 7),
+                      trackHeight: 3,
+                      overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 14),
+                    ),
+                    child: Slider(
+                      value: _controller.activeBrush.opacity
+                          .clamp(0.01, 1.0),
+                      min: 0.01,
+                      max: 1.0,
+                      onChanged: (v) => setState(
+                          () => _controller.setBrushOpacity(v)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 // ─── SIDEBAR TAM/OPA compacto ─────────────────────────────
