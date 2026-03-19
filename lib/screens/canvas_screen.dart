@@ -1531,6 +1531,7 @@ Widget _buildSideBar() {
                         _controller.symmetryEnabled,
                     symmetryEnabled: _controller.symmetryEnabled,
                     activeLayerId: _controller.activeLayerId,
+                    controller: _controller,
                   ),
                   size: Size(
                     MediaQuery.of(context).size.width,
