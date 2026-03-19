@@ -36,7 +36,14 @@ jobs:
           BUILD_NUMBER=${{ github.run_number }}
           VERSION_CODE=$((1000 + BUILD_NUMBER))
           VERSION_NAME="1.0.$BUILD_NUMBER"
+          
+          # Actualizar build.gradle
           sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/" android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"$VERSION_NAME\"/" android/app/build.gradle
+          
+          # Actualizar pubspec.yaml
+          sed -i "s/^version: .*/version: $VERSION_NAME+$VERSION_CODE/" pubspec.yaml
+          
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
           echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
