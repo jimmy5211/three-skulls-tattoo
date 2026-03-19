@@ -622,15 +622,3 @@ class CanvasPainter extends CustomPainter {
     }
     return false;
   }
-}
-Ahora necesitas actualizar el canvas_screen.dart para pasar el controller al CanvasPainter. Busca en canvas_screen.dart donde llamas CanvasPainter( y agrégale el parámetro controller: _controller:
-painter: CanvasPainter(
-  layers: _controller.layers,
-  currentStroke: _controller.currentStroke,
-  currentMirrorStroke: _controller.currentMirrorStroke,
-  showGrid: _showGrid,
-  showSymmetryLine: _controller.symmetryEnabled,
-  symmetryEnabled: _controller.symmetryEnabled,
-  activeLayerId: _controller.activeLayerId,
-  controller: _controller, // ← agregar esta línea
-),
