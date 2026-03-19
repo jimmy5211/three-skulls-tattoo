@@ -622,3 +622,4 @@ class CanvasPainter extends CustomPainter {
     }
     return false;
   }
+}
