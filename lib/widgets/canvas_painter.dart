@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/stroke_model.dart';
 import '../models/layer_model.dart';
 import '../controllers/canvas_controller.dart';
+import 'brush_texture_painter.dart';
 
 class CanvasPainter extends CustomPainter {
   final List<LayerModel> layers;
@@ -81,6 +82,56 @@ class CanvasPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
       _drawSmoothStroke(canvas, stroke, paint);
+  // ─── LINER ───────────────────────────────────────────────
+  void _drawLiner(Canvas canvas, StrokeModel stroke, Color color) {
+    TextureStrokes.drawLiner(canvas, stroke, color);
+  }
+
+  // ─── SHADER ──────────────────────────────────────────────
+  void _drawShader(Canvas canvas, StrokeModel stroke, Color color) {
+    TextureStrokes.drawShader(canvas, stroke, color);
+  }
+
+  // ─── AERÓGRAFO ───────────────────────────────────────────
+  void _drawAerografo(Canvas canvas, StrokeModel stroke, Color color) {
+    TextureStrokes.drawAerografo(canvas, stroke, color);
+  }
+
+  // ─── CARBONCILLO ─────────────────────────────────────────
+  void _drawCarboncillo(Canvas canvas, StrokeModel stroke, Color color) {
+    TextureStrokes.drawCarboncillo(canvas, stroke, color);
+  }
+
+  // ─── AGUA ────────────────────────────────────────────────
+  void _drawAgua(Canvas canvas, StrokeModel stroke, Color color) {
+    TextureStrokes.drawAcuarela(canvas, stroke, color);
+  }
+
+  // ─── AEROSOL ─────────────────────────────────────────────
+  void _drawAerosol(Canvas canvas, StrokeModel stroke, Color color) {
+    TextureStrokes.drawAerosol(canvas, stroke, color);
+  }
+
+  // ─── LUMINANCIA ──────────────────────────────────────────
+  void _drawLuminancia(Canvas canvas, StrokeModel stroke, Color color) {
+    TextureStrokes.drawLuminancia(canvas, stroke, color);
+  }
+
+  // ─── INDUSTRIAL ──────────────────────────────────────────
+  void _drawIndustrial(Canvas canvas, StrokeModel stroke, Color color) {
+    TextureStrokes.drawIndustrial(canvas, stroke, color);
+  }
+
+  // ─── ORGÁNICO ────────────────────────────────────────────
+  void _drawOrganico(Canvas canvas, StrokeModel stroke, Color color) {
+    TextureStrokes.drawOrganico(canvas, stroke, color);
+  }
+
+  // ─── TEXTURA ─────────────────────────────────────────────
+  void _drawTextura(Canvas canvas, StrokeModel stroke, Color color) {
+    TextureStrokes.drawTextura(canvas, stroke, color);
+  } 
+      
       return;
     }
     final baseColor = stroke.color.withOpacity(stroke.opacity);
@@ -106,128 +157,7 @@ class CanvasPainter extends CustomPainter {
     }
   }
 
-  // ─── LINER ───────────────────────────────────────────────
-  void _drawLiner(Canvas canvas, StrokeModel stroke, Color color) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = stroke.strokeWidth
-      ..strokeCap = StrokeCap.butt
-      ..strokeJoin = StrokeJoin.miter
-      ..isAntiAlias = true
-      ..style = PaintingStyle.stroke;
-    _drawSmoothStroke(canvas, stroke, paint);
-  }
-
-  // ─── SHADER ──────────────────────────────────────────────
-  void _drawShader(Canvas canvas, StrokeModel stroke, Color color) {
-    for (int layer = 3; layer >= 1; layer--) {
-      final paint = Paint()
-        ..color = color.withOpacity(stroke.opacity * 0.08 * layer)
-        ..strokeWidth = stroke.strokeWidth * (1.0 + layer * 0.6)
-        ..strokeCap = StrokeCap.round
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, stroke.strokeWidth * layer * 0.4)
-        ..style = PaintingStyle.stroke;
-      _drawSmoothStroke(canvas, stroke, paint);
-    }
-  }
-
-  // ─── DOTWORK ─────────────────────────────────────────────
-  void _drawDotwork(Canvas canvas, StrokeModel stroke, Color color) {
-    final rng = Random(stroke.strokeWidth.toInt() * 7);
-    final paint = Paint()..color = color..style = PaintingStyle.fill;
-    for (int i = 0; i < stroke.points.length; i += 3) {
-      final variation = 0.6 + rng.nextDouble() * 0.8;
-      canvas.drawCircle(stroke.points[i], stroke.strokeWidth * 0.4 * variation, paint);
-    }
-  }
-
-  // ─── FILL ────────────────────────────────────────────────
-  void _drawFill(Canvas canvas, StrokeModel stroke, Color color) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = stroke.strokeWidth * 2.5
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-    _drawSmoothStroke(canvas, stroke, paint);
-  }
-
-  // ─── CALIGRAFÍA ──────────────────────────────────────────
-  void _drawCaligrafia(Canvas canvas, StrokeModel stroke, Color color) {
-    if (stroke.points.length < 2) return;
-    for (int i = 1; i < stroke.points.length; i++) {
-      final p1 = stroke.points[i - 1];
-      final p2 = stroke.points[i];
-      final angle = atan2(p2.dy - p1.dy, p2.dx - p1.dx);
-      final thickness = stroke.strokeWidth * (0.3 + 2.0 * sin(angle + pi / 4).abs());
-      final paint = Paint()
-        ..color = color
-        ..strokeWidth = thickness.clamp(0.3, stroke.strokeWidth * 3.5)
-        ..strokeCap = StrokeCap.square
-        ..style = PaintingStyle.stroke;
-      canvas.drawLine(p1, p2, paint);
-    }
-  }
-// ─── AERÓGRAFO ───────────────────────────────────────────
-  void _drawAerografo(Canvas canvas, StrokeModel stroke, Color color) {
-    final rng = Random(42);
-    for (int pi = 0; pi < stroke.points.length; pi += 2) {
-      final point = stroke.points[pi];
-      final radius = stroke.strokeWidth * 1.8;
-      for (int ring = 0; ring < 3; ring++) {
-        final ringRadius = radius * (ring + 1) / 3;
-        final ringOpacity = stroke.opacity * (0.08 - ring * 0.02);
-        final paint = Paint()
-          ..color = color.withOpacity(ringOpacity)
-          ..style = PaintingStyle.fill;
-        final dots = 15 - ring * 4;
-        for (int i = 0; i < dots; i++) {
-          final angle = rng.nextDouble() * 2 * pi;
-          final dist = rng.nextDouble() * ringRadius;
-          canvas.drawCircle(
-            Offset(point.dx + cos(angle) * dist,
-                point.dy + sin(angle) * dist),
-            rng.nextDouble() * 1.2 + 0.3,
-            paint,
-          );
-        }
-      }
-    }
-  }
-
-  // ─── TEXTURA ─────────────────────────────────────────────
-  void _drawTextura(Canvas canvas, StrokeModel stroke, Color color) {
-    if (stroke.points.length < 2) return;
-    final rng = Random(99);
-    final basePaint = Paint()
-      ..color = color.withOpacity(stroke.opacity * 0.5)
-      ..strokeWidth = stroke.strokeWidth * 0.8
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    _drawSmoothStroke(canvas, stroke, basePaint);
-    for (int i = 1; i < stroke.points.length; i += 3) {
-      final p1 = stroke.points[i - 1];
-      final p2 = stroke.points[i];
-      final dx = p2.dx - p1.dx;
-      final dy = p2.dy - p1.dy;
-      final len = sqrt(dx * dx + dy * dy);
-      if (len == 0) continue;
-      final nx = -dy / len;
-      final ny = dx / len;
-      final w = stroke.strokeWidth * (0.3 + rng.nextDouble() * 0.5);
-      final crossPaint = Paint()
-        ..color = color.withOpacity(stroke.opacity * (0.2 + rng.nextDouble() * 0.3))
-        ..strokeWidth = max(0.3, stroke.strokeWidth * 0.1)
-        ..strokeCap = StrokeCap.round
-        ..style = PaintingStyle.stroke;
-      final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
-      canvas.drawLine(
-        Offset(mid.dx - nx * w, mid.dy - ny * w),
-        Offset(mid.dx + nx * w, mid.dy + ny * w),
-        crossPaint,
-      );
-    }
-  }
+  
 
   // ─── ABSTRACTO ───────────────────────────────────────────
   void _drawAbstracto(Canvas canvas, StrokeModel stroke, Color color) {
