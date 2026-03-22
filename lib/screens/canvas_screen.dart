@@ -1290,7 +1290,64 @@ Widget _buildSideBar() {
     }
     return _buildBrushListWithScroll(results);
   }
+                      
+Widget _buildBrushTabs() {
+    return Container(
+      height: 36,
+      margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+      decoration: BoxDecoration(
+        color: _panelColor,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          _buildTab('Todos', BrushPanelTab.todos),
+          _buildTab('Descargados', BrushPanelTab.descargados),
+          _buildTab('Creados', BrushPanelTab.creados),
+          _buildTab('Sellos', BrushPanelTab.sellos),
+        ],
+      ),
+    );
+  }
 
+  Widget _buildTab(String label, BrushPanelTab tab) {
+    final isActive = _brushTab == tab;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() {
+          _brushTab = tab;
+          _selectedCategory = null;
+          _searchQuery = '';
+          _searchController.clear();
+        }),
+        child: Container(
+          margin: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: isActive ? _cardColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Raleway',
+                fontSize: 10,
+                color: isActive ? _textPrimary : _textSecondary,
+                fontWeight: isActive
+                    ? FontWeight.bold
+                    : FontWeight.normal,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBrushList(List<BrushModel> brushes) {
+    return _buildBrushListWithScroll(brushes);
+  }
+                      
   Widget _buildBrushListWithScroll(List<BrushModel> brushes) {
     final activeIndex = brushes
         .indexWhere((b) => b.name == _controller.activeBrush.name);
@@ -1457,7 +1514,12 @@ Widget _buildSideBar() {
     return GestureDetector(
       onTap: () {
         _controller.setActiveBrush(brush);
-        setState(() => _showBrushPanel = false);
+        setState(() {
+          _showBrushPanel = false;
+          _selectedCategory = null;
+          _searchQuery = '';
+          _searchController.clear();
+        });
       },
       child: Container(
         margin: const EdgeInsets.symmetric(
