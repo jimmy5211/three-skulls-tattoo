@@ -39,6 +39,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   BrushPanelTab _brushTab = BrushPanelTab.todos;
   SelloTab _selloTab = SelloTab.creados;
+  BrushCategory? _selectedCategory;
+  String _searchQuery = '';
+  final ScrollController _brushScrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
 
   double _scale = 1.0;
   double _startScale = 1.0;
@@ -111,6 +115,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
       _smudgeMode = false;
       _showSelectionOptions = false;
     });
+  }
+  }
+
+  @override
+  void dispose() {
+    _brushScrollController.dispose();
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
