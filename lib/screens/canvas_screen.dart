@@ -1005,7 +1005,354 @@ Widget _buildSideBar() {
                       inactiveTrackColor: _borderColor,
                       thumbColor: Colors.white,
                       overlayColor:
-                          AppTheme.accentRed.withOpacity(0.15),
+                          AppTheme.accentWidget _buildBrushPanelOverlay() {
+    return Positioned(
+      top: _topBarHeight + 4,
+      right: 8,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: _isLandscape ? 360 : 300,
+          height: MediaQuery.of(context).size.height * 0.82,
+          decoration: BoxDecoration(
+            color: _cardColor,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.7),
+                blurRadius: 30,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              _buildBrushPanelHeader(),
+              if (_selectedCategory != null)
+                Expanded(child: _buildCategoryView())
+              else ...[
+                _buildBrushTabs(),
+                Expanded(
+                  child: _brushTab == BrushPanelTab.sellos
+                      ? _buildSelloContent()
+                      : _brushTab == BrushPanelTab.todos
+                          ? _buildTodosContent()
+                          : _buildBrushList(_filteredBrushes),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBrushPanelHeader() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: _borderColor, width: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          if (_selectedCategory != null)
+            GestureDetector(
+              onTap: () => setState(() => _selectedCategory = null),
+              child: Container(
+                width: 30,
+                height: 30,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: _borderColor.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.arrow_back_ios,
+                    color: _textSecondary, size: 14),
+              ),
+            ),
+          Expanded(
+            child: Text(
+              _selectedCategory != null
+                  ? BrushModel.categoryName(_selectedCategory!).toUpperCase()
+                  : 'BIBLIOTECA DE AGUJAS',
+              style: const TextStyle(
+                fontFamily: 'BlackOpsOne',
+                fontSize: 11,
+                color: _textPrimary,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+          if (_selectedCategory == null)
+            GestureDetector(
+              onTap: () => _showBrushOptions(),
+              child: Container(
+                width: 30,
+                height: 30,
+                margin: const EdgeInsets.only(right: 6),
+                decoration: BoxDecoration(
+                  color: _borderColor.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.more_horiz,
+                    color: _textSecondary, size: 18),
+              ),
+            ),
+          GestureDetector(
+            onTap: () => setState(() {
+              _showBrushPanel = false;
+              _selectedCategory = null;
+              _searchQuery = '';
+              _searchController.clear();
+            }),
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: _borderColor.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.close,
+                  color: _textSecondary, size: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryView() {
+    final categoryBrushes = _brushes
+        .where((b) => b.category == _selectedCategory)
+        .toList();
+    return _buildBrushListWithScroll(categoryBrushes);
+  }
+
+  Widget _buildTodosContent() {
+    return Column(
+      children: [
+        Container(
+          margin: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: _panelColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: _borderColor, width: 0.5),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.search, color: _textSecondary, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  style: const TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 13,
+                    color: _textPrimary,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Buscar pinceles...',
+                    hintStyle: TextStyle(
+                      fontFamily: 'Raleway',
+                      fontSize: 12,
+                      color: _textSecondary,
+                    ),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  onChanged: (v) => setState(() => _searchQuery = v),
+                ),
+              ),
+              if (_searchQuery.isNotEmpty)
+                GestureDetector(
+                  onTap: () => setState(() {
+                    _searchQuery = '';
+                    _searchController.clear();
+                  }),
+                  child: Icon(Icons.close,
+                      color: _textSecondary, size: 14),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _searchQuery.isNotEmpty
+              ? _buildSearchResults()
+              : _buildCategoryGrid(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCategoryGrid() {
+    final categories = BrushCategory.values
+        .where((c) => c != BrushCategory.todos)
+        .toList();
+    return GridView.builder(
+      padding: const EdgeInsets.all(10),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 2.2,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+      ),
+      itemCount: categories.length,
+      itemBuilder: (context, index) {
+        final cat = categories[index];
+        final count =
+            _brushes.where((b) => b.category == cat).length;
+        return GestureDetector(
+          onTap: () => setState(() => _selectedCategory = cat),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _panelColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _borderColor, width: 0.5),
+            ),
+            child: Row(
+              children: [
+                const SizedBox(width: 10),
+                Text(BrushModel.categoryEmoji(cat),
+                    style: const TextStyle(fontSize: 22)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        BrushModel.categoryName(cat),
+                        style: const TextStyle(
+                          fontFamily: 'Raleway',
+                          fontSize: 11,
+                          color: _textPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        '$count pinceles',
+                        style: TextStyle(
+                          fontFamily: 'Raleway',
+                          fontSize: 9,
+                          color: _textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right,
+                    color: _textSecondary, size: 14),
+                const SizedBox(width: 4),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSearchResults() {
+    final query = _searchQuery.toLowerCase();
+    final results = _brushes
+        .where((b) =>
+            b.name.toLowerCase().contains(query) ||
+            BrushModel.categoryName(b.category)
+                .toLowerCase()
+                .contains(query))
+        .toList();
+
+    if (results.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, color: _textSecondary, size: 36),
+            const SizedBox(height: 12),
+            Text(
+              'Sin resultados para\n"$_searchQuery"',
+              style: TextStyle(
+                fontFamily: 'Raleway',
+                fontSize: 13,
+                color: _textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+    return _buildBrushListWithScroll(results);
+  }
+
+  Widget _buildBrushListWithScroll(List<BrushModel> brushes) {
+    final activeIndex = brushes
+        .indexWhere((b) => b.name == _controller.activeBrush.name);
+
+    if (activeIndex >= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_brushScrollController.hasClients) {
+          const itemHeight = 68.0;
+          final targetOffset = (activeIndex * itemHeight).clamp(
+              0.0,
+              _brushScrollController.position.maxScrollExtent);
+          _brushScrollController.animateTo(
+            targetOffset,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
+
+    if (brushes.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.brush_outlined,
+                color: _textSecondary, size: 40),
+            const SizedBox(height: 12),
+            Text('No hay pinceles aquí',
+                style: TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 13,
+                    color: _textSecondary)),
+            const SizedBox(height: 6),
+            Text('Toca ··· para agregar',
+                style: TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 11,
+                    color: _textSecondary.withOpacity(0.6))),
+          ],
+        ),
+      );
+    }
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return ListView.builder(
+          controller: _brushScrollController,
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          itemCount: brushes.length,
+          itemBuilder: (context, index) {
+            final brush = brushes[index];
+            final isActive =
+                _controller.activeBrush.name == brush.name;
+            return _buildBrushItem(brush, isActive);
+          },
+        );
+      },
+    );
+  }
+                      Red.withOpacity(0.15),
                       thumbShape: const RoundSliderThumbShape(
                           enabledThumbRadius: 7),
                       trackHeight: 3,
@@ -1031,183 +1378,7 @@ Widget _buildSideBar() {
     );
   }
 
-  Widget _buildBrushPanelOverlay() {
-    return Positioned(
-      top: _topBarHeight + 4,
-      right: 8,
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          width: _isLandscape ? 360 : 300,
-          height: MediaQuery.of(context).size.height * 0.75,
-          decoration: BoxDecoration(
-            color: _cardColor,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.7),
-                blurRadius: 30,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              _buildBrushPanelHeader(),
-              _buildBrushTabs(),
-              Expanded(
-                child: _brushTab == BrushPanelTab.sellos
-                    ? _buildSelloContent()
-                    : _buildBrushList(_filteredBrushes),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBrushPanelHeader() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: _borderColor, width: 0.5),
-        ),
-      ),
-      child: Row(
-        children: [
-          const Text(
-            'BIBLIOTECA DE AGUJAS',
-            style: TextStyle(
-              fontFamily: 'BlackOpsOne',
-              fontSize: 11,
-              color: _textPrimary,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const Spacer(),
-          GestureDetector(
-            onTap: () => _showBrushOptions(),
-            child: Container(
-              width: 30,
-              height: 30,
-              margin: const EdgeInsets.only(right: 6),
-              decoration: BoxDecoration(
-                color: _borderColor.withOpacity(0.4),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.more_horiz,
-                  color: _textSecondary, size: 18),
-            ),
-          ),
-          GestureDetector(
-            onTap: () =>
-                setState(() => _showBrushPanel = false),
-            child: Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: _borderColor.withOpacity(0.4),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.close,
-                  color: _textSecondary, size: 16),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBrushTabs() {
-    return Container(
-      height: 36,
-      margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
-      decoration: BoxDecoration(
-        color: _panelColor,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          _buildTab('Todos', BrushPanelTab.todos),
-          _buildTab('Descargados', BrushPanelTab.descargados),
-          _buildTab('Creados', BrushPanelTab.creados),
-          _buildTab('Sellos', BrushPanelTab.sellos),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTab(String label, BrushPanelTab tab) {
-    final isActive = _brushTab == tab;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _brushTab = tab),
-        child: Container(
-          margin: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: isActive ? _cardColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Raleway',
-                fontSize: 10,
-                color: isActive ? _textPrimary : _textSecondary,
-                fontWeight: isActive
-                    ? FontWeight.bold
-                    : FontWeight.normal,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBrushList(List<BrushModel> brushes) {
-    if (brushes.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.brush_outlined,
-                color: _textSecondary, size: 40),
-            const SizedBox(height: 12),
-            Text('No hay pinceles aquí',
-                style: TextStyle(
-                    fontFamily: 'Raleway',
-                    fontSize: 13,
-                    color: _textSecondary)),
-            const SizedBox(height: 6),
-            Text('Toca ··· para agregar',
-                style: TextStyle(
-                    fontFamily: 'Raleway',
-                    fontSize: 11,
-                    color: _textSecondary.withOpacity(0.6))),
-          ],
-        ),
-      );
-    }
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          itemCount: brushes.length,
-          itemBuilder: (context, index) {
-            final brush = brushes[index];
-            final isActive =
-                _controller.activeBrush.name == brush.name;
-            return _buildBrushItem(brush, isActive);
-          },
-        );
-      },
-    );
-  }
+  
 
   Widget _buildSelloContent() {
     return Column(
