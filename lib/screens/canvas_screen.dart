@@ -1291,7 +1291,7 @@ Widget _buildSideBar() {
     return _buildBrushListWithScroll(results);
   }
                       
-Widget _buildBrushTabs() {
+  Widget _buildBrushTabs() {
     return Container(
       height: 36,
       margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
