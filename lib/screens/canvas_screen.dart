@@ -116,7 +116,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
       _showSelectionOptions = false;
     });
   }
-  }
 
   @override
   void dispose() {
