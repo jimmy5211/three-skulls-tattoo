@@ -590,44 +590,34 @@ class _NewDesignScreenState extends State<NewDesignScreen> {
                       : Colors.white,
                   fontWeight: FontWeight.bold,
                 ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ─── FONDO ────────────────────────────────────────────────
-  Widget _buildBackgroundSection() {
-    return _buildSection(
-      '🎨 FONDO',
-      child: Row(
-        children: [
-          // FIX: cada opción usa GestureDetector independiente
-          // para permitir re-seleccionar transparente
-          _buildBgOption(
-            CanvasBackground.transparente,
-            'Transparente',
-            SizedBox.expand(
+      // ─── FONDO ────────────────────────────────────────────────
+Widget _buildBackgroundSection() {
+  return _buildSection(
+    '🎨 FONDO',
+    child: Row(
+      children: [
+        _buildBgOption(
+          CanvasBackground.transparente,
+          'Transparente',
           CustomPaint(painter: _CheckerPainter()),
-          const SizedBox(width: 10),
-          _buildBgOption(
-            CanvasBackground.blanco,
-            'Blanco',
-            Container(color: Colors.white),
-          ),
-          const SizedBox(width: 10),
-          _buildBgOption(
-            CanvasBackground.negro,
-            'Negro',
-            Container(color: Colors.black),
-          ),
-        ],
-      ),
-    );
-  }
-
+        ),
+        const SizedBox(width: 10),
+        _buildBgOption(
+          CanvasBackground.blanco,
+          'Blanco',
+          Container(color: Colors.white),
+        ),
+        const SizedBox(width: 10),
+        _buildBgOption(
+          CanvasBackground.negro,
+          'Negro',
+          Container(color: Colors.black),
+        ),
+      ],
+    ),
+  );
+} 
+                
   Widget _buildBgOption(
       CanvasBackground bg, String label, Widget preview) {
     final isActive = _background == bg;
