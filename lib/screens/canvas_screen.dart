@@ -2038,6 +2038,84 @@ void initState() {
     );
   }
 
+  void _showResizeCanvasDialog() {
+  final wController = TextEditingController(
+      text: _controller.canvasSize.width.round().toString());
+  final hController = TextEditingController(
+      text: _controller.canvasSize.height.round().toString());
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: const Color(0xFF2C2C2E),
+      title: const Text('Cambiar tamaño',
+          style: TextStyle(
+              fontFamily: 'BlackOpsOne',
+              color: Colors.white,
+              fontSize: 15)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: wController,
+            keyboardType: TextInputType.number,
+            style: const TextStyle(
+                fontFamily: 'Raleway', color: Colors.white),
+            decoration: const InputDecoration(
+              labelText: 'Ancho (px)',
+              labelStyle: TextStyle(
+                  fontFamily: 'Raleway',
+                  color: Color(0xFF8E8E93)),
+              enabledBorder: UnderlineInputBorder(
+                borderSide:
+                    BorderSide(color: Color(0xFF48484A)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: hController,
+            keyboardType: TextInputType.number,
+            style: const TextStyle(
+                fontFamily: 'Raleway', color: Colors.white),
+            decoration: const InputDecoration(
+              labelText: 'Alto (px)',
+              labelStyle: TextStyle(
+                  fontFamily: 'Raleway',
+                  color: Color(0xFF8E8E93)),
+              enabledBorder: UnderlineInputBorder(
+                borderSide:
+                    BorderSide(color: Color(0xFF48484A)),
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancelar',
+              style: TextStyle(color: Color(0xFF8E8E93))),
+        ),
+        TextButton(
+          onPressed: () {
+            final w = double.tryParse(wController.text);
+            final h = double.tryParse(hController.text);
+            if (w != null && h != null && w > 0 && h > 0) {
+              setState(() {
+                _controller.updateCanvasSize(Size(w, h));
+              });
+            }
+            Navigator.pop(ctx);
+          },
+          child: const Text('Aplicar',
+              style: TextStyle(
+                  color: AppTheme.accentRed,
+                  fontWeight: FontWeight.bold)),
+        ),
+      ],
+    ),
+  );
+  }
   void _saveDesign() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
