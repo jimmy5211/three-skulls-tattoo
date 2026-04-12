@@ -16,6 +16,7 @@ class CanvasController extends ChangeNotifier {
   bool symmetryEnabled = false;
   SymmetryType symmetryType = SymmetryType.horizontal;
   Size canvasSize = const Size(1080, 1920);
+  Color backgroundColor = Colors.transparent;
 
   // Cache de capas renderizadas
   final Map<int, ui.Picture?> _layerCache = {};
@@ -349,6 +350,10 @@ class CanvasController extends ChangeNotifier {
   void setActiveColor(Color color) {
     activeColor = color;
     notifyListeners();
+    void setBackgroundColor(Color color) {
+  backgroundColor = color;
+  notifyListeners();
+    }
   }
 
   void setBrushSize(double size) {
