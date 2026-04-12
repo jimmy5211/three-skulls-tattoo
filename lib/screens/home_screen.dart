@@ -225,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen>
                         _menuItems[index]['title'] as String;
                     switch (title) {
                       case 'NUEVO DISEÑO':
-                        context.go('/canvas');
+                        context.go('/new-design');
                         break;
                       case 'CREAR ESTENCIL':
                         context.go('/stencil');
