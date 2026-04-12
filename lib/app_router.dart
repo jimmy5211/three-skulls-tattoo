@@ -33,8 +33,8 @@ class AppRouter {
           return const NewDesignScreen();
         },
         // FIX: botón atrás del celular navega al home en lugar de cerrar la app
-        onExit: (BuildContext context, GoRouterState state) async {
-          context.go('/home');
+       onExit: (BuildContext context) async {
+       context.go('/home');
           return false;
         },
       ),
