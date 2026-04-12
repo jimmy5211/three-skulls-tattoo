@@ -49,6 +49,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Offset _offset = Offset.zero;
   Offset _startOffset = Offset.zero;
   Offset _startFocalPoint = Offset.zero;
+  String _projectName = 'Sin título';
   bool _isScaling = false;
 
   static const double _sideBarWidth = 56.0;
@@ -61,23 +62,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   static const Color _textPrimary = Color(0xFFFFFFFF);
   static const Color _textSecondary = Color(0xFF8E8E93);
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = CanvasController();
-    _brushes = BrushModel.defaultBrushes();
-    // Leer parámetros del nuevo diseño
-  final p = widget.designParams;
-  if (p != null) {
-    _projectName = p['name'] as String? ?? 'Sin título';
-    final bg = p['background'] as String? ?? 'transparente';
-    if (bg == 'blanco') {
-      _controller.setBackgroundColor(const Color(0xFFFFFFFF));
-    } else if (bg == 'negro') {
-      _controller.setBackgroundColor(const Color(0xFF000000));
-    }
-  }
- }
+  
 
   bool get _isLandscape =>
       mounted &&
@@ -92,6 +77,24 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   bool _isTouchOnCanvas(Offset point) {
     final sw = MediaQuery.of(context).size.width;
+    
+    @override
+void initState() {
+  super.initState();
+  _controller = CanvasController();
+  _brushes = BrushModel.defaultBrushes();
+
+  final p = widget.designParams;
+  if (p != null) {
+    _projectName = p['name'] as String? ?? 'Sin título';
+    final bg = p['background'] as String? ?? 'transparente';
+    if (bg == 'blanco') {
+      _controller.backgroundColor = Colors.white;
+    } else if (bg == 'negro') {
+      _controller.backgroundColor = Colors.black;
+    }
+  }
+}
     final canvasLeft = _sideBarWidth;
     final canvasRight = _showLayers ? sw - _layerPanelWidth : sw;
     final canvasTop = _isFullscreen ? 0.0 : _topBarHeight;
