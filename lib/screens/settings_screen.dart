@@ -497,67 +497,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _downloadAndInstall(String url) async {
+  setState(() {
+    _isDownloading = true;
+    _downloadProgress = 0.0;
+  });
+
+  try {
+    final request = http.Request('GET', Uri.parse(url));
+    final response = await request
+        .send()
+        .timeout(const Duration(minutes: 10));
+
+    if (response.statusCode != 200) {
+      throw Exception('Error HTTP: ${response.statusCode}');
+    }
+
+    final contentLength = response.contentLength ?? 0;
+    final dir = await getExternalStorageDirectory();
+    final apkPath = '${dir!.path}/three_skulls_update.apk';
+    final file = File(apkPath);
+    final sink = file.openWrite();
+
+    int downloaded = 0;
+    await for (final chunk in response.stream) {
+      sink.add(chunk);
+      downloaded += chunk.length;
+      if (contentLength > 0) {
+        setState(
+            () => _downloadProgress = downloaded / contentLength);
+      }
+    }
+    await sink.close();
+
     setState(() {
-      _isDownloading = true;
-      _downloadProgress = 0.0;
+      _isDownloading = false;
+      _downloadProgress = 1.0;
     });
 
-    try {
-      final request = http.Request('GET', Uri.parse(url));
-      final response = await request
-          .send()
-          .timeout(const Duration(minutes: 10));
-
-      if (response.statusCode != 200) {
-        throw Exception('Error HTTP: ${response.statusCode}');
-      }
-
-      final contentLength = response.contentLength ?? 0;
-      final dir = await getTemporaryDirectory();
-      final apkPath = '${dir.path}/three_skulls_update.apk';
-      final file = File(apkPath);
-      final sink = file.openWrite();
-
-      int downloaded = 0;
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        downloaded += chunk.length;
-        if (contentLength > 0) {
-          setState(
-              () => _downloadProgress = downloaded / contentLength);
-        }
-      }
-      await sink.close();
-
-      setState(() {
-        _isDownloading = false;
-        _downloadProgress = 1.0;
-      });
-
-      await OpenFile.open(apkPath);
-    } catch (e) {
-      setState(() => _isDownloading = false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppTheme.cardColor,
-          content: Row(
-            children: [
-              const Text('❌', style: TextStyle(fontSize: 20)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text('Error: $e',
-                    style: const TextStyle(
-                        fontFamily: 'Raleway',
-                        color: AppTheme.textWhite)),
-              ),
-            ],
-          ),
-          duration: const Duration(seconds: 4),
+    await OpenFile.open(apkPath);
+  } catch (e) {
+    setState(() => _isDownloading = false);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: AppTheme.cardColor,
+        content: Row(
+          children: [
+            const Text('❌', style: TextStyle(fontSize: 20)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('Error: $e',
+                  style: const TextStyle(
+                      fontFamily: 'Raleway',
+                      color: AppTheme.textWhite)),
+            ),
+          ],
         ),
-      );
-    }
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
+}
 
   void _syncNow() {
     ScaffoldMessenger.of(context).showSnackBar(
