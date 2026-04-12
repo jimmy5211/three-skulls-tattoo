@@ -51,7 +51,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Offset _startFocalPoint = Offset.zero;
   String _projectName = 'Sin título';
   bool _isScaling = false;
+  double _rotation = 0.0;
+  double _startRotation = 0.0;
 
+  
   static const double _sideBarWidth = 56.0;
   static const double _layerPanelWidth = 220.0;
 
@@ -891,116 +894,229 @@ void initState() {
 
   // ─── SIDEBAR ──────────────────────────────────────────────
   Widget _buildSideBar() {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Container(
-          width: _sideBarWidth,
-          decoration: BoxDecoration(
-            color: _panelColor.withOpacity(0.95),
-            border: Border(
-              right: BorderSide(color: _borderColor, width: 0.5),
+  return AnimatedBuilder(
+    animation: _controller,
+    builder: (context, child) {
+      final isEraser =
+          _controller.activeBrush.type == StrokeType.eraser;
+      return Container(
+        width: _sideBarWidth,
+        decoration: BoxDecoration(
+          color: _panelColor.withOpacity(0.95),
+          border: Border(
+            right: BorderSide(color: _borderColor, width: 0.5),
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            // ─── BORRADOR ───────────────────────
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: () => setState(() {
+                if (isEraser) {
+                  final normal = _brushes.firstWhere(
+                    (b) => b.type != StrokeType.eraser,
+                    orElse: () => _brushes.first,
+                  );
+                  _controller.setActiveBrush(normal);
+                } else {
+                  final eraser = _brushes.firstWhere(
+                    (b) => b.type == StrokeType.eraser,
+                    orElse: () => BrushModel(
+                      id: 'eraser',
+                      name: 'Borrador',
+                      emoji: '🧹',
+                      size: _controller.activeBrush.size,
+                      opacity: 1.0,
+                      type: StrokeType.eraser,
+                      category: BrushCategory.todos,
+                    ),
+                  );
+                  _controller.setActiveBrush(eraser);
+                }
+              }),
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: isEraser
+                      ? AppTheme.accentRed.withOpacity(0.15)
+                      : _cardColor,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isEraser
+                        ? AppTheme.accentRed
+                        : _borderColor,
+                    width: isEraser ? 1.5 : 0.5,
+                  ),
+                ),
+                child: Icon(
+                  Icons.auto_fix_normal,
+                  color: isEraser
+                      ? AppTheme.accentRed
+                      : _textSecondary,
+                  size: 20,
+                ),
+              ),
             ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text('TAM',
-                  style: TextStyle(
-                      fontFamily: 'Raleway',
-                      fontSize: 9,
-                      color: _textSecondary,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1)),
-              const SizedBox(height: 2),
-              Text('${_controller.activeBrush.size.round()}',
-                  style: const TextStyle(
-                      fontFamily: 'Raleway',
-                      fontSize: 12,
-                      color: _textPrimary,
-                      fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              SizedBox(
-                height: _isLandscape ? 70 : 110,
-                child: RotatedBox(
-                  quarterTurns: 3,
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: AppTheme.accentRed,
-                      inactiveTrackColor: _borderColor,
-                      thumbColor: Colors.white,
-                      overlayColor: AppTheme.accentRed.withOpacity(0.15),
-                      thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 7),
-                      trackHeight: 3,
-                      overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 14),
-                    ),
-                    child: Slider(
-                      value: _controller.activeBrush.size.clamp(1, 100),
-                      min: 1,
-                      max: 100,
-                      onChanged: (v) =>
-                          setState(() => _controller.setBrushSize(v)),
-                    ),
+            // ─── RESIZE CANVAS ──────────────────
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: () => _showResizeCanvasDialog(),
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: _cardColor,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: _borderColor, width: 0.5),
+                ),
+                child: Icon(Icons.crop,
+                    color: _textSecondary, size: 20),
+              ),
+            ),
+            // ─── RESET ROTACIÓN ─────────────────
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: () =>
+                  setState(() => _rotation = 0.0),
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: _rotation != 0.0
+                      ? AppTheme.accentRed.withOpacity(0.15)
+                      : _cardColor,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _rotation != 0.0
+                        ? AppTheme.accentRed
+                        : _borderColor,
+                    width: _rotation != 0.0 ? 1.5 : 0.5,
+                  ),
+                ),
+                child: Icon(
+                  Icons.screen_rotation_outlined,
+                  color: _rotation != 0.0
+                      ? AppTheme.accentRed
+                      : _textSecondary,
+                  size: 18,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 6),
+              child: Container(
+                  height: 0.5, color: _borderColor),
+            ),
+            // ─── TAM ────────────────────────────
+            Text('TAM',
+                style: TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 9,
+                    color: _textSecondary,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1)),
+            const SizedBox(height: 2),
+            Text('${_controller.activeBrush.size.round()}',
+                style: const TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 12,
+                    color: _textPrimary,
+                    fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            SizedBox(
+              height: _isLandscape ? 70 : 110,
+              child: RotatedBox(
+                quarterTurns: 3,
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: AppTheme.accentRed,
+                    inactiveTrackColor: _borderColor,
+                    thumbColor: Colors.white,
+                    overlayColor:
+                        AppTheme.accentRed.withOpacity(0.15),
+                    thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 7),
+                    trackHeight: 3,
+                    overlayShape:
+                        const RoundSliderOverlayShape(
+                            overlayRadius: 14),
+                  ),
+                  child: Slider(
+                    value: _controller.activeBrush.size
+                        .clamp(1, 100),
+                    min: 1,
+                    max: 100,
+                    onChanged: (v) => setState(
+                        () => _controller.setBrushSize(v)),
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Container(height: 0.5, color: _borderColor),
-              ),
-              const SizedBox(height: 8),
-              Text('OPA',
-                  style: TextStyle(
-                      fontFamily: 'Raleway',
-                      fontSize: 9,
-                      color: _textSecondary,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1)),
-              const SizedBox(height: 2),
-              Text(
-                  '${(_controller.activeBrush.opacity * 100).round()}%',
-                  style: const TextStyle(
-                      fontFamily: 'Raleway',
-                      fontSize: 12,
-                      color: _textPrimary,
-                      fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              SizedBox(
-                height: _isLandscape ? 70 : 110,
-                child: RotatedBox(
-                  quarterTurns: 3,
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: AppTheme.accentRed,
-                      inactiveTrackColor: _borderColor,
-                      thumbColor: Colors.white,
-                      overlayColor: AppTheme.accentRed.withOpacity(0.15),
-                      thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 7),
-                      trackHeight: 3,
-                      overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 14),
-                    ),
-                    child: Slider(
-                      value: _controller.activeBrush.opacity
-                          .clamp(0.01, 1.0),
-                      min: 0.01,
-                      max: 1.0,
-                      onChanged: (v) =>
-                          setState(() => _controller.setBrushOpacity(v)),
-                    ),
+            ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10),
+              child:
+                  Container(height: 0.5, color: _borderColor),
+            ),
+            const SizedBox(height: 8),
+            // ─── OPA ────────────────────────────
+            Text('OPA',
+                style: TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 9,
+                    color: _textSecondary,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1)),
+            const SizedBox(height: 2),
+            Text(
+                '${(_controller.activeBrush.opacity * 100).round()}%',
+                style: const TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 12,
+                    color: _textPrimary,
+                    fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            SizedBox(
+              height: _isLandscape ? 70 : 110,
+              child: RotatedBox(
+                quarterTurns: 3,
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: AppTheme.accentRed,
+                    inactiveTrackColor: _borderColor,
+                    thumbColor: Colors.white,
+                    overlayColor:
+                        AppTheme.accentRed.withOpacity(0.15),
+                    thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 7),
+                    trackHeight: 3,
+                    overlayShape:
+                        const RoundSliderOverlayShape(
+                            overlayRadius: 14),
+                  ),
+                  child: Slider(
+                    value: _controller.activeBrush.opacity
+                        .clamp(0.01, 1.0),
+                    min: 0.01,
+                    max: 1.0,
+                    onChanged: (v) => setState(
+                        () => _controller.setBrushOpacity(v)),
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        );
-      },
-    );
-  }
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      );
+    },
+  );
+}
 
   // ─── BRUSH PANEL ──────────────────────────────────────────
   Widget _buildBrushPanelOverlay() {
@@ -1693,12 +1809,16 @@ void initState() {
           final onCanvas =
               _isTouchOnCanvas(details.localFocalPoint);
           if (details.pointerCount >= 2) {
-            _isScaling = true;
-            _controller.endStroke();
-            _startScale = _scale;
-            _startOffset = _offset;
-            _startFocalPoint = details.localFocalPoint;
-          } else if (!onCanvas || _zoomMode) {
+             _isScaling = true;
+             _startRotation = _rotation;
+              setState(() {
+             _scale = (_startScale * details.scale).clamp(0.1, 10.0);
+             _offset = _startOffset +
+            (details.localFocalPoint - _startFocalPoint);
+              // FIX: rotación con 2 dedos
+                _rotation = _startRotation + details.rotation;
+            });
+          }else if (!onCanvas || _zoomMode) {
             _isScaling = true;
             _controller.endStroke();
             _startScale = _scale;
@@ -1741,6 +1861,7 @@ void initState() {
               return Transform(
                 transform: Matrix4.identity()
                   ..translate(_offset.dx, _offset.dy)
+                  ..rotateZ(_rotation)
                   ..scale(_scale),
                 child: CustomPaint(
                   painter: CanvasPainter(
@@ -1754,6 +1875,7 @@ void initState() {
                     symmetryEnabled: _controller.symmetryEnabled,
                     activeLayerId: _controller.activeLayerId,
                     controller: _controller,
+                    backgroundColor: _controller.backgroundColor,
                   ),
                   size: Size(
                     MediaQuery.of(context).size.width,
