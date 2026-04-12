@@ -62,7 +62,30 @@ class _CanvasScreenState extends State<CanvasScreen> {
   static const Color _textPrimary = Color(0xFFFFFFFF);
   static const Color _textSecondary = Color(0xFF8E8E93);
 
-  
+   @override
+void initState() {
+  super.initState();
+  _controller = CanvasController();
+  _brushes = BrushModel.defaultBrushes();
+
+  final p = widget.designParams;
+  if (p != null) {
+    _projectName = p['name'] as String? ?? 'Sin título';
+    final bg = p['background'] as String? ?? 'transparente';
+    if (bg == 'blanco') {
+      _controller.backgroundColor = Colors.white;
+    } else if (bg == 'negro') {
+      _controller.backgroundColor = Colors.black;
+    }
+  }
+}
+
+@override
+void dispose() {
+  _brushScrollController.dispose();
+  _searchController.dispose();
+  super.dispose();
+}  
 
   bool get _isLandscape =>
       mounted &&
