@@ -14,7 +14,8 @@ enum SelectionMode { ninguno, automatico, libre, rectangular, elipse }
 enum TransformMode { ninguno, activo }
 
 class CanvasScreen extends StatefulWidget {
-  const CanvasScreen({super.key});
+  final Map<String, dynamic>? designParams;
+  const CanvasScreen({super.key, this.designParams});
 
   @override
   State<CanvasScreen> createState() => _CanvasScreenState();
@@ -65,7 +66,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
     super.initState();
     _controller = CanvasController();
     _brushes = BrushModel.defaultBrushes();
+    // Leer parámetros del nuevo diseño
+  final p = widget.designParams;
+  if (p != null) {
+    _projectName = p['name'] as String? ?? 'Sin título';
+    final bg = p['background'] as String? ?? 'transparente';
+    if (bg == 'blanco') {
+      _controller.setBackgroundColor(const Color(0xFFFFFFFF));
+    } else if (bg == 'negro') {
+      _controller.setBackgroundColor(const Color(0xFF000000));
+    }
   }
+ }
 
   bool get _isLandscape =>
       mounted &&
