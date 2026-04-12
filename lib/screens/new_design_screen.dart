@@ -611,7 +611,6 @@ class _NewDesignScreenState extends State<NewDesignScreen> {
             'Transparente',
             SizedBox.expand(
           child: CustomPaint(painter: _CheckerPainter()),
-            ),
           const SizedBox(width: 10),
           _buildBgOption(
             CanvasBackground.blanco,
