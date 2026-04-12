@@ -1810,14 +1810,7 @@ void initState() {
               _isTouchOnCanvas(details.localFocalPoint);
           if (details.pointerCount >= 2) {
              _isScaling = true;
-             _startRotation = _rotation;
-              setState(() {
-             _scale = (_startScale * details.scale).clamp(0.1, 10.0);
-             _offset = _startOffset +
-            (details.localFocalPoint - _startFocalPoint);
-              // FIX: rotación con 2 dedos
-                _rotation = _startRotation + details.rotation;
-            });
+             _startRotation = _rotation; 
           }else if (!onCanvas || _zoomMode) {
             _isScaling = true;
             _controller.endStroke();
@@ -1839,6 +1832,7 @@ void initState() {
                   .clamp(0.1, 10.0);
               _offset = _startOffset +
                   (details.localFocalPoint - _startFocalPoint);
+              _rotation = _startRotation + details.rotation;
             });
           } else if (_isScaling) {
             setState(() {
