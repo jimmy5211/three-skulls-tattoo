@@ -154,13 +154,6 @@ void initState() {
   }
 
   @override
-  void dispose() {
-    _brushScrollController.dispose();
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.updateCanvasSize(MediaQuery.of(context).size);
