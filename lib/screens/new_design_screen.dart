@@ -541,9 +541,7 @@ class _NewDesignScreenState extends State<NewDesignScreen> {
     final isActive = _orientation == orientation;
     return Expanded(
       child: GestureDetector(
-        onTap: () {
-          if (_orientation != orientation) _swapDimensions();
-        },
+        onTap: () => setState(() => _orientation = orientation),
         child: Container(
           height: 64,
           decoration: BoxDecoration(
@@ -589,7 +587,10 @@ class _NewDesignScreenState extends State<NewDesignScreen> {
           _buildBgOption(
             CanvasBackground.transparente,
             'Transparente',
-            CustomPaint(painter: _CheckerPainter()),
+            IgnorePointer(
+            ignoring: false,
+             child: CustomPaint(painter: _CheckerPainter()),
+             ),
           ),
           const SizedBox(width: 10),
           _buildBgOption(
