@@ -348,13 +348,14 @@ class CanvasController extends ChangeNotifier {
   }
 
   void setActiveColor(Color color) {
-    activeColor = color;
-    notifyListeners();
-    void setBackgroundColor(Color color) {
+  activeColor = color;
+  notifyListeners();
+}
+
+void setBackgroundColor(Color color) {
   backgroundColor = color;
   notifyListeners();
-    }
-  }
+}
 
   void setBrushSize(double size) {
     activeBrush = activeBrush.copyWith(size: size);
