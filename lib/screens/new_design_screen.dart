@@ -135,11 +135,11 @@ class _NewDesignScreenState extends State<NewDesignScreen> {
   @override
   Widget build(BuildContext context) {
     // FIX: PopScope evita que el botón atrás cierre la app
-    return PopScope(
-      canPop: false,
-      onPopInvoked: (didPop) {
-        if (!didPop) context.go('/home');
-      },
+    return WillPopScope(
+  onWillPop: () async {
+    context.go('/home');
+    return false;
+  },
       child: Scaffold(
         backgroundColor: _bgColor,
         body: SafeArea(
@@ -609,8 +609,9 @@ class _NewDesignScreenState extends State<NewDesignScreen> {
           _buildBgOption(
             CanvasBackground.transparente,
             'Transparente',
-            CustomPaint(painter: _CheckerPainter()),
-          ),
+            SizedBox.expand(
+          child: CustomPaint(painter: _CheckerPainter()),
+            ),
           const SizedBox(width: 10),
           _buildBgOption(
             CanvasBackground.blanco,
