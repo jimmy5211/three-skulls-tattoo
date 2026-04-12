@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'screens/splash_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/canvas_screen.dart';
+import 'screens/new_design_screen.dart';
 import 'screens/stencil_screen.dart';
 import 'screens/brushes_screen.dart';
 import 'screens/fonts_screen.dart';
@@ -27,9 +28,16 @@ class AppRouter {
         },
       ),
       GoRoute(
+        path: '/new-design',
+        builder: (BuildContext context, GoRouterState state) {
+          return const NewDesignScreen();
+        },
+      ),
+      GoRoute(
         path: '/canvas',
         builder: (BuildContext context, GoRouterState state) {
-          return const CanvasScreen();
+          final extra = state.extra as Map<String, dynamic>?;
+          return CanvasScreen(designParams: extra);
         },
       ),
       GoRoute(
