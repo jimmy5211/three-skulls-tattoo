@@ -145,8 +145,21 @@ class _CanvasScreenState extends State<CanvasScreen> {
   @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _controller.updateCanvasSize(MediaQuery.of(context).size);
-    });
+  final size = MediaQuery.of(context).size;
+  _controller.updateCanvasSize(size);
+  // Centrar lienzo al iniciar
+  if (_offset == Offset.zero) {
+    final p = widget.designParams;
+    if (p != null) {
+      final orientation = p['orientation'] as String? ?? 'vertical';
+      if (orientation == 'horizontal') {
+        setState(() {
+          _rotation = 1.5708; // 90 grados en radianes
+        });
+      }
+    }
+  }
+});
 
     return Scaffold(
       backgroundColor: _bgColor,
@@ -211,9 +224,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ),
 
             if (_showColors && !_isFullscreen && !_showLayers)
-              Positioned(
-                right: 8,
-                bottom: 110,
+  Positioned(
+    right: _isLandscape ? 70 : 8,
+    top: _isLandscape ? _topBarHeight + 8 : null,
+    bottom: _isLandscape ? null : 110,
                 child: AnimatedBuilder(
                   animation: _controller,
                   builder: (context, child) => ColorPicker(
@@ -911,9 +925,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   BorderSide(color: _borderColor, width: 0.5),
             ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
+          child: SingleChildScrollView(
+           child: Column(
+             mainAxisAlignment: MainAxisAlignment.end,
+             mainAxisSize: MainAxisSize.min,
+             children: [
               // ─── BORRADOR ───────────────────────
               const SizedBox(height: 8),
               GestureDetector(
