@@ -1137,7 +1137,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
               const SizedBox(height: 16),
             ],
           ),
-        );
+        ),
+       ); 
       },
     );
   }
