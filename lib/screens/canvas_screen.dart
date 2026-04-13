@@ -7,6 +7,7 @@ import '../widgets/layer_panel.dart';
 import '../widgets/color_picker.dart';
 import '../models/brush_model.dart';
 import '../models/stroke_model.dart';
+import 'package:flutter/rendering.dart';
 
 enum BrushPanelTab { todos, descargados, creados, sellos }
 enum SelloTab { creados, descargados }
@@ -95,10 +96,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   double get _topBarHeight => _isLandscape ? 52.0 : 96.0;
 
-  Offset _screenToCanvas(Offset p) => Offset(
-        (p.dx - _offset.dx) / _scale,
-        (p.dy - _offset.dy) / _scale,
-      );
+  Offset _screenToCanvas(Offset p) {
+  final matrix = Matrix4.identity()
+    ..translate(_offset.dx, _offset.dy)
+    ..rotateZ(_rotation)
+    ..scale(_scale);
+  final inverse = Matrix4.inverted(matrix);
+  return MatrixUtils.transformPoint(inverse, p);
+  }
 
   bool _isTouchOnCanvas(Offset point) {
     final sw = MediaQuery.of(context).size.width;
