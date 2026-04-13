@@ -15,8 +15,13 @@ class CanvasController extends ChangeNotifier {
   List<List<LayerModel>> _redoHistory = [];
   bool symmetryEnabled = false;
   SymmetryType symmetryType = SymmetryType.horizontal;
-  Size canvasSize = const Size(1080, 1920);
   Color backgroundColor = Colors.transparent;
+
+  // FIX: Separar tamaño del lienzo real del tamaño de pantalla
+  // screenSize = tamaño de la pantalla (se actualiza automáticamente)
+  // canvasSize = tamaño real del lienzo (configurable por el usuario)
+  Size screenSize = const Size(360, 772);
+  Size canvasSize = const Size(1080, 1920);
 
   // Cache de capas renderizadas
   final Map<int, ui.Picture?> _layerCache = {};
@@ -55,11 +60,10 @@ class CanvasController extends ChangeNotifier {
     _layerCache[layerId] = picture;
   }
 
-  // Simplificación de puntos — algoritmo Ramer-Douglas-Peucker simplificado
-  List<Offset> _simplifyPoints(List<Offset> points, double tolerance) {
+  // Simplificación de puntos
+  List<Offset> _simplifyPoints(
+      List<Offset> points, double tolerance) {
     if (points.length <= 2) return points;
-
-    // Solo simplificar si hay muchos puntos
     if (points.length < 10) return points;
 
     final result = <Offset>[points.first];
@@ -117,14 +121,14 @@ class CanvasController extends ChangeNotifier {
   void continueStroke(Offset point) {
     if (currentStroke == null) return;
 
-    // Filtrar puntos muy cercanos para reducir procesamiento
     if (currentStroke!.points.isNotEmpty) {
       final lastPoint = currentStroke!.points.last;
       final minDist = activeBrush.size * 0.15;
       if ((point - lastPoint).distance < minDist) return;
     }
 
-    final newPoints = List<Offset>.from(currentStroke!.points)..add(point);
+    final newPoints =
+        List<Offset>.from(currentStroke!.points)..add(point);
 
     currentStroke = StrokeModel(
       points: newPoints,
@@ -137,9 +141,9 @@ class CanvasController extends ChangeNotifier {
 
     if (symmetryEnabled && currentMirrorStroke != null) {
       final mirroredPoint = _getMirroredPoint(point);
-      final mirrorPoints = List<Offset>.from(
-        currentMirrorStroke!.points,
-      )..add(mirroredPoint);
+      final mirrorPoints =
+          List<Offset>.from(currentMirrorStroke!.points)
+            ..add(mirroredPoint);
 
       currentMirrorStroke = StrokeModel(
         points: mirrorPoints,
@@ -157,12 +161,10 @@ class CanvasController extends ChangeNotifier {
   void endStroke() {
     if (currentStroke == null) return;
 
-    final layerIndex = layers.indexWhere(
-      (l) => l.id == activeLayerId,
-    );
+    final layerIndex =
+        layers.indexWhere((l) => l.id == activeLayerId);
 
     if (layerIndex != -1) {
-      // Simplificar puntos al terminar el trazo
       final tolerance = activeBrush.size * 0.1;
       final simplifiedPoints = _simplifyPoints(
         currentStroke!.points,
@@ -178,9 +180,9 @@ class CanvasController extends ChangeNotifier {
         layerId: currentStroke!.layerId,
       );
 
-      final updatedStrokes = List<StrokeModel>.from(
-        layers[layerIndex].strokes,
-      )..add(simplifiedStroke);
+      final updatedStrokes =
+          List<StrokeModel>.from(layers[layerIndex].strokes)
+            ..add(simplifiedStroke);
 
       if (symmetryEnabled && currentMirrorStroke != null) {
         final simplifiedMirrorPoints = _simplifyPoints(
@@ -197,11 +199,8 @@ class CanvasController extends ChangeNotifier {
         ));
       }
 
-      layers[layerIndex] = layers[layerIndex].copyWith(
-        strokes: updatedStrokes,
-      );
-
-      // Invalidar cache de esta capa
+      layers[layerIndex] =
+          layers[layerIndex].copyWith(strokes: updatedStrokes);
       invalidateLayerCache(activeLayerId);
     }
 
@@ -217,16 +216,18 @@ class CanvasController extends ChangeNotifier {
       case SymmetryType.vertical:
         return Offset(point.dx, canvasSize.height - point.dy);
       case SymmetryType.radial:
-        return Offset(
-            canvasSize.width - point.dx, canvasSize.height - point.dy);
+        return Offset(canvasSize.width - point.dx,
+            canvasSize.height - point.dy);
     }
   }
 
   void _saveToHistory() {
     _undoHistory.add(
-      layers.map((l) => l.copyWith(
-            strokes: List<StrokeModel>.from(l.strokes),
-          )).toList(),
+      layers
+          .map((l) => l.copyWith(
+                strokes: List<StrokeModel>.from(l.strokes),
+              ))
+          .toList(),
     );
     _redoHistory.clear();
     if (_undoHistory.length > 30) {
@@ -236,11 +237,11 @@ class CanvasController extends ChangeNotifier {
 
   void undo() {
     if (_undoHistory.isEmpty) return;
-    _redoHistory.add(
-      layers.map((l) => l.copyWith(
-            strokes: List<StrokeModel>.from(l.strokes),
-          )).toList(),
-    );
+    _redoHistory.add(layers
+        .map((l) => l.copyWith(
+              strokes: List<StrokeModel>.from(l.strokes),
+            ))
+        .toList());
     layers = _undoHistory.removeLast();
     invalidateAllCache();
     notifyListeners();
@@ -248,19 +249,21 @@ class CanvasController extends ChangeNotifier {
 
   void redo() {
     if (_redoHistory.isEmpty) return;
-    _undoHistory.add(
-      layers.map((l) => l.copyWith(
-            strokes: List<StrokeModel>.from(l.strokes),
-          )).toList(),
-    );
+    _undoHistory.add(layers
+        .map((l) => l.copyWith(
+              strokes: List<StrokeModel>.from(l.strokes),
+            ))
+        .toList());
     layers = _redoHistory.removeLast();
     invalidateAllCache();
     notifyListeners();
   }
 
   void addLayer() {
-    final newId = layers.isEmpty ? 0 : layers.last.id + 1;
-    layers.add(LayerModel(id: newId, name: 'Capa ${newId + 1}'));
+    final newId =
+        layers.isEmpty ? 0 : layers.last.id + 1;
+    layers
+        .add(LayerModel(id: newId, name: 'Capa ${newId + 1}'));
     activeLayerId = newId;
     notifyListeners();
   }
@@ -276,7 +279,8 @@ class CanvasController extends ChangeNotifier {
   }
 
   void duplicateLayer(int layerId) {
-    final index = layers.indexWhere((l) => l.id == layerId);
+    final index =
+        layers.indexWhere((l) => l.id == layerId);
     if (index == -1) return;
     _saveToHistory();
     final newId = layers.last.id + 1;
@@ -295,13 +299,18 @@ class CanvasController extends ChangeNotifier {
   }
 
   void mergeDownLayer(int layerId) {
-    final index = layers.indexWhere((l) => l.id == layerId);
+    final index =
+        layers.indexWhere((l) => l.id == layerId);
     if (index <= 0) return;
     _saveToHistory();
     final current = layers[index];
     final below = layers[index - 1];
-    final mergedStrokes = [...below.strokes, ...current.strokes];
-    layers[index - 1] = below.copyWith(strokes: mergedStrokes);
+    final mergedStrokes = [
+      ...below.strokes,
+      ...current.strokes
+    ];
+    layers[index - 1] =
+        below.copyWith(strokes: mergedStrokes);
     layers.removeAt(index);
     activeLayerId = layers[index - 1].id;
     invalidateLayerCache(below.id);
@@ -309,7 +318,8 @@ class CanvasController extends ChangeNotifier {
   }
 
   void lockLayer(int layerId) {
-    final index = layers.indexWhere((l) => l.id == layerId);
+    final index =
+        layers.indexWhere((l) => l.id == layerId);
     if (index == -1) return;
     layers[index] = layers[index].copyWith(
       isLocked: !layers[index].isLocked,
@@ -320,8 +330,11 @@ class CanvasController extends ChangeNotifier {
   void flattenLayers() {
     if (layers.length <= 1) return;
     _saveToHistory();
-    final allStrokes = layers.expand((l) => l.strokes).toList();
-    layers = [LayerModel(id: 0, name: 'Capa 1', strokes: allStrokes)];
+    final allStrokes =
+        layers.expand((l) => l.strokes).toList();
+    layers = [
+      LayerModel(id: 0, name: 'Capa 1', strokes: allStrokes)
+    ];
     activeLayerId = 0;
     invalidateAllCache();
     notifyListeners();
@@ -333,7 +346,8 @@ class CanvasController extends ChangeNotifier {
   }
 
   void toggleLayerVisibility(int layerId) {
-    final index = layers.indexWhere((l) => l.id == layerId);
+    final index =
+        layers.indexWhere((l) => l.id == layerId);
     if (index != -1) {
       layers[index] = layers[index].copyWith(
         isVisible: !layers[index].isVisible,
@@ -348,14 +362,14 @@ class CanvasController extends ChangeNotifier {
   }
 
   void setActiveColor(Color color) {
-  activeColor = color;
-  notifyListeners();
-}
+    activeColor = color;
+    notifyListeners();
+  }
 
-void setBackgroundColor(Color color) {
-  backgroundColor = color;
-  notifyListeners();
-}
+  void setBackgroundColor(Color color) {
+    backgroundColor = color;
+    notifyListeners();
+  }
 
   void setBrushSize(double size) {
     activeBrush = activeBrush.copyWith(size: size);
@@ -378,18 +392,53 @@ void setBackgroundColor(Color color) {
     notifyListeners();
   }
 
+  // FIX: updateScreenSize actualiza solo el tamaño de pantalla
+  // sin afectar el tamaño real del lienzo
+  void updateScreenSize(Size size) {
+    if (screenSize != size) {
+      screenSize = size;
+      // No invalidar cache — la pantalla cambió, no el lienzo
+    }
+  }
+
+  // FIX: updateCanvasSize cambia el tamaño real del lienzo
+  // (lo que antes se llamaba igual pero era confuso)
   void updateCanvasSize(Size size) {
     if (canvasSize != size) {
       canvasSize = size;
       invalidateAllCache();
+      notifyListeners();
     }
   }
 
+  // FIX: centrar el lienzo en la pantalla
+  // Retorna el offset necesario para centrar el lienzo
+  Offset get centeredOffset {
+    final scaleX = screenSize.width / canvasSize.width;
+    final scaleY = screenSize.height / canvasSize.height;
+    final scale = scaleX < scaleY ? scaleX : scaleY;
+    final scaledW = canvasSize.width * scale;
+    final scaledH = canvasSize.height * scale;
+    return Offset(
+      (screenSize.width - scaledW) / 2,
+      (screenSize.height - scaledH) / 2,
+    );
+  }
+
+  // FIX: escala inicial para que el lienzo quepa en pantalla
+  double get initialScale {
+    final scaleX = screenSize.width / canvasSize.width;
+    final scaleY = screenSize.height / canvasSize.height;
+    return (scaleX < scaleY ? scaleX : scaleY) * 0.9;
+  }
+
   void clearActiveLayer() {
-    final index = layers.indexWhere((l) => l.id == activeLayerId);
+    final index =
+        layers.indexWhere((l) => l.id == activeLayerId);
     if (index != -1) {
       _saveToHistory();
-      layers[index] = layers[index].copyWith(strokes: []);
+      layers[index] =
+          layers[index].copyWith(strokes: []);
       invalidateLayerCache(activeLayerId);
       notifyListeners();
     }
@@ -397,7 +446,8 @@ void setBackgroundColor(Color color) {
 
   void clearCanvas() {
     _saveToHistory();
-    layers = layers.map((l) => l.copyWith(strokes: [])).toList();
+    layers =
+        layers.map((l) => l.copyWith(strokes: [])).toList();
     invalidateAllCache();
     notifyListeners();
   }
