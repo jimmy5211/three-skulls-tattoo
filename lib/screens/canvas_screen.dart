@@ -1808,32 +1808,13 @@ void initState() {
           }
           final onCanvas =
               _isTouchOnCanvas(details.localFocalPoint);
-          if (details.pointerCount >= 2) {
-             _isScaling = true;
-             _startRotation = _rotation; 
-          }else if (!onCanvas || _zoomMode) {
+          if (details.pointerCount >= 2 || _zoomMode) {
             _isScaling = true;
             _controller.endStroke();
             _startScale = _scale;
             _startOffset = _offset;
             _startFocalPoint = details.localFocalPoint;
-          } else {
-            _isScaling = false;
-            _controller.startStroke(
-                _screenToCanvas(details.localFocalPoint));
-          }
-        },
-        onScaleUpdate: (details) {
-          if (_showBrushPanel || _showSelectionOptions) return;
-          if (details.pointerCount >= 2) {
-            _isScaling = true;
-            setState(() {
-              _scale = (_startScale * details.scale)
-                  .clamp(0.1, 10.0);
-              _offset = _startOffset +
-                  (details.localFocalPoint - _startFocalPoint);
-              _rotation = _startRotation + details.rotation;
-            });
+            _startRotation = _rotation;
           } else if (_isScaling) {
             setState(() {
               _offset = _startOffset +
