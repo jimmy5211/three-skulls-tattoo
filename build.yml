@@ -1,0 +1,155 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+          channel: 'stable'
+
+      - name: Setup Keystore
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "Usando keystore existente"
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/three-skulls.jks
+          else
+            echo "Generando nueva keystore primera vez"
+            keytool -genkeypair \
+              -v \
+              -keystore android/app/three-skulls.jks \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -alias three-skulls \
+              -dname "CN=Three Skulls Tattoo, OU=App, O=ThreeSkulls, L=MX, S=MX, C=MX" \
+              -storepass threeskulls2024 \
+              -keypass threeskulls2024
+
+            echo "KEYSTORE_BASE64_VALUE:"
+            base64 -w 0 android/app/three-skulls.jks
+            echo ""
+            echo "Guarda el valor de arriba como GitHub Secret: KEYSTORE_BASE64"
+          fi
+
+          cat > android/key.properties << 'KEYEOF'
+          storePassword=threeskulls2024
+          keyPassword=threeskulls2024
+          keyAlias=three-skulls
+          storeFile=three-skulls.jks
+          KEYEOF
+
+      - name: Configure Gradle signing
+        run: |
+          if ! grep -q "signingConfigs" android/app/build.gradle; then
+            python3 - << 'PYEOF'
+          import re
+
+          with open('android/app/build.gradle', 'r') as f:
+              content = f.read()
+
+          signing_config = '''
+              signingConfigs {
+                  release {
+                      def keystorePropertiesFile = rootProject.file("key.properties")
+                      def keystoreProperties = new Properties()
+                      keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+                      keyAlias keystoreProperties["keyAlias"]
+                      keyPassword keystoreProperties["keyPassword"]
+                      storeFile file(keystoreProperties["storeFile"])
+                      storePassword keystoreProperties["storePassword"]
+                  }
+              }
+          '''
+
+          content = content.replace('android {', 'android {' + signing_config, 1)
+
+          content = re.sub(
+              r'buildTypes \{',
+              'buildTypes {\n        release {\n            signingConfig signingConfigs.release\n        }',
+              content,
+              count=1
+          )
+
+          with open('android/app/build.gradle', 'w') as f:
+              f.write(content)
+
+          print("Signing configured successfully")
+          PYEOF
+          fi
+
+      - name: Set version code
+        run: |
+          BUILD_NUMBER=${{ github.run_number }}
+          VERSION_CODE=$((1000 + BUILD_NUMBER))
+          VERSION_NAME="1.0.$BUILD_NUMBER"
+
+          sed -i "s/^version: .*/version: $VERSION_NAME+$VERSION_CODE/" pubspec.yaml
+          sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/" android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"$VERSION_NAME\"/" android/app/build.gradle
+
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
+
+          echo "=== pubspec.yaml version ==="
+          grep "^version:" pubspec.yaml
+          echo "=== build.gradle version ==="
+          grep "versionName\|versionCode" android/app/build.gradle
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
+
+      - name: Build APK
+        run: flutter build apk --release --no-tree-shake-icons
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "Three Skulls Tattoo v1.0.${{ github.run_number }}"
+          body: |
+            ## 💀 Three Skulls Tattoo
+            ### Versión 1.0.${{ github.run_number }}
+            #### Novedades:
+            - Mejoras en canvas de dibujo
+            - Zoom y paneo con 2 dedos
+            - Simetría corregida
+            - Corrección de bugs
+          files: build/app/outputs/flutter-apk/app-release.apk
+          draft: false
+          prerelease: false
+
+      - name: Update JSONBin version
+        run: |
+          curl -X PUT \
+            https://api.jsonbin.io/v3/b/69b8b65eaa77b81da9ef4f41 \
+            -H 'Content-Type: application/json' \
+            -H 'X-Master-Key: ${{ secrets.JSONBIN_API_KEY }}' \
+            -d "{
+              \"version\": \"1.0.${{ github.run_number }}\",
+              \"versionCode\": $((1000 + ${{ github.run_number }})),
+              \"releaseNotes\": \"Mejoras en canvas\nZoom y paneo\nSimetria corregida\nBug fixes\",
+              \"downloadUrl\": \"https://github.com/jimmy5211/three-skulls-tattoo/releases/download/v1.0.${{ github.run_number }}/app-release.apk\",
+              \"mandatory\": false
+            }"
