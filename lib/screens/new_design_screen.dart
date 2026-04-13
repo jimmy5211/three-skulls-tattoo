@@ -520,7 +520,14 @@ class _NewDesignScreenState extends State<NewDesignScreen> {
     final isActive = _orientation == orientation;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _orientation = orientation),
+        onTap: () => setState(() {
+  if (_orientation != orientation) {
+    _orientation = orientation;
+    final tmp = _widthController.text;
+    _widthController.text = _heightController.text;
+    _heightController.text = tmp;
+  }
+}),
         child: Container(
           height: 64,
           decoration: BoxDecoration(
