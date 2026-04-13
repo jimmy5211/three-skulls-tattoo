@@ -146,7 +146,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
   final size = MediaQuery.of(context).size;
-  _controller.updateCanvasSize(size);
+  _controller.updateScreenSize(size);
   // Centrar lienzo al iniciar
   if (_offset == Offset.zero) {
     final p = widget.designParams;
@@ -1941,15 +1941,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     backgroundColor:
                         _controller.backgroundColor,
                   ),
-                  // FIX: borde visible cuando fondo es transparente
-                  foregroundPainter:
-                      _controller.backgroundColor ==
-                              Colors.transparent
-                          ? _CanvasBorderPainter()
-                          : null,
                   size: Size(
-                    MediaQuery.of(context).size.width,
-                    MediaQuery.of(context).size.height,
+                    _controller.canvasSize.width,
+                    _controller.canvasSize.height,
                   ),
                 ),
               );
