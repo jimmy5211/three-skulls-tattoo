@@ -2222,8 +2222,8 @@ if (p != null) {
       ),
     );
   }
+ }
 }
-
 // FIX: Borde rojo tenue visible cuando fondo es transparente
 class _CanvasBorderPainter extends CustomPainter {
   @override
