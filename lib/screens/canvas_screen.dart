@@ -72,33 +72,31 @@ class _CanvasScreenState extends State<CanvasScreen> {
     _brushes = BrushModel.defaultBrushes();
 
     final p = widget.designParams;
-if (p != null) {
-  _projectName = p['name'] as String? ?? 'Sin título';
-  final bg = p['background'] as String? ?? 'transparente';
-  if (bg == 'blanco') {
-    _controller.backgroundColor = Colors.white;
-  } else if (bg == 'negro') {
-    _controller.backgroundColor = Colors.black;
-  }
-  // FIX: aplicar tamaño real del lienzo
-  final wPx = p['widthPx'] as int? ?? 1080;
-  final hPx = p['heightPx'] as int? ?? 1920;
-  _controller.updateCanvasSize(Size(wPx.toDouble(), hPx.toDouble()));
-  // Inicializar escala para que el lienzo quepa en pantalla
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    final screen = MediaQuery.of(context).size;
-    final scaleX = (screen.width - 56) / wPx;
-    final scaleY = (screen.height - 96) / hPx;
-    final s = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
-    setState(() {
-      _scale = s;
-      _offset = Offset(
-        (screen.width - wPx * s) / 2,
-        (screen.height - hPx * s) / 2,
-      );
-    });
-  });
-}
+    if (p != null) {
+      _projectName = p['name'] as String? ?? 'Sin título';
+      final bg = p['background'] as String? ?? 'transparente';
+      if (bg == 'blanco') {
+        _controller.backgroundColor = Colors.white;
+      } else if (bg == 'negro') {
+        _controller.backgroundColor = Colors.black;
+      }
+      final wPx = p['widthPx'] as int? ?? 1080;
+      final hPx = p['heightPx'] as int? ?? 1920;
+      _controller.updateCanvasSize(Size(wPx.toDouble(), hPx.toDouble()));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final screen = MediaQuery.of(context).size;
+        final scaleX = (screen.width - 56) / wPx;
+        final scaleY = (screen.height - 96) / hPx;
+        final s = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
+        setState(() {
+          _scale = s;
+          _offset = Offset(
+            (screen.width - wPx * s) / 2,
+            (screen.height - hPx * s) / 2,
+          );
+        });
+      });
+    }
   }
   @override
   void dispose() {
@@ -161,6 +159,7 @@ if (p != null) {
 
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
         child: Stack(
