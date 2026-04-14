@@ -2255,14 +2255,12 @@ class _BrushLinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    
-  final paint = Paint()
-      ..color = this.color
-      ..strokeWidth = this.strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
+    final paint = Paint()
+        ..color = this.color
+        ..strokeWidth = this.strokeWidth
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke;
 
-    
     if (this.isDotwork){
       paint.style = PaintingStyle.fill;
       double x = 2;
