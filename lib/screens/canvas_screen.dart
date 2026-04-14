@@ -72,16 +72,33 @@ class _CanvasScreenState extends State<CanvasScreen> {
     _brushes = BrushModel.defaultBrushes();
 
     final p = widget.designParams;
-    if (p != null) {
-      _projectName = p['name'] as String? ?? 'Sin título';
-      final bg = p['background'] as String? ?? 'transparente';
-      if (bg == 'blanco') {
-        _controller.backgroundColor = Colors.white;
-      } else if (bg == 'negro') {
-        _controller.backgroundColor = Colors.black;
-      }
-    }
+if (p != null) {
+  _projectName = p['name'] as String? ?? 'Sin título';
+  final bg = p['background'] as String? ?? 'transparente';
+  if (bg == 'blanco') {
+    _controller.backgroundColor = Colors.white;
+  } else if (bg == 'negro') {
+    _controller.backgroundColor = Colors.black;
   }
+  // FIX: aplicar tamaño real del lienzo
+  final wPx = p['widthPx'] as int? ?? 1080;
+  final hPx = p['heightPx'] as int? ?? 1920;
+  _controller.updateCanvasSize(Size(wPx.toDouble(), hPx.toDouble()));
+  // Inicializar escala para que el lienzo quepa en pantalla
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final screen = MediaQuery.of(context).size;
+    final scaleX = (screen.width - 56) / wPx;
+    final scaleY = (screen.height - 96) / hPx;
+    final s = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
+    setState(() {
+      _scale = s;
+      _offset = Offset(
+        (screen.width - wPx * s) / 2,
+        (screen.height - hPx * s) / 2,
+      );
+    });
+  });
+}
 
   @override
   void dispose() {
@@ -144,24 +161,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-  final size = MediaQuery.of(context).size;
-  _controller.updateScreenSize(size);
-  // Centrar lienzo al iniciar
-  if (_offset == Offset.zero) {
-    final p = widget.designParams;
-    if (p != null) {
-      final orientation = p['orientation'] as String? ?? 'vertical';
-      if (orientation == 'horizontal') {
-        setState(() {
-          _rotation = 1.5708; // 90 grados en radianes
-        });
-      }
-    }
-  }
-});
-
-    return Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
         child: Stack(
