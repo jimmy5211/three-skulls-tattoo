@@ -99,7 +99,7 @@ if (p != null) {
     });
   });
 }
-
+  }
   @override
   void dispose() {
     _brushScrollController.dispose();
