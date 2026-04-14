@@ -2255,7 +2255,7 @@ class _BrushLinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
+final paint = Paint()
   ..color = this.color
   ..strokeWidth = this.strokeWidth
   ..strokeCap = StrokeCap.round
