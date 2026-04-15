@@ -80,8 +80,10 @@ jobs:
         run: flutter build apk --release --no-tree-shake-icons
 
       - name: Verify APK signature
-        run: apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
-
+        run: |
+          BUILD_TOOLS=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)
+          $BUILD_TOOLS/apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk 
+          
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
