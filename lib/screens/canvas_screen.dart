@@ -933,7 +933,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
           child: SingleChildScrollView(
            child: Column(
-             mainAxisAlignment: MainAxisAlignment.end,
+             mainAxisAlignment: MainAxisAlignment.start,
              mainAxisSize: MainAxisSize.min,
              children: [
               // ─── BORRADOR ───────────────────────
