@@ -49,12 +49,7 @@ jobs:
             echo "Guarda el valor de arriba como GitHub Secret: KEYSTORE_BASE64"
           fi
 
-          cat > android/key.properties << 'KEYEOF'
-storePassword=threeskulls2024
-keyPassword=threeskulls2024
-keyAlias=three-skulls
-storeFile=three-skulls.jks
-KEYEOF
+          printf 'storePassword=threeskulls2024\nkeyPassword=threeskulls2024\nkeyAlias=three-skulls\nstoreFile=three-skulls.jks\n' > android/key.properties
 
       - name: Configure Gradle signing
         run: |
