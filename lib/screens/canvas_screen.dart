@@ -1909,8 +1909,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           if (!_isScaling) _controller.endStroke();
           _isScaling = false;
         },
-        child: ClipRect(
-          child: AnimatedBuilder(
+        child: AnimatedBuilder(
             animation: _controller,
             builder: (context, child) {
               return Transform(
@@ -1945,7 +1944,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
             },
           ),
         ),
-      ),
     );
   }
 
