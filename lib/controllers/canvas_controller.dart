@@ -451,6 +451,196 @@ class CanvasController extends ChangeNotifier {
     invalidateAllCache();
     notifyListeners();
   }
+
+  // ─── SELECCIÓN ───────────────────────────────────────────
+
+  List<int> selectedStrokeIndices = [];
+  List<StrokeModel> _clipboard = [];
+  bool get hasSelection => selectedStrokeIndices.isNotEmpty;
+  bool get hasClipboard => _clipboard.isNotEmpty;
+
+  List<StrokeModel> get selectedStrokes {
+    final idx = layers.indexWhere((l) => l.id == activeLayerId);
+    if (idx == -1) return [];
+    final strokes = layers[idx].strokes;
+    return selectedStrokeIndices
+        .where((i) => i < strokes.length)
+        .map((i) => strokes[i])
+        .toList();
+  }
+
+  Rect? get selectionBounds {
+    final strokes = selectedStrokes;
+    if (strokes.isEmpty) return null;
+    double minX = double.infinity, minY = double.infinity;
+    double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
+    for (final s in strokes) {
+      for (final p in s.points) {
+        if (p.dx < minX) minX = p.dx;
+        if (p.dy < minY) minY = p.dy;
+        if (p.dx > maxX) maxX = p.dx;
+        if (p.dy > maxY) maxY = p.dy;
+      }
+    }
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
+  }
+
+  void selectStrokesInRect(Rect rect) {
+    final idx = layers.indexWhere((l) => l.id == activeLayerId);
+    if (idx == -1) return;
+    selectedStrokeIndices = [];
+    final strokes = layers[idx].strokes;
+    for (int i = 0; i < strokes.length; i++) {
+      if (strokes[i].points.any((p) => rect.contains(p))) {
+        selectedStrokeIndices.add(i);
+      }
+    }
+    notifyListeners();
+  }
+
+  void selectStrokesInPath(Path path) {
+    final idx = layers.indexWhere((l) => l.id == activeLayerId);
+    if (idx == -1) return;
+    selectedStrokeIndices = [];
+    final strokes = layers[idx].strokes;
+    for (int i = 0; i < strokes.length; i++) {
+      if (strokes[i].points.any((p) => path.contains(p))) {
+        selectedStrokeIndices.add(i);
+      }
+    }
+    notifyListeners();
+  }
+
+  void selectStrokesInEllipse(Rect rect) {
+    final idx = layers.indexWhere((l) => l.id == activeLayerId);
+    if (idx == -1) return;
+    selectedStrokeIndices = [];
+    final cx = rect.center.dx;
+    final cy = rect.center.dy;
+    final rx = rect.width / 2;
+    final ry = rect.height / 2;
+    if (rx <= 0 || ry <= 0) return;
+    final strokes = layers[idx].strokes;
+    for (int i = 0; i < strokes.length; i++) {
+      if (strokes[i].points.any((p) {
+        final dx = (p.dx - cx) / rx;
+        final dy = (p.dy - cy) / ry;
+        return dx * dx + dy * dy <= 1.0;
+      })) {
+        selectedStrokeIndices.add(i);
+      }
+    }
+    notifyListeners();
+  }
+
+  void selectStrokesNear(Offset point, double radius) {
+    final idx = layers.indexWhere((l) => l.id == activeLayerId);
+    if (idx == -1) return;
+    selectedStrokeIndices = [];
+    final strokes = layers[idx].strokes;
+    for (int i = 0; i < strokes.length; i++) {
+      if (strokes[i].points.any((p) => (p - point).distance <= radius)) {
+        selectedStrokeIndices.add(i);
+      }
+    }
+    notifyListeners();
+  }
+
+  void clearSelection() {
+    selectedStrokeIndices = [];
+    notifyListeners();
+  }
+
+  void moveSelected(Offset delta) {
+    if (selectedStrokeIndices.isEmpty) return;
+    final idx = layers.indexWhere((l) => l.id == activeLayerId);
+    if (idx == -1) return;
+    final strokes = List<StrokeModel>.from(layers[idx].strokes);
+    for (final i in selectedStrokeIndices) {
+      if (i < strokes.length) {
+        strokes[i] = strokes[i].copyWith(
+          points: strokes[i].points.map((p) => p + delta).toList(),
+        );
+      }
+    }
+    layers[idx] = layers[idx].copyWith(strokes: strokes);
+    invalidateLayerCache(activeLayerId);
+    notifyListeners();
+  }
+
+  void cutSelected() {
+    if (selectedStrokeIndices.isEmpty) return;
+    _saveToHistory();
+    _clipboard = selectedStrokes
+        .map((s) => s.copyWith(points: List<Offset>.from(s.points)))
+        .toList();
+    _removeSelected();
+  }
+
+  void copySelected() {
+    if (selectedStrokeIndices.isEmpty) return;
+    _clipboard = selectedStrokes
+        .map((s) => s.copyWith(points: List<Offset>.from(s.points)))
+        .toList();
+  }
+
+  void paste() {
+    if (_clipboard.isEmpty) return;
+    _saveToHistory();
+    final idx = layers.indexWhere((l) => l.id == activeLayerId);
+    if (idx == -1) return;
+    const delta = Offset(30, 30);
+    final pasted = _clipboard.map((s) => s.copyWith(
+      points: s.points.map((p) => p + delta).toList(),
+      layerId: activeLayerId,
+    )).toList();
+    final updated = List<StrokeModel>.from(layers[idx].strokes)..addAll(pasted);
+    layers[idx] = layers[idx].copyWith(strokes: updated);
+    // Seleccionar los strokes recién pegados
+    final base = layers[idx].strokes.length - pasted.length;
+    selectedStrokeIndices = List.generate(pasted.length, (i) => base + i);
+    invalidateLayerCache(activeLayerId);
+    notifyListeners();
+  }
+
+  void deleteSelected() {
+    if (selectedStrokeIndices.isEmpty) return;
+    _saveToHistory();
+    _removeSelected();
+  }
+
+  void _removeSelected() {
+    final idx = layers.indexWhere((l) => l.id == activeLayerId);
+    if (idx == -1) return;
+    final toRemove = Set<int>.from(selectedStrokeIndices);
+    final strokes = layers[idx].strokes;
+    final newStrokes = [
+      for (int i = 0; i < strokes.length; i++)
+        if (!toRemove.contains(i)) strokes[i]
+    ];
+    layers[idx] = layers[idx].copyWith(strokes: newStrokes);
+    selectedStrokeIndices = [];
+    invalidateLayerCache(activeLayerId);
+    notifyListeners();
+  }
+
+  void colorSelected(Color color) {
+    if (selectedStrokeIndices.isEmpty) return;
+    _saveToHistory();
+    final idx = layers.indexWhere((l) => l.id == activeLayerId);
+    if (idx == -1) return;
+    final strokes = List<StrokeModel>.from(layers[idx].strokes);
+    for (final i in selectedStrokeIndices) {
+      if (i < strokes.length) {
+        strokes[i] = strokes[i].copyWith(color: color);
+      }
+    }
+    layers[idx] = layers[idx].copyWith(strokes: strokes);
+    invalidateLayerCache(activeLayerId);
+    notifyListeners();
+  }
+
+  void saveSelectionMoveToHistory() => _saveToHistory();
 }
 
 enum SymmetryType { horizontal, vertical, radial }
