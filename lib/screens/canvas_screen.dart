@@ -1849,6 +1849,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget _buildCanvas() {
     return Positioned.fill(
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: () {
           if (_showBrushPanel)
             setState(() => _showBrushPanel = false);
