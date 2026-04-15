@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -25,71 +26,54 @@ jobs:
           flutter-version: '3.19.0'
           channel: 'stable'
 
+      # ✅ USAR SIEMPRE EL MISMO KEYSTORE (SIN GENERAR NUEVO)
       - name: Setup Keystore
         run: |
-          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
-            echo "Usando keystore existente"
-            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/three-skulls.jks
-          else
-            echo "Generando nueva keystore primera vez"
-            keytool -genkeypair \
-              -v \
-              -keystore android/app/three-skulls.jks \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -alias three-skulls \
-              -dname "CN=Three Skulls Tattoo, OU=App, O=ThreeSkulls, L=MX, S=MX, C=MX" \
-              -storepass threeskulls2024 \
-              -keypass threeskulls2024
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/three-skulls.jks
 
-            echo "KEYSTORE_BASE64_VALUE:"
-            base64 -w 0 android/app/three-skulls.jks
-            echo ""
-            echo "Guarda el valor de arriba como GitHub Secret: KEYSTORE_BASE64"
-          fi
+          printf "storePassword=${{ secrets.KEYSTORE_PASSWORD }}\nkeyPassword=${{ secrets.KEY_PASSWORD }}\nkeyAlias=${{ secrets.KEY_ALIAS }}\nstoreFile=three-skulls.jks\n" > android/key.properties
 
-          printf 'storePassword=threeskulls2024\nkeyPassword=threeskulls2024\nkeyAlias=three-skulls\nstoreFile=three-skulls.jks\n' > android/key.properties
-
+      # ✅ CONFIGURAR FIRMA SOLO SI NO EXISTE
       - name: Configure Gradle signing
         run: |
           if ! grep -q "signingConfigs" android/app/build.gradle; then
             python3 - << 'PYEOF'
-          import re
+import re
 
-          with open('android/app/build.gradle', 'r') as f:
-              content = f.read()
+with open('android/app/build.gradle', 'r') as f:
+    content = f.read()
 
-          signing_config = '''
-              signingConfigs {
-                  release {
-                      def keystorePropertiesFile = rootProject.file("key.properties")
-                      def keystoreProperties = new Properties()
-                      keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-                      keyAlias keystoreProperties["keyAlias"]
-                      keyPassword keystoreProperties["keyPassword"]
-                      storeFile file(keystoreProperties["storeFile"])
-                      storePassword keystoreProperties["storePassword"]
-                  }
-              }
-          '''
+signing_config = '''
+    signingConfigs {
+        release {
+            def keystorePropertiesFile = rootProject.file("key.properties")
+            def keystoreProperties = new Properties()
+            keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+            keyAlias keystoreProperties["keyAlias"]
+            keyPassword keystoreProperties["keyPassword"]
+            storeFile file(keystoreProperties["storeFile"])
+            storePassword keystoreProperties["storePassword"]
+        }
+    }
+'''
 
-          content = content.replace('android {', 'android {' + signing_config, 1)
+content = content.replace('android {', 'android {' + signing_config, 1)
 
-          content = re.sub(
-              r'buildTypes \{',
-              'buildTypes {\n        release {\n            signingConfig signingConfigs.release\n        }',
-              content,
-              count=1
-          )
+content = re.sub(
+    r'buildTypes \{',
+    'buildTypes {\n        release {\n            signingConfig signingConfigs.release\n        }',
+    content,
+    count=1
+)
 
-          with open('android/app/build.gradle', 'w') as f:
-              f.write(content)
+with open('android/app/build.gradle', 'w') as f:
+    f.write(content)
 
-          print("Signing configured successfully")
-          PYEOF
+print("Signing configured")
+PYEOF
           fi
 
+      # ✅ VERSIONADO AUTOMÁTICO (correcto)
       - name: Set version code
         run: |
           BUILD_NUMBER=${{ github.run_number }}
@@ -100,15 +84,6 @@ jobs:
           sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/" android/app/build.gradle
           sed -i "s/versionName \"[^\"]*\"/versionName \"$VERSION_NAME\"/" android/app/build.gradle
 
-          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
-          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
-          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
-
-          echo "=== pubspec.yaml version ==="
-          grep "^version:" pubspec.yaml
-          echo "=== build.gradle version ==="
-          grep "versionName\|versionCode" android/app/build.gradle
-
       - name: Get dependencies
         run: flutter pub get
 
@@ -117,6 +92,10 @@ jobs:
 
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
+
+      # ✅ VALIDACIÓN DE FIRMA (CONTROL DE CALIDAD)
+      - name: Verify APK signature
+        run: apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
