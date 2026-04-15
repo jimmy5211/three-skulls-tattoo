@@ -88,14 +88,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
         Future.delayed(const Duration(milliseconds: 100), () {
           if (!mounted) return;
           final screen = MediaQuery.of(context).size;
-          final scaleX = (screen.width - 56) / wPx;
-          final scaleY = (screen.height - 96) / hPx;
+          final sideBar = _sideBarWidth;
+          final topBar = _topBarHeight;
+          final aW = screen.width - sideBar;
+          final aH = screen.height - topBar;
+          final scaleX = aW / wPx;
+          final scaleY = aH / hPx;
           final s = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
           setState(() {
             _scale = s;
             _offset = Offset(
-              (screen.width - wPx * s) / 2,
-              (screen.height - hPx * s) / 2,
+              sideBar + (aW - wPx * s) / 2,
+              topBar + (aH - hPx * s) / 2,
             );
           });
         });
@@ -2045,10 +2049,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget _buildZoomIndicator() {
     return GestureDetector(
       onTap: () => setState(() {
-        _scale = 1.0;
-        _offset = Offset.zero;
-        _startScale = 1.0;
-        _startOffset = Offset.zero;
+        final cW = _controller.canvasSize.width;
+        final cH = _controller.canvasSize.height;
+        final screen = MediaQuery.of(context).size;
+        final aW = screen.width - _sideBarWidth;
+        final aH = screen.height - _topBarHeight;
+        final scaleX = aW / cW;
+        final scaleY = aH / cH;
+        _scale = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
+        _offset = Offset(
+          _sideBarWidth + (aW - cW * _scale) / 2,
+          _topBarHeight + (aH - cH * _scale) / 2,
+        );
         _rotation = 0.0;
       }),
       child: Container(
@@ -2174,12 +2186,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   _controller.updateCanvasSize(Size(w, h));
                   _controller.invalidateAllCache();
                   final screen = MediaQuery.of(context).size;
-                  final scaleX = (screen.width - 56) / w;
-                  final scaleY = (screen.height - 96) / h;
+                  final aW2 = screen.width - _sideBarWidth;
+                  final aH2 = screen.height - _topBarHeight;
+                  final scaleX = aW2 / w;
+                  final scaleY = aH2 / h;
                   _scale = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
                   _offset = Offset(
-                    (screen.width - w * _scale) / 2,
-                    (screen.height - h * _scale) / 2,
+                    _sideBarWidth + (aW2 - w * _scale) / 2,
+                    _topBarHeight + (aH2 - h * _scale) / 2,
                   );
                   _rotation = 0.0;
                 });
