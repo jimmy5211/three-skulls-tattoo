@@ -55,6 +55,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
   double _rotation = 0.0;
   double _startRotation = 0.0;
 
+  // ─── SELECCIÓN ───────────────────────────────────────────
+  List<Offset> _selectionPoints = [];
+  Offset? _selectionDragStart;
+  Offset? _selectionDragCurrent;
+  bool _isDraggingSelection = false;
+  Offset? _selectionMoveStart;
+
   static const double _sideBarWidth = 56.0;
   static const double _layerPanelWidth = 220.0;
 
@@ -261,6 +268,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 top: _isFullscreen ? 8 : _topBarHeight + 8,
                 left: _isFullscreen ? 8 : _sideBarWidth + 8,
                 child: _buildFullscreenButton(),
+              ),
+
+            // Action bar de selección
+            if (_selectionMode != SelectionMode.ninguno &&
+                _controller.hasSelection &&
+                !_isFullscreen)
+              Positioned(
+                bottom: 60,
+                left: _sideBarWidth + 8,
+                right: 8,
+                child: _buildSelectionActionBar(),
               ),
           ],
         ),
@@ -933,7 +951,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
           child: SingleChildScrollView(
            child: Column(
-             mainAxisAlignment: MainAxisAlignment.start,
+             mainAxisAlignment: MainAxisAlignment.end,
              mainAxisSize: MainAxisSize.min,
              children: [
               // ─── BORRADOR ───────────────────────
@@ -1846,6 +1864,45 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   // ─── CANVAS ───────────────────────────────────────────────
+  void _finalizeSelection() {
+    final start = _selectionDragStart;
+    final current = _selectionDragCurrent;
+    switch (_selectionMode) {
+      case SelectionMode.rectangular:
+        if (start != null && current != null) {
+          _controller.selectStrokesInRect(
+              Rect.fromPoints(start, current));
+        }
+        break;
+      case SelectionMode.elipse:
+        if (start != null && current != null) {
+          _controller.selectStrokesInEllipse(
+              Rect.fromPoints(start, current));
+        }
+        break;
+      case SelectionMode.libre:
+        if (_selectionPoints.length >= 3) {
+          final path = Path()
+            ..addPolygon(_selectionPoints, true);
+          _controller.selectStrokesInPath(path);
+        }
+        break;
+      case SelectionMode.automatico:
+        if (start != null) {
+          _controller.selectStrokesNear(
+              start, 80.0 / _scale);
+        }
+        break;
+      default:
+        break;
+    }
+    setState(() {
+      _selectionPoints = [];
+      _selectionDragStart = null;
+      _selectionDragCurrent = null;
+    });
+  }
+
   Widget _buildCanvas() {
     return Positioned.fill(
       child: GestureDetector(
@@ -1854,8 +1911,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
           if (_showBrushPanel)
             setState(() => _showBrushPanel = false);
           if (_showSelectionOptions)
-            setState(
-                () => _showSelectionOptions = false);
+            setState(() => _showSelectionOptions = false);
+          if (_selectionMode != SelectionMode.ninguno &&
+              _controller.hasSelection) {
+            setState(() => _controller.clearSelection());
+          }
         },
         onScaleStart: (details) {
           if (_showBrushPanel) {
@@ -1863,12 +1923,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
           if (_showSelectionOptions) {
-            setState(
-                () => _showSelectionOptions = false);
+            setState(() => _showSelectionOptions = false);
             return;
           }
-          // FIX: 2 dedos o modo zoom activan pan/zoom/rotación
-          // desde cualquier punto de la pantalla
           if (details.pointerCount >= 2 || _zoomMode) {
             _isScaling = true;
             _controller.endStroke();
@@ -1876,6 +1933,28 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _startOffset = _offset;
             _startFocalPoint = details.localFocalPoint;
             _startRotation = _rotation;
+          } else if (_selectionMode != SelectionMode.ninguno) {
+            _isScaling = false;
+            final cp = _screenToCanvas(details.localFocalPoint);
+            final bounds = _controller.selectionBounds;
+            if (bounds != null && _controller.hasSelection) {
+              final expanded = bounds.inflate(40 / _scale);
+              if (expanded.contains(cp)) {
+                _controller.saveSelectionMoveToHistory();
+                setState(() {
+                  _isDraggingSelection = true;
+                  _selectionMoveStart = cp;
+                });
+                return;
+              }
+            }
+            _controller.clearSelection();
+            setState(() {
+              _isDraggingSelection = false;
+              _selectionPoints = [cp];
+              _selectionDragStart = cp;
+              _selectionDragCurrent = cp;
+            });
           } else {
             _isScaling = false;
             _controller.startStroke(
@@ -1883,68 +1962,112 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
         },
         onScaleUpdate: (details) {
-          if (_showBrushPanel || _showSelectionOptions)
-            return;
+          if (_showBrushPanel || _showSelectionOptions) return;
           if (_isScaling) {
             setState(() {
               if (details.pointerCount >= 2) {
-                // FIX: zoom y rotación con 2 dedos
-                _scale =
-                    (_startScale * details.scale)
-                        .clamp(0.1, 10.0);
-                _rotation =
-                    _startRotation + details.rotation;
+                _scale = (_startScale * details.scale)
+                    .clamp(0.1, 10.0);
+                _rotation = _startRotation + details.rotation;
               }
-              // Pan disponible siempre que _isScaling
               _offset = _startOffset +
-                  (details.localFocalPoint -
-                      _startFocalPoint);
+                  (details.localFocalPoint - _startFocalPoint);
             });
+          } else if (_selectionMode != SelectionMode.ninguno) {
+            final cp = _screenToCanvas(details.localFocalPoint);
+            if (_isDraggingSelection) {
+              if (_selectionMoveStart != null) {
+                final delta = cp - _selectionMoveStart!;
+                _controller.moveSelected(delta);
+                setState(() => _selectionMoveStart = cp);
+              }
+            } else {
+              setState(() {
+                _selectionDragCurrent = cp;
+                if (_selectionMode == SelectionMode.libre) {
+                  _selectionPoints.add(cp);
+                }
+              });
+            }
           } else {
             _controller.continueStroke(
-                _screenToCanvas(
-                    details.localFocalPoint));
+                _screenToCanvas(details.localFocalPoint));
           }
         },
         onScaleEnd: (details) {
-          if (!_isScaling) _controller.endStroke();
+          if (_isScaling) {
+            _isScaling = false;
+            return;
+          }
+          if (_selectionMode != SelectionMode.ninguno) {
+            if (_isDraggingSelection) {
+              setState(() {
+                _isDraggingSelection = false;
+                _selectionMoveStart = null;
+              });
+            } else {
+              _finalizeSelection();
+            }
+          } else {
+            _controller.endStroke();
+          }
           _isScaling = false;
         },
         child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              return Transform(
-                transform: Matrix4.identity()
-                  ..translate(_offset.dx, _offset.dy)
-                  ..rotateZ(_rotation)
-                  ..scale(_scale),
-                child: CustomPaint(
-                  painter: CanvasPainter(
-                    layers: _controller.layers,
-                    currentStroke:
-                        _controller.currentStroke,
-                    currentMirrorStroke:
-                        _controller.currentMirrorStroke,
-                    showGrid: _showGrid,
-                    showSymmetryLine:
-                        _controller.symmetryEnabled,
-                    symmetryEnabled:
-                        _controller.symmetryEnabled,
-                    activeLayerId:
-                        _controller.activeLayerId,
-                    controller: _controller,
-                    backgroundColor:
-                        _controller.backgroundColor,
+          animation: _controller,
+          builder: (context, child) {
+            return Transform(
+              transform: Matrix4.identity()
+                ..translate(_offset.dx, _offset.dy)
+                ..rotateZ(_rotation)
+                ..scale(_scale),
+              child: Stack(
+                children: [
+                  CustomPaint(
+                    painter: CanvasPainter(
+                      layers: _controller.layers,
+                      currentStroke: _controller.currentStroke,
+                      currentMirrorStroke:
+                          _controller.currentMirrorStroke,
+                      showGrid: _showGrid,
+                      showSymmetryLine:
+                          _controller.symmetryEnabled,
+                      symmetryEnabled:
+                          _controller.symmetryEnabled,
+                      activeLayerId: _controller.activeLayerId,
+                      controller: _controller,
+                      backgroundColor:
+                          _controller.backgroundColor,
+                    ),
+                    size: Size(
+                      _controller.canvasSize.width,
+                      _controller.canvasSize.height,
+                    ),
                   ),
-                  size: Size(
-                    _controller.canvasSize.width,
-                    _controller.canvasSize.height,
-                  ),
-                ),
-              );
-            },
-          ),
+                  // Overlay de selección
+                  if (_selectionMode != SelectionMode.ninguno)
+                    CustomPaint(
+                      painter: _SelectionOverlayPainter(
+                        mode: _selectionMode,
+                        points: _selectionPoints,
+                        dragStart: _selectionDragStart,
+                        dragCurrent: _selectionDragCurrent,
+                        selectedBounds:
+                            _controller.selectionBounds,
+                        selectedIndices:
+                            _controller.selectedStrokeIndices,
+                      ),
+                      size: Size(
+                        _controller.canvasSize.width,
+                        _controller.canvasSize.height,
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
         ),
+      ),
     );
   }
 
@@ -2314,6 +2437,100 @@ class _CanvasScreenState extends State<CanvasScreen> {
       ),
     );
   }
+
+  Widget _buildSelectionActionBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: _panelColor.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _borderColor, width: 0.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.4),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          )
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _selectionAction(Icons.content_cut, 'Cortar', () {
+            _controller.cutSelected();
+            setState(() {});
+          }),
+          _selectionAction(Icons.content_copy, 'Copiar', () {
+            _controller.copySelected();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: _cardColor,
+                content: const Text('Copiado',
+                    style: TextStyle(
+                        fontFamily: 'Raleway', color: Colors.white)),
+                duration: const Duration(seconds: 1),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            );
+          }),
+          _selectionAction(Icons.content_paste, 'Pegar', () {
+            _controller.paste();
+            setState(() {});
+          }, enabled: _controller.hasClipboard),
+          _selectionAction(Icons.delete_outline, 'Borrar', () {
+            _controller.deleteSelected();
+            setState(() {});
+          }, isDestructive: true),
+          _selectionAction(Icons.color_lens_outlined, 'Color', () {
+            setState(() {
+              _showColors = true;
+            });
+            // Al cambiar color, aplicarlo a la selección
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _controller.colorSelected(_controller.activeColor);
+            });
+          }),
+          _selectionAction(Icons.deselect, 'Desel.', () {
+            setState(() => _controller.clearSelection());
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _selectionAction(
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    bool enabled = true,
+    bool isDestructive = false,
+  }) {
+    final color = !enabled
+        ? _textSecondary.withOpacity(0.3)
+        : isDestructive
+            ? AppTheme.accentRed
+            : _textPrimary;
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(height: 2),
+            Text(label,
+                style: TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 9,
+                    color: color)),
+          ],
+        ),
+      ),
+    );
+  }
  }
 // FIX: Borde rojo tenue visible cuando fondo es transparente
 class _CanvasBorderPainter extends CustomPainter {
@@ -2380,4 +2597,135 @@ class _BrushLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) =>
       false;
+}
+
+// ─── SELECTION OVERLAY PAINTER ───────────────────────────────
+class _SelectionOverlayPainter extends CustomPainter {
+  final SelectionMode mode;
+  final List<Offset> points;
+  final Offset? dragStart;
+  final Offset? dragCurrent;
+  final Rect? selectedBounds;
+  final List<int> selectedIndices;
+
+  _SelectionOverlayPainter({
+    required this.mode,
+    required this.points,
+    required this.dragStart,
+    required this.dragCurrent,
+    required this.selectedBounds,
+    required this.selectedIndices,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final strokePaint = Paint()
+      ..color = const Color(0xFF4A90E2)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final fillPaint = Paint()
+      ..color = const Color(0x224A90E2)
+      ..style = PaintingStyle.fill;
+
+    final dashPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    // Dibujar forma en progreso
+    if (dragStart != null && dragCurrent != null) {
+      final rect = Rect.fromPoints(dragStart!, dragCurrent!);
+      switch (mode) {
+        case SelectionMode.rectangular:
+          canvas.drawRect(rect, fillPaint);
+          _drawDashedRect(canvas, rect, strokePaint);
+          break;
+        case SelectionMode.elipse:
+          canvas.drawOval(rect, fillPaint);
+          _drawDashedOval(canvas, rect, strokePaint);
+          break;
+        case SelectionMode.libre:
+          if (points.length >= 2) {
+            final path = Path()..addPolygon(points, false);
+            canvas.drawPath(path, fillPaint);
+            canvas.drawPath(path, strokePaint);
+          }
+          break;
+        case SelectionMode.automatico:
+          canvas.drawCircle(dragStart!, 80, fillPaint);
+          canvas.drawCircle(dragStart!, 80, strokePaint);
+          break;
+        default:
+          break;
+      }
+    }
+
+    // Dibujar bounding box de selección finalizada
+    if (selectedBounds != null && selectedIndices.isNotEmpty) {
+      final bounds = selectedBounds!.inflate(8);
+      _drawDashedRect(canvas, bounds, dashPaint);
+      // Corner handles
+      final handlePaint = Paint()
+        ..color = const Color(0xFF4A90E2)
+        ..style = PaintingStyle.fill;
+      const hr = 5.0;
+      for (final corner in [
+        bounds.topLeft,
+        bounds.topRight,
+        bounds.bottomLeft,
+        bounds.bottomRight,
+      ]) {
+        canvas.drawCircle(corner, hr, handlePaint);
+      }
+    }
+  }
+
+  void _drawDashedRect(Canvas canvas, Rect rect, Paint paint) {
+    _drawDashedPath(
+      canvas,
+      Path()..addRect(rect),
+      paint,
+    );
+  }
+
+  void _drawDashedOval(Canvas canvas, Rect rect, Paint paint) {
+    _drawDashedPath(
+      canvas,
+      Path()..addOval(rect),
+      paint,
+    );
+  }
+
+  void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
+    const dashLen = 8.0;
+    const gapLen = 5.0;
+    final metrics = path.computeMetrics();
+    for (final metric in metrics) {
+      double dist = 0;
+      bool draw = true;
+      while (dist < metric.length) {
+        final len =
+            draw ? dashLen : gapLen;
+        if (draw) {
+          canvas.drawPath(
+            metric.extractPath(
+                dist, (dist + len).clamp(0, metric.length)),
+            paint,
+          );
+        }
+        dist += len;
+        draw = !draw;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SelectionOverlayPainter old) =>
+      old.points != points ||
+      old.dragStart != dragStart ||
+      old.dragCurrent != dragCurrent ||
+      old.selectedBounds != selectedBounds ||
+      old.selectedIndices != selectedIndices;
 }
