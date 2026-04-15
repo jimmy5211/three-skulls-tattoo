@@ -50,11 +50,11 @@ jobs:
           fi
 
           cat > android/key.properties << 'KEYEOF'
-          storePassword=threeskulls2024
-          keyPassword=threeskulls2024
-          keyAlias=three-skulls
-          storeFile=three-skulls.jks
-          KEYEOF
+storePassword=threeskulls2024
+keyPassword=threeskulls2024
+keyAlias=three-skulls
+storeFile=three-skulls.jks
+KEYEOF
 
       - name: Configure Gradle signing
         run: |
