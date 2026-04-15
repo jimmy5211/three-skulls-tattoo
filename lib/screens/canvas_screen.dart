@@ -84,16 +84,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
       final hPx = p['heightPx'] as int? ?? 1920;
       _controller.updateCanvasSize(Size(wPx.toDouble(), hPx.toDouble()));
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final screen = MediaQuery.of(context).size;
-        final scaleX = (screen.width - 56) / wPx;
-        final scaleY = (screen.height - 96) / hPx;
-        final s = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
-        setState(() {
-          _scale = s;
-          _offset = Offset(
-            (screen.width - wPx * s) / 2,
-            (screen.height - hPx * s) / 2,
-          );
+        if (!mounted) return;
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (!mounted) return;
+          final screen = MediaQuery.of(context).size;
+          final scaleX = (screen.width - 56) / wPx;
+          final scaleY = (screen.height - 96) / hPx;
+          final s = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
+          setState(() {
+            _scale = s;
+            _offset = Offset(
+              (screen.width - wPx * s) / 2,
+              (screen.height - hPx * s) / 2,
+            );
+          });
         });
       });
     }
@@ -1868,21 +1872,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _startFocalPoint = details.localFocalPoint;
             _startRotation = _rotation;
           } else {
-            final onCanvas =
-                _isTouchOnCanvas(details.localFocalPoint);
-            if (onCanvas) {
-              _isScaling = false;
-              _controller.startStroke(
-                  _screenToCanvas(
-                      details.localFocalPoint));
-            } else {
-              _isScaling = true;
-              _controller.endStroke();
-              _startScale = _scale;
-              _startOffset = _offset;
-              _startFocalPoint = details.localFocalPoint;
-              _startRotation = _rotation;
-            }
+            _isScaling = false;
+            _controller.startStroke(
+                _screenToCanvas(details.localFocalPoint));
           }
         },
         onScaleUpdate: (details) {
@@ -2179,12 +2171,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   w > 0 &&
                   h > 0) {
                 setState(() {
-                  // FIX: invalidar cache al cambiar tamaño
-                  _controller.updateCanvasSize(
-                      Size(w, h));
+                  _controller.updateCanvasSize(Size(w, h));
                   _controller.invalidateAllCache();
-                  _scale = 1.0;
-                  _offset = Offset.zero;
+                  final screen = MediaQuery.of(context).size;
+                  final scaleX = (screen.width - 56) / w;
+                  final scaleY = (screen.height - 96) / h;
+                  _scale = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
+                  _offset = Offset(
+                    (screen.width - w * _scale) / 2,
+                    (screen.height - h * _scale) / 2,
+                  );
                   _rotation = 0.0;
                 });
               }
