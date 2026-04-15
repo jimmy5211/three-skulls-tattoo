@@ -2108,103 +2108,187 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
+  // Conversiones a/desde px a 300 DPI
+  static const double _dpi = 300.0;
+  static const Map<String, double> _unitToPx = {
+    'px':   1.0,
+    'mm':   _dpi / 25.4,
+    'cm':   _dpi / 2.54,
+    'inch': _dpi,
+  };
+
+  double _pxToUnit(double px, String unit) =>
+      px / (_unitToPx[unit] ?? 1.0);
+
+  double _unitToPxValue(double val, String unit) =>
+      val * (_unitToPx[unit] ?? 1.0);
+
+  String _formatUnitValue(double val, String unit) {
+    if (unit == 'px') return val.round().toString();
+    return val.toStringAsFixed(2);
+  }
+
   void _showResizeCanvasDialog() {
+    String selectedUnit = 'px';
+
+    final wPx = _controller.canvasSize.width;
+    final hPx = _controller.canvasSize.height;
+
     final wController = TextEditingController(
-        text:
-            _controller.canvasSize.width.round().toString());
+        text: _formatUnitValue(_pxToUnit(wPx, selectedUnit), selectedUnit));
     final hController = TextEditingController(
-        text:
-            _controller.canvasSize.height.round().toString());
+        text: _formatUnitValue(_pxToUnit(hPx, selectedUnit), selectedUnit));
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF2C2C2E),
-        title: const Text('Cambiar tamaño',
-            style: TextStyle(
-                fontFamily: 'BlackOpsOne',
-                color: Colors.white,
-                fontSize: 15)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: wController,
-              keyboardType: TextInputType.number,
-              style: const TextStyle(
-                  fontFamily: 'Raleway',
-                  color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: 'Ancho (px)',
-                labelStyle: TextStyle(
-                    fontFamily: 'Raleway',
-                    color: Color(0xFF8E8E93)),
-                enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                      color: Color(0xFF48484A)),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: hController,
-              keyboardType: TextInputType.number,
-              style: const TextStyle(
-                  fontFamily: 'Raleway',
-                  color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: 'Alto (px)',
-                labelStyle: TextStyle(
-                    fontFamily: 'Raleway',
-                    color: Color(0xFF8E8E93)),
-                enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                      color: Color(0xFF48484A)),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) {
+          void changeUnit(String newUnit) {
+            final wVal = double.tryParse(wController.text) ?? 0;
+            final hVal = double.tryParse(hController.text) ?? 0;
+            // Convertir valores actuales a px y luego a nueva unidad
+            final wInPx = _unitToPxValue(wVal, selectedUnit);
+            final hInPx = _unitToPxValue(hVal, selectedUnit);
+            setStateDialog(() {
+              selectedUnit = newUnit;
+              wController.text = _formatUnitValue(_pxToUnit(wInPx, newUnit), newUnit);
+              hController.text = _formatUnitValue(_pxToUnit(hInPx, newUnit), newUnit);
+            });
+          }
+
+          return AlertDialog(
+            backgroundColor: const Color(0xFF2C2C2E),
+            title: const Text('Cambiar tamaño',
                 style: TextStyle(
-                    color: Color(0xFF8E8E93))),
-          ),
-          TextButton(
-            onPressed: () {
-              final w =
-                  double.tryParse(wController.text);
-              final h =
-                  double.tryParse(hController.text);
-              if (w != null &&
-                  h != null &&
-                  w > 0 &&
-                  h > 0) {
-                setState(() {
-                  _controller.updateCanvasSize(Size(w, h));
-                  _controller.invalidateAllCache();
-                  final screen = MediaQuery.of(context).size;
-                  final aW2 = screen.width - _sideBarWidth;
-                  final aH2 = screen.height - _topBarHeight;
-                  final scaleX = aW2 / w;
-                  final scaleY = aH2 / h;
-                  _scale = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
-                  _offset = Offset(
-                    _sideBarWidth + (aW2 - w * _scale) / 2,
-                    _topBarHeight + (aH2 - h * _scale) / 2,
-                  );
-                  _rotation = 0.0;
-                });
-              }
-              Navigator.pop(ctx);
-            },
-            child: const Text('Aplicar',
-                style: TextStyle(
-                    color: AppTheme.accentRed,
-                    fontWeight: FontWeight.bold)),
-          ),
-        ],
+                    fontFamily: 'BlackOpsOne',
+                    color: Colors.white,
+                    fontSize: 15)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Selector de unidad
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: ['px', 'mm', 'cm', 'inch'].map((unit) {
+                    final isSelected = unit == selectedUnit;
+                    return GestureDetector(
+                      onTap: () => changeUnit(unit),
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppTheme.accentRed
+                              : const Color(0xFF3A3A3C),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppTheme.accentRed
+                                : const Color(0xFF48484A),
+                          ),
+                        ),
+                        child: Text(
+                          unit,
+                          style: TextStyle(
+                            fontFamily: 'Raleway',
+                            fontSize: 12,
+                            color: isSelected
+                                ? Colors.white
+                                : const Color(0xFF8E8E93),
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: wController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: const TextStyle(
+                      fontFamily: 'Raleway', color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Ancho ($selectedUnit)',
+                    labelStyle: const TextStyle(
+                        fontFamily: 'Raleway',
+                        color: Color(0xFF8E8E93)),
+                    enabledBorder: const UnderlineInputBorder(
+                      borderSide:
+                          BorderSide(color: Color(0xFF48484A)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: hController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: const TextStyle(
+                      fontFamily: 'Raleway', color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Alto ($selectedUnit)',
+                    labelStyle: const TextStyle(
+                        fontFamily: 'Raleway',
+                        color: Color(0xFF8E8E93)),
+                    enabledBorder: const UnderlineInputBorder(
+                      borderSide:
+                          BorderSide(color: Color(0xFF48484A)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '300 DPI',
+                  style: const TextStyle(
+                    fontFamily: 'Raleway',
+                    fontSize: 11,
+                    color: Color(0xFF8E8E93),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar',
+                    style: TextStyle(color: Color(0xFF8E8E93))),
+              ),
+              TextButton(
+                onPressed: () {
+                  final wVal = double.tryParse(wController.text);
+                  final hVal = double.tryParse(hController.text);
+                  if (wVal != null && hVal != null && wVal > 0 && hVal > 0) {
+                    final w = _unitToPxValue(wVal, selectedUnit);
+                    final h = _unitToPxValue(hVal, selectedUnit);
+                    setState(() {
+                      _controller.updateCanvasSize(Size(w, h));
+                      _controller.invalidateAllCache();
+                      final screen = MediaQuery.of(context).size;
+                      final aW2 = screen.width - _sideBarWidth;
+                      final aH2 = screen.height - _topBarHeight;
+                      final scaleX = aW2 / w;
+                      final scaleY = aH2 / h;
+                      _scale = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
+                      _offset = Offset(
+                        _sideBarWidth + (aW2 - w * _scale) / 2,
+                        _topBarHeight + (aH2 - h * _scale) / 2,
+                      );
+                      _rotation = 0.0;
+                    });
+                  }
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Aplicar',
+                    style: TextStyle(
+                        color: AppTheme.accentRed,
+                        fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
