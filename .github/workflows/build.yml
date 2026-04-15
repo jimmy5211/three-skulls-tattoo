@@ -26,63 +26,49 @@ jobs:
           flutter-version: '3.19.0'
           channel: 'stable'
 
-      # ✅ USAR SIEMPRE EL MISMO KEYSTORE (SIN GENERAR NUEVO)
       - name: Setup Keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/three-skulls.jks
-
           printf "storePassword=${{ secrets.KEYSTORE_PASSWORD }}\nkeyPassword=${{ secrets.KEY_PASSWORD }}\nkeyAlias=${{ secrets.KEY_ALIAS }}\nstoreFile=three-skulls.jks\n" > android/key.properties
 
-      # ✅ CONFIGURAR FIRMA SOLO SI NO EXISTE
       - name: Configure Gradle signing
         run: |
           if ! grep -q "signingConfigs" android/app/build.gradle; then
-            python3 - << 'PYEOF'
-import re
-
-with open('android/app/build.gradle', 'r') as f:
-    content = f.read()
-
-signing_config = '''
-    signingConfigs {
-        release {
-            def keystorePropertiesFile = rootProject.file("key.properties")
-            def keystoreProperties = new Properties()
-            keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-            keyAlias keystoreProperties["keyAlias"]
-            keyPassword keystoreProperties["keyPassword"]
-            storeFile file(keystoreProperties["storeFile"])
-            storePassword keystoreProperties["storePassword"]
-        }
-    }
-'''
-
-content = content.replace('android {', 'android {' + signing_config, 1)
-
-content = re.sub(
-    r'buildTypes \{',
-    'buildTypes {\n        release {\n            signingConfig signingConfigs.release\n        }',
-    content,
-    count=1
-)
-
-with open('android/app/build.gradle', 'w') as f:
-    f.write(content)
-
-print("Signing configured")
-PYEOF
+            python3 << 'EOF'
+          import re
+          with open('android/app/build.gradle', 'r') as f:
+              content = f.read()
+          signing_config = """
+              signingConfigs {
+                  release {
+                      def keystorePropertiesFile = rootProject.file("key.properties")
+                      def keystoreProperties = new Properties()
+                      keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+                      keyAlias keystoreProperties["keyAlias"]
+                      keyPassword keystoreProperties["keyPassword"]
+                      storeFile file(keystoreProperties["storeFile"])
+                      storePassword keystoreProperties["storePassword"]
+                  }
+              }
+          """
+          content = content.replace('android {', 'android {' + signing_config, 1)
+          content = re.sub(r'buildTypes \{', 'buildTypes {\n        release {\n            signingConfig signingConfigs.release\n        }', content, count=1)
+          with open('android/app/build.gradle', 'w') as f:
+              f.write(content)
+          print("Signing configured")
+          EOF
           fi
 
-      # ✅ VERSIONADO AUTOMÁTICO (correcto)
       - name: Set version code
         run: |
           BUILD_NUMBER=${{ github.run_number }}
           VERSION_CODE=$((1000 + BUILD_NUMBER))
           VERSION_NAME="1.0.$BUILD_NUMBER"
-
           sed -i "s/^version: .*/version: $VERSION_NAME+$VERSION_CODE/" pubspec.yaml
           sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/" android/app/build.gradle
           sed -i "s/versionName \"[^\"]*\"/versionName \"$VERSION_NAME\"/" android/app/build.gradle
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
 
       - name: Get dependencies
         run: flutter pub get
@@ -93,7 +79,6 @@ PYEOF
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
 
-      # ✅ VALIDACIÓN DE FIRMA (CONTROL DE CALIDAD)
       - name: Verify APK signature
         run: apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
 
@@ -105,11 +90,6 @@ PYEOF
           body: |
             ## 💀 Three Skulls Tattoo
             ### Versión 1.0.${{ github.run_number }}
-            #### Novedades:
-            - Mejoras en canvas de dibujo
-            - Zoom y paneo con 2 dedos
-            - Simetría corregida
-            - Corrección de bugs
           files: build/app/outputs/flutter-apk/app-release.apk
           draft: false
           prerelease: false
@@ -120,10 +100,4 @@ PYEOF
             https://api.jsonbin.io/v3/b/69b8b65eaa77b81da9ef4f41 \
             -H 'Content-Type: application/json' \
             -H 'X-Master-Key: ${{ secrets.JSONBIN_API_KEY }}' \
-            -d "{
-              \"version\": \"1.0.${{ github.run_number }}\",
-              \"versionCode\": $((1000 + ${{ github.run_number }})),
-              \"releaseNotes\": \"Mejoras en canvas\nZoom y paneo\nSimetria corregida\nBug fixes\",
-              \"downloadUrl\": \"https://github.com/jimmy5211/three-skulls-tattoo/releases/download/v1.0.${{ github.run_number }}/app-release.apk\",
-              \"mandatory\": false
-            }"
+            -d "{\"version\": \"1.0.${{ github.run_number }}\", \"versionCode\": $((1000 + ${{ github.run_number }})), \"downloadUrl\": \"https://github.com/jimmy5211/three-skulls-tattoo/releases/download/v1.0.${{ github.run_number }}/app-release.apk\", \"mandatory\": false}"
