@@ -2194,19 +2194,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
 
-          // ── Borrador en imagen ───────────────────────────
-          if (_controller.activeBrush.type == StrokeType.eraser &&
-              _selectedImageId == null) {
-            final img = _controller.imageAtPoint(cp);
-            if (img != null) {
-              _erasingImageId = img.id;
-              _controller.startEraseOnImage(
-                  img.id, cp, _controller.activeBrush.size);
-              return;
-            }
-          }
-
-          // ── Dibujo normal ────────────────────────────────
+          // ── Dibujo / Borrador ────────────────────────────
+          // El borrador borra strokes E imágenes de la capa activa
+          // gracias al saveLayer+BlendMode.clear en el painter
           _controller.startStroke(cp);
         },
         onScaleUpdate: (details) {
@@ -2353,13 +2343,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
 
-          // ── Borrador en imagen ────────────────────────────
-          if (_erasingImageId != null) {
-            _controller.continueEraseOnImage(_erasingImageId!, cp);
-            return;
-          }
-
-          // ── Dibujo normal ─────────────────────────────────
+          // ── Continuar stroke / borrador ──────────────────
           _controller.continueStroke(cp);
         },
         onScaleEnd: (details) {
@@ -2391,12 +2375,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _finalizeSelection();
             }
           } else {
-            if (_erasingImageId != null) {
-              _controller.endEraseOnImage(_erasingImageId!);
-              _erasingImageId = null;
-            } else {
-              _controller.endStroke();
-            }
+            _controller.endStroke();
           }
           _isScaling = false;
         },
