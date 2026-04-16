@@ -31,6 +31,10 @@ class CanvasController extends ChangeNotifier {
   // Cache de capas renderizadas
   final Map<int, ui.Picture?> _layerCache = {};
   bool _cacheInvalidated = false;
+  // Flag para forzar repaint cuando cambian imágenes (posición, resize, flip, borrador)
+  bool _imagesChanged = false;
+  bool get imagesChanged => _imagesChanged;
+  void resetImagesChanged() => _imagesChanged = false;
 
   CanvasController() {
     _initLayers();
@@ -481,6 +485,7 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].position = position;
+    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -489,6 +494,7 @@ class CanvasController extends ChangeNotifier {
     if (idx == -1) return;
     canvasImages[idx].position = rect.topLeft;
     canvasImages[idx].size = rect.size;
+    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -496,6 +502,7 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].flipX = !canvasImages[idx].flipX;
+    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -503,6 +510,7 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].flipY = !canvasImages[idx].flipY;
+    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -596,6 +604,7 @@ class CanvasController extends ChangeNotifier {
     current.points.add(point);
     // Solo notificar cada 3 puntos para reducir repaints sin perder fluidez
     if (current.points.length % 3 == 0) {
+      _imagesChanged = true;
       notifyListeners();
     }
   }
@@ -608,6 +617,7 @@ class CanvasController extends ChangeNotifier {
       canvasImages[idx].eraseStrokes.add(current);
       canvasImages[idx].currentEraseStroke = null;
     }
+    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -616,6 +626,7 @@ class CanvasController extends ChangeNotifier {
     if (idx == -1) return;
     if (canvasImages[idx].eraseStrokes.isNotEmpty) {
       canvasImages[idx].eraseStrokes.removeLast();
+      _imagesChanged = true;
       notifyListeners();
     }
   }
@@ -625,6 +636,7 @@ class CanvasController extends ChangeNotifier {
     if (idx == -1) return;
     canvasImages[idx].eraseStrokes.clear();
     canvasImages[idx].currentEraseStroke = null;
+    _imagesChanged = true;
     notifyListeners();
   }
 
