@@ -698,6 +698,28 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void scaleSelectedStrokes(Offset center, double scaleX, double scaleY) {
+    if (selectedStrokeIndices.isEmpty) return;
+    final idx = layers.indexWhere((l) => l.id == activeLayerId);
+    if (idx == -1) return;
+    final strokes = List<StrokeModel>.from(layers[idx].strokes);
+    for (final i in selectedStrokeIndices) {
+      if (i < strokes.length) {
+        strokes[i] = strokes[i].copyWith(
+          points: strokes[i].points.map((p) {
+            return Offset(
+              (p.dx - center.dx) * scaleX + center.dx,
+              (p.dy - center.dy) * scaleY + center.dy,
+            );
+          }).toList(),
+        );
+      }
+    }
+    layers[idx] = layers[idx].copyWith(strokes: strokes);
+    invalidateLayerCache(activeLayerId);
+    notifyListeners();
+  }
+
   void colorSelected(Color color) {
     if (selectedStrokeIndices.isEmpty) return;
     _saveToHistory();
