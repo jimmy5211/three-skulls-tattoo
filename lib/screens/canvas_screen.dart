@@ -2037,184 +2037,172 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
         },
         onScaleStart: (details) {
-          if (_showBrushPanel) {
-            setState(() => _showBrushPanel = false);
-            return;
-          }
-          if (_showSelectionOptions) {
-            setState(() => _showSelectionOptions = false);
-            return;
-          }
+          // ── PRIORIDAD 1: 2 dedos o zoom mode ────────────
+          // Sin checks previos — pan/zoom siempre gana
           if (details.pointerCount >= 2 || _zoomMode) {
-            _isScaling = true;
             _controller.endStroke();
+            _isDraggingImage = false;
+            _isDraggingSelection = false;
+            _isResizingHandle = false;
+            _isScaling = true;
             _startScale = _scale;
             _startOffset = _offset;
             _startFocalPoint = details.localFocalPoint;
             _startRotation = _rotation;
             return;
           }
+
+          // ── 1 dedo: cerrar paneles sin return ────────────
+          if (_showBrushPanel) _showBrushPanel = false;
+          if (_showSelectionOptions) _showSelectionOptions = false;
+
           _isScaling = false;
           final cp = _screenToCanvas(details.localFocalPoint);
 
-          // ── 1. Imagen en canvas ─────────────────────────
+          // ── Imagen en canvas ─────────────────────────────
           if (_selectionMode == SelectionMode.ninguno) {
             final img = _controller.imageAtPoint(cp);
             if (img != null) {
               _controller.selectCanvasImage(img.id);
-              setState(() {
-                _selectedImageId = img.id;
-                _isDraggingImage = true;
-                _imageDragStart = cp;
-              });
+              _selectedImageId = img.id;
+              _isDraggingImage = true;
+              _imageDragStart = cp;
+              setState(() {});
               return;
             }
-            // Deseleccionar imagen si toca fuera
             if (_selectedImageId != null) {
               _controller.selectCanvasImage(null);
-              setState(() {
-                _selectedImageId = null;
-                _isDraggingImage = false;
-              });
+              _selectedImageId = null;
+              _isDraggingImage = false;
             }
           }
 
-          // ── 2. Handle de resize de selección ────────────
+          // ── Handle de resize de selección ────────────────
           if (_selectionMode != SelectionMode.ninguno &&
               _controller.hasSelection) {
             final bounds = _controller.selectionBounds?.inflate(8);
             if (bounds != null) {
               final handles = [
-                bounds.topLeft,
-                bounds.topRight,
-                bounds.bottomLeft,
-                bounds.bottomRight,
+                bounds.topLeft, bounds.topRight,
+                bounds.bottomLeft, bounds.bottomRight,
               ];
-              final hitRadius = 20.0 / _scale;
+              final hitRadius = 22.0 / _scale;
               for (int i = 0; i < handles.length; i++) {
                 if ((handles[i] - cp).distance < hitRadius) {
                   _controller.saveSelectionMoveToHistory();
-                  setState(() {
-                    _isResizingHandle = true;
-                    _activeResizeHandle = i;
-                    _resizeStartBounds = _controller.selectionBounds;
-                    _resizeHandleStart = cp;
-                  });
+                  _isResizingHandle = true;
+                  _activeResizeHandle = i;
+                  _resizeStartBounds = _controller.selectionBounds;
+                  _resizeHandleStart = cp;
                   return;
                 }
               }
             }
           }
 
-          // ── 3. Modo selección ───────────────────────────
+          // ── Modo selección ───────────────────────────────
           if (_selectionMode != SelectionMode.ninguno) {
             final bounds = _controller.selectionBounds;
             if (bounds != null && _controller.hasSelection) {
               final expanded = bounds.inflate(40 / _scale);
               if (expanded.contains(cp)) {
                 _controller.saveSelectionMoveToHistory();
-                setState(() {
-                  _isDraggingSelection = true;
-                  _selectionMoveStart = cp;
-                });
+                _isDraggingSelection = true;
+                _selectionMoveStart = cp;
                 return;
               }
             }
             _controller.clearSelection();
-            setState(() {
-              _isDraggingSelection = false;
-              _isResizingHandle = false;
-              _selectionPoints = [cp];
-              _selectionDragStart = cp;
-              _selectionDragCurrent = cp;
-              _finalizedMode = SelectionMode.ninguno;
-            });
+            _isDraggingSelection = false;
+            _isResizingHandle = false;
+            _selectionPoints = [cp];
+            _selectionDragStart = cp;
+            _selectionDragCurrent = cp;
+            _finalizedMode = SelectionMode.ninguno;
             return;
           }
 
-          // ── 4. Dibujo normal ────────────────────────────
+          // ── Dibujo normal ────────────────────────────────
           _controller.startStroke(cp);
         },
         onScaleUpdate: (details) {
-          if (_showBrushPanel || _showSelectionOptions) return;
-          if (_isScaling) {
-            setState(() {
-              if (details.pointerCount >= 2) {
-                _scale = (_startScale * details.scale).clamp(0.1, 10.0);
-                _rotation = _startRotation + details.rotation;
-              }
-              _offset = _startOffset +
-                  (details.localFocalPoint - _startFocalPoint);
-            });
-            return;
-          }
-          final cp = _screenToCanvas(details.localFocalPoint);
-
-          // ── Mover imagen ────────────────────────────────
-          if (_isDraggingImage && _imageDragStart != null && _selectedImageId != null) {
-            final delta = cp - _imageDragStart!;
-            _controller.moveCanvasImage(_selectedImageId!, delta);
-            setState(() => _imageDragStart = cp);
-            return;
-          }
-
-          // ── Resize handle de selección ──────────────────
-          if (_isResizingHandle && _resizeStartBounds != null && _resizeHandleStart != null) {
-            final startBounds = _resizeStartBounds!;
-            final delta = cp - _resizeHandleStart!;
-            Rect newBounds;
-            switch (_activeResizeHandle) {
-              case 0: // TL
-                newBounds = Rect.fromLTRB(
-                  startBounds.left + delta.dx,
-                  startBounds.top + delta.dy,
-                  startBounds.right,
-                  startBounds.bottom,
-                );
-                break;
-              case 1: // TR
-                newBounds = Rect.fromLTRB(
-                  startBounds.left,
-                  startBounds.top + delta.dy,
-                  startBounds.right + delta.dx,
-                  startBounds.bottom,
-                );
-                break;
-              case 2: // BL
-                newBounds = Rect.fromLTRB(
-                  startBounds.left + delta.dx,
-                  startBounds.top,
-                  startBounds.right,
-                  startBounds.bottom + delta.dy,
-                );
-                break;
-              default: // BR
-                newBounds = Rect.fromLTRB(
-                  startBounds.left,
-                  startBounds.top,
-                  startBounds.right + delta.dx,
-                  startBounds.bottom + delta.dy,
-                );
+          // ── PRIORIDAD: 2 dedos siempre pan/zoom ──────────
+          if (details.pointerCount >= 2) {
+            if (!_isScaling) {
+              // Transición de 1 a 2 dedos en medio del gesto
+              _controller.endStroke();
+              _isDraggingImage = false;
+              _isDraggingSelection = false;
+              _isResizingHandle = false;
+              _isScaling = true;
+              _startScale = _scale;
+              _startOffset = _offset;
+              _startFocalPoint = details.localFocalPoint;
+              _startRotation = _rotation;
+              return;
             }
-            if (newBounds.width > 5 && newBounds.height > 5) {
-              final scaleX = newBounds.width / startBounds.width;
-              final scaleY = newBounds.height / startBounds.height;
-              _controller.scaleSelectedStrokes(
-                  startBounds.center, scaleX, scaleY);
+            // Actualizar transform — mínimo setState
+            final newScale = (_startScale * details.scale).clamp(0.1, 10.0);
+            final newOffset = _startOffset + (details.localFocalPoint - _startFocalPoint);
+            final newRotation = _startRotation + details.rotation;
+            if (_scale != newScale || _offset != newOffset || _rotation != newRotation) {
               setState(() {
-                _resizeStartBounds = _controller.selectionBounds;
-                _resizeHandleStart = cp;
+                _scale = newScale;
+                _offset = newOffset;
+                _rotation = newRotation;
               });
             }
             return;
           }
 
-          // ── Modo selección ──────────────────────────────
+          if (_isScaling && _zoomMode) {
+            // Zoom mode con 1 dedo: solo pan
+            final newOffset = _startOffset + (details.localFocalPoint - _startFocalPoint);
+            if (_offset != newOffset) {
+              setState(() => _offset = newOffset);
+            }
+            return;
+          }
+
+          if (_showBrushPanel || _showSelectionOptions) return;
+
+          final cp = _screenToCanvas(details.localFocalPoint);
+
+          // ── Mover imagen ──────────────────────────────────
+          if (_isDraggingImage && _imageDragStart != null && _selectedImageId != null) {
+            final delta = cp - _imageDragStart!;
+            _controller.moveCanvasImage(_selectedImageId!, delta);
+            _imageDragStart = cp;
+            return;
+          }
+
+          // ── Resize handle ─────────────────────────────────
+          if (_isResizingHandle && _resizeStartBounds != null && _resizeHandleStart != null) {
+            final startBounds = _resizeStartBounds!;
+            final delta = cp - _resizeHandleStart!;
+            Rect newBounds;
+            switch (_activeResizeHandle) {
+              case 0: newBounds = Rect.fromLTRB(startBounds.left + delta.dx, startBounds.top + delta.dy, startBounds.right, startBounds.bottom); break;
+              case 1: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top + delta.dy, startBounds.right + delta.dx, startBounds.bottom); break;
+              case 2: newBounds = Rect.fromLTRB(startBounds.left + delta.dx, startBounds.top, startBounds.right, startBounds.bottom + delta.dy); break;
+              default: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top, startBounds.right + delta.dx, startBounds.bottom + delta.dy);
+            }
+            if (newBounds.width > 5 && newBounds.height > 5) {
+              final scaleX = newBounds.width / startBounds.width;
+              final scaleY = newBounds.height / startBounds.height;
+              _controller.scaleSelectedStrokes(startBounds.center, scaleX, scaleY);
+              _resizeStartBounds = _controller.selectionBounds;
+              _resizeHandleStart = cp;
+            }
+            return;
+          }
+
+          // ── Modo selección ────────────────────────────────
           if (_selectionMode != SelectionMode.ninguno) {
             if (_isDraggingSelection && _selectionMoveStart != null) {
               final delta = cp - _selectionMoveStart!;
               _controller.moveSelected(delta);
-              setState(() => _selectionMoveStart = cp);
+              _selectionMoveStart = cp;
             } else {
               setState(() {
                 _selectionDragCurrent = cp;
@@ -2226,7 +2214,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
 
-          // ── Dibujo normal ───────────────────────────────
+          // ── Dibujo normal ─────────────────────────────────
           _controller.continueStroke(cp);
         },
         onScaleEnd: (details) {
