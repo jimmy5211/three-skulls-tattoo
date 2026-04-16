@@ -70,7 +70,7 @@ void main() async {
 
       if (update.isAvailable) {
         // 👉 Aquí se dispara tu sistema actual de actualización
-        print("Actualizar desde: ${update.downloadUrl}");
+        await UpdateService.downloadAndInstall(update);
       }
     },
   );
