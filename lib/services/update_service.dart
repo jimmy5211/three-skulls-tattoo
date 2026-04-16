@@ -1,7 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
 
 class UpdateInfo {
   final String version;
@@ -23,20 +27,14 @@ class UpdateService {
   static const String _versionUrl =
       'https://api.jsonbin.io/v3/b/69b8b65eaa77b81da9ef4f41';
 
-  // Key solo de LECTURA — seguro tenerla en el cliente
   static const String _readKey =
       r'$2a$10$FOj0uoW3syBnsFzUfq2P9ujG3wIwwTiERr9zVll9emK1RCIL6AvtG';
 
   static const String _lastCheckKey = 'last_update_check';
 
-  // Lee la versión real del APK instalado en el dispositivo
   static Future<String> _getInstalledVersion() async {
-    try {
-      final info = await PackageInfo.fromPlatform();
-      return info.version; // ej: "1.0.149"
-    } catch (e) {
-      return '1.0.0';
-    }
+    final info = await PackageInfo.fromPlatform();
+    return info.version;
   }
 
   static Future<UpdateInfo> checkForUpdates() async {
@@ -49,49 +47,27 @@ class UpdateService {
           'X-Master-Key': _readKey,
           'X-Bin-Meta': 'false',
         },
-      ).timeout(const Duration(seconds: 15));
+      );
 
-      if (response.statusCode == 200) {
-        final raw = jsonDecode(response.body);
+      final raw = jsonDecode(response.body);
 
-        final data = raw is Map && raw.containsKey('record')
-            ? raw['record']
-            : raw;
+      final data = raw is Map && raw.containsKey('record')
+          ? raw['record']
+          : raw;
 
-        final latestVersion =
-            data['version']?.toString() ?? currentVersion;
-        final releaseNotes =
-            data['releaseNotes']?.toString() ?? '';
-        final downloadUrl =
-            data['downloadUrl']?.toString() ?? '';
-        final mandatory =
-            data['mandatory'] as bool? ?? false;
+      final latestVersion = data['version'] ?? currentVersion;
+      final downloadUrl = data['downloadUrl'] ?? '';
+      final releaseNotes = data['releaseNotes'] ?? '';
+      final mandatory = data['mandatory'] ?? false;
 
-        final isAvailable = _isNewerVersion(
-          latestVersion,
-          currentVersion,
-        );
-
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(
-          _lastCheckKey,
-          DateTime.now().toIso8601String(),
-        );
-
-        return UpdateInfo(
-          version: latestVersion,
-          downloadUrl: downloadUrl,
-          releaseNotes: releaseNotes,
-          isAvailable: isAvailable,
-          mandatory: mandatory,
-        );
-      }
+      final isAvailable = latestVersion != currentVersion;
 
       return UpdateInfo(
-        version: currentVersion,
-        downloadUrl: '',
-        releaseNotes: '',
-        isAvailable: false,
+        version: latestVersion,
+        downloadUrl: downloadUrl,
+        releaseNotes: releaseNotes,
+        isAvailable: isAvailable,
+        mandatory: mandatory,
       );
     } catch (e) {
       return UpdateInfo(
@@ -103,56 +79,21 @@ class UpdateService {
     }
   }
 
-  static bool _isNewerVersion(
-    String latest,
-    String current,
-  ) {
+  // 🔥 DESCARGAR E INSTALAR APK
+  static Future<void> downloadAndInstall(UpdateInfo update) async {
     try {
-      final latestParts = latest
-          .replaceAll('v', '')
-          .trim()
-          .split('.')
-          .map((p) => int.tryParse(p) ?? 0)
-          .toList();
-      final currentParts = current
-          .replaceAll('v', '')
-          .trim()
-          .split('.')
-          .map((p) => int.tryParse(p) ?? 0)
-          .toList();
+      final dir = await getExternalStorageDirectory();
+      final filePath = "${dir!.path}/update.apk";
 
-      while (latestParts.length < 3) latestParts.add(0);
-      while (currentParts.length < 3) currentParts.add(0);
+      final file = File(filePath);
 
-      for (int i = 0; i < 3; i++) {
-        if (latestParts[i] > currentParts[i]) return true;
-        if (latestParts[i] < currentParts[i]) return false;
-      }
-      return false;
+      final request = await http.get(Uri.parse(update.downloadUrl));
+      await file.writeAsBytes(request.bodyBytes);
+
+      // 👉 abre el APK para instalar
+      await OpenFile.open(filePath);
     } catch (e) {
-      return false;
+      print("Error instalando APK: $e");
     }
   }
-
-  static Future<String> getLastCheckDate() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final date = prefs.getString(_lastCheckKey);
-      if (date == null) return 'Nunca';
-      final parsed = DateTime.parse(date);
-      final diff = DateTime.now().difference(parsed);
-      if (diff.inMinutes < 1) return 'Hace un momento';
-      if (diff.inMinutes < 60) {
-        return 'Hace ${diff.inMinutes} min';
-      }
-      if (diff.inHours < 24) {
-        return 'Hace ${diff.inHours} horas';
-      }
-      return 'Hace ${diff.inDays} días';
-    } catch (e) {
-      return 'Nunca';
-    }
-  }
-
-  static Future<String> get currentVersion => _getInstalledVersion();
 }
