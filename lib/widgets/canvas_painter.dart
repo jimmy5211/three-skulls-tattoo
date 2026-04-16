@@ -7,6 +7,9 @@ import '../models/canvas_image_model.dart';
 import '../controllers/canvas_controller.dart';
 import 'brush_texture_painter.dart';
 
+// Re-export para uso en painter
+export '../models/canvas_image_model.dart' show EraseStroke;
+
 class CanvasPainter extends CustomPainter {
   final List<LayerModel> layers;
   final StrokeModel? currentStroke;
@@ -102,40 +105,99 @@ class CanvasPainter extends CustomPainter {
   }
 
   void _drawCanvasImage(Canvas canvas, CanvasImageModel img) {
-    final paint = Paint()
-      ..color = Colors.white.withOpacity(img.opacity)
-      ..filterQuality = FilterQuality.medium;
+    canvas.save();
+    canvas.clipRect(img.rect);
 
+    // saveLayer es necesario para que BlendMode.clear funcione correctamente
+    canvas.saveLayer(
+      img.rect,
+      Paint()..color = Colors.white.withOpacity(img.opacity),
+    );
+
+    // Dibujar la imagen
     final src = Rect.fromLTWH(
       0, 0,
       img.image.width.toDouble(),
       img.image.height.toDouble(),
     );
-    final dst = img.rect;
-    canvas.drawImageRect(img.image, src, dst, paint);
+    canvas.drawImageRect(
+      img.image, src, img.rect,
+      Paint()..filterQuality = FilterQuality.medium,
+    );
 
-    // Borde si está seleccionada
+    // Aplicar trazos de borrador con BlendMode.clear (borrado GPU)
+    final allErases = [
+      ...img.eraseStrokes,
+      if (img.currentEraseStroke != null) img.currentEraseStroke!,
+    ];
+    for (final erase in allErases) {
+      _drawEraseStroke(canvas, erase);
+    }
+
+    canvas.restore(); // restore saveLayer
+    canvas.restore(); // restore clipRect
+
+    // Borde + handles si está seleccionada
     if (img.isSelected) {
       final borderPaint = Paint()
         ..color = const Color(0xFF4A90E2)
         ..strokeWidth = 2.0
         ..style = PaintingStyle.stroke;
-      canvas.drawRect(dst, borderPaint);
+      canvas.drawRect(img.rect, borderPaint);
 
-      // Handles en esquinas
-      final handlePaint = Paint()
+      final handleFill = Paint()
         ..color = const Color(0xFF4A90E2)
         ..style = PaintingStyle.fill;
-      const hr = 6.0;
+      final handleBorder = Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+
+      const hr = 8.0;
       for (final corner in [
-        dst.topLeft, dst.topRight,
-        dst.bottomLeft, dst.bottomRight,
+        img.rect.topLeft, img.rect.topRight,
+        img.rect.bottomLeft, img.rect.bottomRight,
       ]) {
-        canvas.drawCircle(corner, hr, handlePaint);
-        canvas.drawCircle(corner, hr,
-            Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 1.5);
+        canvas.drawCircle(corner, hr, handleFill);
+        canvas.drawCircle(corner, hr, handleBorder);
       }
     }
+  }
+
+  void _drawEraseStroke(Canvas canvas, EraseStroke erase) {
+    if (erase.points.isEmpty) return;
+    final erasePaint = Paint()
+      ..blendMode = BlendMode.clear
+      ..strokeWidth = erase.radius * 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+
+    if (erase.points.length == 1) {
+      canvas.drawCircle(
+        erase.points.first,
+        erase.radius,
+        Paint()
+          ..blendMode = BlendMode.clear
+          ..style = PaintingStyle.fill,
+      );
+      return;
+    }
+
+    final path = Path();
+    path.moveTo(erase.points.first.dx, erase.points.first.dy);
+    for (int i = 1; i < erase.points.length - 1; i++) {
+      final mid = Offset(
+        (erase.points[i].dx + erase.points[i + 1].dx) / 2,
+        (erase.points[i].dy + erase.points[i + 1].dy) / 2,
+      );
+      path.quadraticBezierTo(
+        erase.points[i].dx, erase.points[i].dy,
+        mid.dx, mid.dy,
+      );
+    }
+    path.lineTo(erase.points.last.dx, erase.points.last.dy);
+    canvas.drawPath(path, erasePaint);
   }
 
   void _drawCheckerboard(Canvas canvas, double w, double h) {
