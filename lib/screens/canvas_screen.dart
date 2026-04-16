@@ -2032,13 +2032,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
-          if (_showBrushPanel)
-            setState(() => _showBrushPanel = false);
-          if (_showSelectionOptions)
-            setState(() => _showSelectionOptions = false);
-          if (_showColors)
-            setState(() => _showColors = false);
-          // Deseleccionar imagen
+          if (_showBrushPanel) setState(() => _showBrushPanel = false);
+          if (_showSelectionOptions) setState(() => _showSelectionOptions = false);
+          if (_showColors) setState(() => _showColors = false);
+
+          final tapPoint = _screenToCanvas(
+            // onTap no tiene detalles de posición — usamos el centro de pantalla como fallback
+            // En su lugar manejamos selección en onScaleStart con tap rápido
+            Offset.zero,
+          );
+
           if (_selectedImageId != null) {
             setState(() {
               _controller.selectCanvasImage(null);
@@ -2051,96 +2054,91 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
         },
         onScaleStart: (details) {
-          // ── PRIORIDAD 1: 2 dedos o zoom mode ────────────
-          // Sin checks previos — pan/zoom siempre gana
+          // ── PRIORIDAD ABSOLUTA: 2 dedos = pan/zoom ───────
           if (details.pointerCount >= 2 || _zoomMode) {
             _controller.endStroke();
             _isDraggingImage = false;
             _isDraggingSelection = false;
             _isResizingHandle = false;
             _isResizingImage = false;
+            _erasingImageId = null;
             _isScaling = true;
             _startScale = _scale;
             _startOffset = _offset;
             _startFocalPoint = details.localFocalPoint;
             _startRotation = _rotation;
-            // Guardar el punto del canvas bajo el focal point
-            // para zoom correcto (sin desplazamiento inverso)
             _canvasFocalX = (_startFocalPoint.dx - _startOffset.dx) / _startScale;
             _canvasFocalY = (_startFocalPoint.dy - _startOffset.dy) / _startScale;
             return;
           }
 
-          // ── 1 dedo: cerrar paneles sin return ────────────
           if (_showBrushPanel) _showBrushPanel = false;
           if (_showSelectionOptions) _showSelectionOptions = false;
-
           _isScaling = false;
           final cp = _screenToCanvas(details.localFocalPoint);
 
-          // ── Imagen en canvas ─────────────────────────────
-          if (_selectionMode == SelectionMode.ninguno) {
+          // ── Imagen YA seleccionada: handles o drag ────────
+          if (_selectedImageId != null &&
+              _selectionMode == SelectionMode.ninguno) {
+            final selImg = _controller.canvasImages
+                .where((i) => i.id == _selectedImageId)
+                .firstOrNull;
+            if (selImg != null) {
+              final handles = _imageHandlePositions(selImg.rect);
+              final hitRadius = 18.0 / _scale;
+              for (int i = 0; i < handles.length; i++) {
+                if ((handles[i] - cp).distance < hitRadius) {
+                  _isResizingImage = true;
+                  _activeImageHandle = i;
+                  _imageResizeStartRect = selImg.rect;
+                  _imageResizeStartScreen = details.localFocalPoint;
+                  return;
+                }
+              }
+              if (selImg.rect.inflate(5 / _scale).contains(cp)) {
+                _isDraggingImage = true;
+                _imageDragStartScreen = details.localFocalPoint;
+                _imageDragStartCanvas = Offset(selImg.position.dx, selImg.position.dy);
+                return;
+              }
+            }
+            _controller.selectCanvasImage(null);
+            _selectedImageId = null;
+            setState(() {});
+          }
+
+          // ── Transform mode: tap en imagen = seleccionar ──
+          if (_selectedImageId == null &&
+              _selectionMode == SelectionMode.ninguno &&
+              _transformMode == TransformMode.activo) {
             final img = _controller.imageAtPoint(cp);
             if (img != null) {
               _controller.selectCanvasImage(img.id);
-              _selectedImageId = img.id;
-              _isDraggingImage = true;
-              // Guardar posición absoluta para drag sin acumulación de error
-              _imageDragStartScreen = details.localFocalPoint;
-              _imageDragStartCanvas = img.position;
-              setState(() {});
+              setState(() => _selectedImageId = img.id);
               return;
-            }
-            if (_selectedImageId != null) {
-              // Verificar si tocó un handle de resize
-              final selImg = _controller.canvasImages
-                  .where((i) => i.id == _selectedImageId)
-                  .firstOrNull;
-              if (selImg != null) {
-                final handles = _imageHandlePositions(selImg.rect);
-                final hitRadius = 18.0 / _scale;
-                for (int i = 0; i < handles.length; i++) {
-                  if ((handles[i] - cp).distance < hitRadius) {
-                    _isResizingImage = true;
-                    _activeImageHandle = i;
-                    _imageResizeStartRect = selImg.rect;
-                    _imageResizeStartScreen = details.localFocalPoint;
-                    return;
-                  }
-                }
-              }
-              _controller.selectCanvasImage(null);
-              _selectedImageId = null;
-              _isDraggingImage = false;
             }
           }
 
-          // ── Handle de resize de selección ────────────────
+          // ── Handles de selección ─────────────────────────
           if (_selectionMode != SelectionMode.ninguno &&
               _controller.hasSelection) {
             final bounds = _controller.selectionBounds?.inflate(10);
             if (bounds != null) {
-              // Handle de rotación
               final rotHandle = bounds.topCenter - const Offset(0, 36);
               if ((rotHandle - cp).distance < 14 / _scale) {
                 _controller.saveSelectionMoveToHistory();
                 _isResizingHandle = true;
-                _activeResizeHandle = 8; // rotación
+                _activeResizeHandle = 8;
                 _resizeStartBounds = _controller.selectionBounds;
                 _resizeHandleStart = cp;
                 _selectionStartRotation = 0;
                 return;
               }
-              // 8 handles
               final handles = [
-                bounds.topLeft,
-                bounds.topCenter,
-                bounds.topRight,
+                bounds.topLeft, bounds.topCenter, bounds.topRight,
                 Offset(bounds.left, bounds.center.dy),
                 Offset(bounds.right, bounds.center.dy),
-                bounds.bottomLeft,
-                bounds.bottomCenter,
-                bounds.bottomRight,
+                bounds.bottomLeft, bounds.bottomCenter, bounds.bottomRight,
               ];
               final hitRadius = 14.0 / _scale;
               for (int i = 0; i < handles.length; i++) {
@@ -2160,8 +2158,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           if (_selectionMode != SelectionMode.ninguno) {
             final bounds = _controller.selectionBounds;
             if (bounds != null && _controller.hasSelection) {
-              final expanded = bounds.inflate(40 / _scale);
-              if (expanded.contains(cp)) {
+              if (bounds.inflate(40 / _scale).contains(cp)) {
                 _controller.saveSelectionMoveToHistory();
                 _isDraggingSelection = true;
                 _selectionMoveStart = cp;
@@ -2178,9 +2175,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
 
-          // ── Dibujo normal / borrador en imagen ───────────
-          final isEraser = _controller.activeBrush.type == StrokeType.eraser;
-          if (isEraser && _selectionMode == SelectionMode.ninguno) {
+          // ── Borrador en imagen ───────────────────────────
+          if (_controller.activeBrush.type == StrokeType.eraser &&
+              _selectedImageId == null) {
             final img = _controller.imageAtPoint(cp);
             if (img != null) {
               _erasingImageId = img.id;
@@ -2189,6 +2186,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
               return;
             }
           }
+
+          // ── Dibujo normal ────────────────────────────────
           _controller.startStroke(cp);
         },
         onScaleUpdate: (details) {
@@ -2210,12 +2209,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
               return;
             }
 
-            // ── Matemática correcta de zoom con focal point ──
-            // El punto canvas bajo el focal siempre se mantiene fijo
+            // ── Fórmula correcta pan/zoom ────────────────────
+            // newOffset = startFocal + (startOffset - startFocal) * scaleRatio + panDelta
+            // Garantiza que el punto bajo los dedos NO se mueve
             final newScale = (_startScale * details.scale).clamp(0.1, 10.0);
+            final scaleRatio = newScale / _startScale;
+            final panDelta = details.localFocalPoint - _startFocalPoint;
             final newOffset = Offset(
-              details.localFocalPoint.dx - _canvasFocalX * newScale,
-              details.localFocalPoint.dy - _canvasFocalY * newScale,
+              _startFocalPoint.dx + (_startOffset.dx - _startFocalPoint.dx) * scaleRatio + panDelta.dx,
+              _startFocalPoint.dy + (_startOffset.dy - _startFocalPoint.dy) * scaleRatio + panDelta.dy,
             );
             final newRotation = _startRotation + details.rotation;
             setState(() {
