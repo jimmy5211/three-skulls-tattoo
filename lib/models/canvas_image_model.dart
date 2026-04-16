@@ -3,11 +3,12 @@ import 'package:flutter/material.dart';
 
 /// Un trazo del borrador sobre la imagen (coordenadas canvas)
 class EraseStroke {
-  final List<Offset> points;
+  final List<Offset> points; // mutable — se agrega en tiempo real
   final double radius;
 
   EraseStroke({required this.points, required this.radius});
 
+  // Mantener copyWithPoint por compatibilidad pero ya no se usa en hot path
   EraseStroke copyWithPoint(Offset point) => EraseStroke(
         points: [...points, point],
         radius: radius,
