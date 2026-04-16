@@ -5,9 +5,11 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// 🔔 Notificaciones
 final FlutterLocalNotificationsPlugin notificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
+// 📡 URL de tu JSON
 const String updateUrl =
     "https://api.jsonbin.io/v3/b/69b8b65eaa77b81da9ef4f41";
 
@@ -38,7 +40,7 @@ Future<void> checkForUpdate() async {
       await prefs.setInt("last_version", serverVersion);
     }
   } catch (e) {
-    print("Error: $e");
+    print("Error verificando actualización: $e");
   }
 }
 
@@ -66,15 +68,9 @@ void main() async {
 
   // 🔔 Inicializar notificaciones
   const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-
   const initSettings = InitializationSettings(android: androidInit);
 
-  await notificationsPlugin.initialize(
-    initSettings,
-    onDidReceiveNotificationResponse: (response) {
-      print("Notificación tocada");
-    },
-  );
+  await notificationsPlugin.initialize(initSettings);
 
   // ⚙️ Workmanager
   Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
@@ -82,41 +78,8 @@ void main() async {
   Workmanager().registerPeriodicTask(
     "updateTask",
     "checkUpdate",
-    frequency: Duration(hours: 6),
+    frequency: const Duration(hours: 6),
   );
 
-  runApp(const MyApp());
-}
-
-// 🎨 APP
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Three Skulls Tattoo',
-      home: const HomePage(),
-    );
-  }
-}
-
-// 🏠 HOME
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Three Skulls Tattoo")),
-      body: Center(
-        child: ElevatedButton(
-          onPressed: () async {
-            await checkForUpdate();
-          },
-          child: const Text("Buscar actualización"),
-        ),
-      ),
-    );
-  }
+  runApp(MyApp()); // 👈 TU APP ORIGINAL
 }
