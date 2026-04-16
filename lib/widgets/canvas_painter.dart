@@ -75,11 +75,6 @@ class CanvasPainter extends CustomPainter {
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(0, 0, canvasW, canvasH));
 
-    // 5a. Imágenes de referencia (debajo de las capas)
-    for (final img in controller.canvasImages) {
-      _drawCanvasImage(canvas, img);
-    }
-
     for (final layer in layers) {
       if (!layer.isVisible) continue;
       _drawLayerOptimized(canvas, size, layer);
@@ -226,14 +221,26 @@ class CanvasPainter extends CustomPainter {
       Canvas canvas, Size size, LayerModel layer) {
     final rect = Rect.fromLTWH(
         0, 0, controller.canvasSize.width, controller.canvasSize.height);
-    final cached = controller.getLayerCache(layer.id);
+
+    // Imágenes de esta capa
+    final layerImages = controller.canvasImages
+        .where((img) => img.layerId == layer.id)
+        .toList();
 
     canvas.saveLayer(
       rect,
       Paint()..color = Colors.white.withOpacity(layer.opacity),
     );
 
-    if (cached != null && layer.id != activeLayerId) {
+    // 1. Primero renderizar imágenes de esta capa (debajo de los strokes)
+    for (final img in layerImages) {
+      _drawCanvasImage(canvas, img);
+    }
+
+    // 2. Luego los strokes (encima de las imágenes)
+    // El borrador (BlendMode.clear) borrará AMBOS — imagen y strokes
+    final cached = controller.getLayerCache(layer.id);
+    if (cached != null && layer.id != activeLayerId && layerImages.isEmpty) {
       canvas.drawPicture(cached);
     } else {
       final recorder = ui.PictureRecorder();
@@ -246,7 +253,8 @@ class CanvasPainter extends CustomPainter {
       }
 
       final picture = recorder.endRecording();
-      if (layer.id != activeLayerId && layer.strokes.isNotEmpty) {
+      // Solo cachear si no hay imágenes (las imágenes son dinámicas)
+      if (layer.id != activeLayerId && layer.strokes.isNotEmpty && layerImages.isEmpty) {
         controller.setLayerCache(layer.id, picture);
       }
       canvas.drawPicture(picture);
