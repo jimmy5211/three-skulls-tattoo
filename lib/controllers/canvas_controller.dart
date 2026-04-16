@@ -1,8 +1,10 @@
+import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../models/stroke_model.dart';
 import '../models/layer_model.dart';
 import '../models/brush_model.dart';
+import '../models/canvas_image_model.dart';
 
 class CanvasController extends ChangeNotifier {
   List<LayerModel> layers = [];
@@ -16,6 +18,10 @@ class CanvasController extends ChangeNotifier {
   bool symmetryEnabled = false;
   SymmetryType symmetryType = SymmetryType.horizontal;
   Color backgroundColor = Colors.transparent;
+
+  // ─── IMÁGENES EN CANVAS ──────────────────────────────────
+  List<CanvasImageModel> canvasImages = [];
+  CanvasImageModel? _selectedImage;
 
   // FIX: Separar tamaño del lienzo real del tamaño de pantalla
   // screenSize = tamaño de la pantalla (se actualiza automáticamente)
@@ -442,6 +448,74 @@ class CanvasController extends ChangeNotifier {
       invalidateLayerCache(activeLayerId);
       notifyListeners();
     }
+  }
+
+  // ─── MÉTODOS DE IMAGEN ───────────────────────────────────
+
+  void addCanvasImage(ui.Image image) {
+    final imgW = image.width.toDouble();
+    final imgH = image.height.toDouble();
+    final maxW = canvasSize.width * 0.6;
+    final maxH = canvasSize.height * 0.6;
+    final scale = min(maxW / imgW, maxH / imgH).clamp(0.01, 1.0);
+    final scaledW = imgW * scale;
+    final scaledH = imgH * scale;
+    final pos = Offset(
+      (canvasSize.width - scaledW) / 2,
+      (canvasSize.height - scaledH) / 2,
+    );
+    canvasImages.add(CanvasImageModel(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      image: image,
+      position: pos,
+      size: Size(scaledW, scaledH),
+    ));
+    notifyListeners();
+  }
+
+  void removeCanvasImage(String id) {
+    canvasImages.removeWhere((img) => img.id == id);
+    notifyListeners();
+  }
+
+  void moveCanvasImage(String id, Offset delta) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    canvasImages[idx].position += delta;
+    notifyListeners();
+  }
+
+  void selectCanvasImage(String? id) {
+    for (final img in canvasImages) {
+      img.isSelected = img.id == id;
+    }
+    _selectedImage = id == null
+        ? null
+        : canvasImages.firstWhere((img) => img.id == id,
+            orElse: () => canvasImages.first);
+    notifyListeners();
+  }
+
+  CanvasImageModel? imageAtPoint(Offset point) {
+    for (final img in canvasImages.reversed) {
+      if (img.rect.contains(point)) return img;
+    }
+    return null;
+  }
+
+  void scaleCanvasImage(String id, double scaleFactor) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    final img = canvasImages[idx];
+    final newW = (img.size.width * scaleFactor).clamp(20.0, canvasSize.width);
+    final newH = (img.size.height * scaleFactor).clamp(20.0, canvasSize.height);
+    canvasImages[idx].size = Size(newW, newH);
+    notifyListeners();
+  }
+
+  void clearCanvasImages() {
+    canvasImages.clear();
+    notifyListeners();
   }
 
   void clearCanvas() {
