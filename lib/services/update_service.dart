@@ -32,11 +32,13 @@ class UpdateService {
 
   static const String _lastCheckKey = 'last_update_check';
 
+  // 🔍 Obtener versión instalada
   static Future<String> _getInstalledVersion() async {
     final info = await PackageInfo.fromPlatform();
     return info.version;
   }
 
+  // 🔍 Verificar actualizaciones
   static Future<UpdateInfo> checkForUpdates() async {
     final currentVersion = await _getInstalledVersion();
 
@@ -55,12 +57,25 @@ class UpdateService {
           ? raw['record']
           : raw;
 
-      final latestVersion = data['version'] ?? currentVersion;
-      final downloadUrl = data['downloadUrl'] ?? '';
-      final releaseNotes = data['releaseNotes'] ?? '';
-      final mandatory = data['mandatory'] ?? false;
+      final latestVersion =
+          data['version']?.toString() ?? currentVersion;
+      final releaseNotes =
+          data['releaseNotes']?.toString() ?? '';
+      final downloadUrl =
+          data['downloadUrl']?.toString() ?? '';
+      final mandatory =
+          data['mandatory'] as bool? ?? false;
 
-      final isAvailable = latestVersion != currentVersion;
+      final isAvailable = _isNewerVersion(
+        latestVersion,
+        currentVersion,
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _lastCheckKey,
+        DateTime.now().toIso8601String(),
+      );
 
       return UpdateInfo(
         version: latestVersion,
@@ -79,6 +94,36 @@ class UpdateService {
     }
   }
 
+  // 🔢 Comparar versiones tipo 1.0.149
+  static bool _isNewerVersion(String latest, String current) {
+    try {
+      final latestParts = latest
+          .replaceAll('v', '')
+          .trim()
+          .split('.')
+          .map((p) => int.tryParse(p) ?? 0)
+          .toList();
+
+      final currentParts = current
+          .replaceAll('v', '')
+          .trim()
+          .split('.')
+          .map((p) => int.tryParse(p) ?? 0)
+          .toList();
+
+      while (latestParts.length < 3) latestParts.add(0);
+      while (currentParts.length < 3) currentParts.add(0);
+
+      for (int i = 0; i < 3; i++) {
+        if (latestParts[i] > currentParts[i]) return true;
+        if (latestParts[i] < currentParts[i]) return false;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // 🔥 DESCARGAR E INSTALAR APK
   static Future<void> downloadAndInstall(UpdateInfo update) async {
     try {
@@ -90,10 +135,39 @@ class UpdateService {
       final request = await http.get(Uri.parse(update.downloadUrl));
       await file.writeAsBytes(request.bodyBytes);
 
-      // 👉 abre el APK para instalar
+      // 👉 Abre el APK para instalar
       await OpenFile.open(filePath);
     } catch (e) {
       print("Error instalando APK: $e");
     }
+  }
+
+  // 🕒 Fecha última verificación
+  static Future<String> getLastCheckDate() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final date = prefs.getString(_lastCheckKey);
+      if (date == null) return 'Nunca';
+
+      final parsed = DateTime.parse(date);
+      final diff = DateTime.now().difference(parsed);
+
+      if (diff.inMinutes < 1) return 'Hace un momento';
+      if (diff.inMinutes < 60) {
+        return 'Hace ${diff.inMinutes} min';
+      }
+      if (diff.inHours < 24) {
+        return 'Hace ${diff.inHours} horas';
+      }
+      return 'Hace ${diff.inDays} días';
+    } catch (e) {
+      return 'Nunca';
+    }
+  }
+
+  // 📦 Versión actual
+  static Future<String> get currentVersion async {
+    final info = await PackageInfo.fromPlatform();
+    return info.version;
   }
 }
