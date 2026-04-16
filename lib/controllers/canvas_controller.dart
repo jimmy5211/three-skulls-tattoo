@@ -575,10 +575,12 @@ class CanvasController extends ChangeNotifier {
     if (idx == -1) return;
     final current = canvasImages[idx].currentEraseStroke;
     if (current == null) return;
-    // Filtrar puntos demasiado cercanos para suavidad
     final last = current.points.last;
-    if ((last - point).distance < current.radius * 0.1) return;
-    canvasImages[idx].currentEraseStroke = current.copyWithPoint(point);
+    // Umbral mínimo: al menos 2px de distancia (más fluido que el 10% del radio)
+    final minDist = max(current.radius * 0.2, 2.0);
+    if ((last - point).distance < minDist) return;
+    // Mutar la lista directamente en lugar de crear nuevo objeto
+    current.points.add(point);
     notifyListeners();
   }
 
