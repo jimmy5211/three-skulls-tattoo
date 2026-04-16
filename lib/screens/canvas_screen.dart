@@ -75,8 +75,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // ─── IMAGEN EN CANVAS ────────────────────────────────────
   String? _selectedImageId;
   bool _isDraggingImage = false;
-  Offset? _imageDragStartScreen;   // posición pantalla al iniciar drag
-  Offset? _imageDragStartCanvas;   // posición canvas de la imagen al iniciar drag
+  Offset? _lastDragCanvas;   // último punto canvas durante el drag (delta acumulativo)
 
   // ─── RESIZE DE IMAGEN ────────────────────────────────────
   bool _isResizingImage = false;
@@ -2108,7 +2107,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 .firstOrNull;
             if (selImg != null) {
               final handles = _imageHandlePositions(selImg.rect);
-              final hitRadius = 18.0 / _scale;
+              final hitRadius = 30.0 / _scale; // más generoso para móvil
               for (int i = 0; i < handles.length; i++) {
                 if ((handles[i] - cp).distance < hitRadius) {
                   _isResizingImage = true;
@@ -2118,10 +2117,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   return;
                 }
               }
-              if (selImg.rect.inflate(5 / _scale).contains(cp)) {
+              if (selImg.rect.inflate(10 / _scale).contains(cp)) {
                 _isDraggingImage = true;
-                _imageDragStartScreen = details.localFocalPoint;
-                _imageDragStartCanvas = Offset(selImg.position.dx, selImg.position.dy);
+                _lastDragCanvas = cp;
                 return;
               }
             }
@@ -2272,14 +2270,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
           final cp = _screenToCanvas(details.localFocalPoint);
 
-          // ── Mover imagen (delta con rotación correcta) ───
-          if (_isDraggingImage && _imageDragStartScreen != null &&
-              _imageDragStartCanvas != null && _selectedImageId != null) {
-            final screenDelta = details.localFocalPoint - _imageDragStartScreen!;
-            // Convertir delta pantalla a delta canvas (respeta rotación)
-            final canvasDelta = _screenDeltaToCanvas(screenDelta);
-            _controller.setCanvasImagePosition(
-                _selectedImageId!, _imageDragStartCanvas! + canvasDelta);
+          // ── Mover imagen (delta acumulativo en canvas) ───
+          if (_isDraggingImage && _lastDragCanvas != null && _selectedImageId != null) {
+            // cp ya está en coordenadas canvas con rotación correcta
+            final delta = cp - _lastDragCanvas!;
+            _lastDragCanvas = cp;
+            final img = _controller.canvasImages
+                .where((i) => i.id == _selectedImageId).firstOrNull;
+            if (img != null) {
+              _controller.setCanvasImagePosition(
+                  _selectedImageId!, img.position + delta);
+            }
             return;
           }
 
@@ -2364,11 +2365,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
         onScaleEnd: (details) {
           if (_isScaling) { _isScaling = false; return; }
           if (_isDraggingImage) {
-            setState(() {
-              _isDraggingImage = false;
-              _imageDragStartScreen = null;
-              _imageDragStartCanvas = null;
-            });
+            _isDraggingImage = false;
+            _lastDragCanvas = null;
             return;
           }
           if (_isResizingImage) {
@@ -3116,108 +3114,107 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget _buildImageControlBar() {
     final imgId = _selectedImageId;
     if (imgId == null) return const SizedBox.shrink();
-    final img = _controller.canvasImages
-        .firstWhere((i) => i.id == imgId,
-            orElse: () => _controller.canvasImages.first);
 
-    return StatefulBuilder(
-      builder: (ctx, setStateBar) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: _panelColor.withOpacity(0.95),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _borderColor, width: 0.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.4),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            )
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Fila de acciones
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _selectionAction(Icons.zoom_out_map, 'Ajustar', () {
-                  final cs = _controller.canvasSize;
-                  final scale = (cs.width * 0.6) / img.image.width;
-                  setState(() {
-                    img.size = Size(img.image.width * scale, img.image.height * scale);
-                    img.position = Offset((cs.width - img.size.width) / 2, (cs.height - img.size.height) / 2);
-                  });
-                  _controller.notifyListeners();
-                }),
-                _selectionAction(Icons.undo, 'Deshacer', () {
-                  _controller.undoLastEraseOnImage(imgId);
-                }, enabled: img.eraseStrokes.isNotEmpty),
-                _selectionAction(Icons.restore, 'Restaurar', () {
-                  _controller.clearErasesOnImage(imgId);
-                }, enabled: img.hasErases),
-                _selectionAction(Icons.flip, 'Voltear', () {
-                  // TODO: flip horizontal
-                }),
-                _selectionAction(
-                  Icons.delete_outline, 'Eliminar',
-                  () {
+    // AnimatedBuilder para que el bar se actualice cuando cambia el controller
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final imgList = _controller.canvasImages.where((i) => i.id == imgId);
+        if (imgList.isEmpty) return const SizedBox.shrink();
+        final img = imgList.first;
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: _panelColor.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _borderColor, width: 0.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.4),
+                blurRadius: 8, offset: const Offset(0, 2),
+              )
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // Ajustar: centra y escala al 60% del canvas
+                  _selectionAction(Icons.zoom_out_map, 'Ajustar', () {
+                    final cs = _controller.canvasSize;
+                    final ar = img.image.width / img.image.height;
+                    final w = cs.width * 0.6;
+                    final h = w / ar;
+                    _controller.setCanvasImageRect(imgId,
+                      Rect.fromLTWH((cs.width - w) / 2, (cs.height - h) / 2, w, h));
+                  }),
+                  // Deshacer último borrado
+                  _selectionAction(Icons.undo, 'Deshacer', () {
+                    _controller.undoLastEraseOnImage(imgId);
+                  }, enabled: img.eraseStrokes.isNotEmpty),
+                  // Restaurar imagen original
+                  _selectionAction(Icons.history, 'Restaurar', () {
+                    _controller.clearErasesOnImage(imgId);
+                  }, enabled: img.hasErases),
+                  // Voltear horizontal
+                  _selectionAction(Icons.flip, 'Voltear H', () {
+                    _controller.toggleFlipX(imgId);
+                  }, isActive: img.flipX),
+                  // Voltear vertical
+                  _selectionAction(Icons.flip_camera_android, 'Voltear V', () {
+                    _controller.toggleFlipY(imgId);
+                  }, isActive: img.flipY),
+                  // Eliminar
+                  _selectionAction(Icons.delete_outline, 'Eliminar', () {
                     _controller.removeCanvasImage(imgId);
-                    setState(() {
-                      _selectedImageId = null;
-                    });
-                  },
-                  isDestructive: true,
-                ),
-                _selectionAction(Icons.check, 'Listo', () {
-                  _controller.selectCanvasImage(null);
-                  setState(() => _selectedImageId = null);
-                }),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // Slider de opacidad
-            Row(
-              children: [
-                const Text('OPA',
-                    style: TextStyle(
-                        fontFamily: 'Raleway',
-                        fontSize: 9,
-                        color: Color(0xFF8E8E93))),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: AppTheme.accentRed,
-                      inactiveTrackColor: _borderColor,
-                      thumbColor: Colors.white,
-                      thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 7),
-                      trackHeight: 3,
-                    ),
-                    child: Slider(
-                      value: img.opacity,
-                      min: 0.1,
-                      max: 1.0,
-                      onChanged: (v) {
-                        setState(() => img.opacity = v);
-                        setStateBar(() {});
-                        _controller.notifyListeners();
-                      },
+                    setState(() => _selectedImageId = null);
+                  }, isDestructive: true),
+                  // Listo
+                  _selectionAction(Icons.check, 'Listo', () {
+                    _controller.selectCanvasImage(null);
+                    setState(() => _selectedImageId = null);
+                  }),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Slider de opacidad
+              Row(
+                children: [
+                  const Text('OPA',
+                      style: TextStyle(fontFamily: 'Raleway', fontSize: 9,
+                          color: Color(0xFF8E8E93))),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        activeTrackColor: AppTheme.accentRed,
+                        inactiveTrackColor: _borderColor,
+                        thumbColor: Colors.white,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                        trackHeight: 3,
+                      ),
+                      child: Slider(
+                        value: img.opacity.clamp(0.1, 1.0),
+                        min: 0.1, max: 1.0,
+                        onChanged: (v) {
+                          img.opacity = v;
+                          _controller.notifyListeners();
+                        },
+                      ),
                     ),
                   ),
-                ),
-                Text('${(img.opacity * 100).round()}%',
-                    style: const TextStyle(
-                        fontFamily: 'Raleway',
-                        fontSize: 10,
-                        color: Colors.white)),
-              ],
-            ),
-          ],
-        ),
-      ),
+                  Text('${(img.opacity * 100).round()}%',
+                      style: const TextStyle(fontFamily: 'Raleway',
+                          fontSize: 10, color: Colors.white)),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
  }
