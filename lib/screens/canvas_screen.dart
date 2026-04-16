@@ -62,6 +62,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _isDraggingSelection = false;
   Offset? _selectionMoveStart;
 
+  // Forma persistida después de soltar
+  List<Offset> _finalizedSelectionPoints = [];
+  Offset? _finalizedStart;
+  Offset? _finalizedEnd;
+  SelectionMode _finalizedMode = SelectionMode.ninguno;
+
   static const double _sideBarWidth = 56.0;
   static const double _layerPanelWidth = 220.0;
 
@@ -272,7 +278,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
             // Action bar de selección
             if (_selectionMode != SelectionMode.ninguno &&
-                _controller.hasSelection &&
+                (_controller.hasSelection || _controller.hasClipboard) &&
                 !_isFullscreen)
               Positioned(
                 bottom: 60,
@@ -739,7 +745,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
         borderRadius:
             BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) => Column(
+      builder: (ctx) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
@@ -761,35 +767,86 @@ class _CanvasScreenState extends State<CanvasScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          _buildSettingRow(Icons.blur_on, 'Suavizado de bordes',
-              'Suaviza los bordes de la selección'),
           _buildSettingRow(Icons.invert_colors,
               'Invertir selección',
-              'Selecciona lo no seleccionado'),
+              'Selecciona lo no seleccionado', () {
+            Navigator.pop(ctx);
+            _invertSelection();
+          }),
           _buildSettingRow(Icons.expand_outlined, 'Expandir',
-              'Amplía el área seleccionada'),
+              'Amplía el área seleccionada', () {
+            Navigator.pop(ctx);
+            _expandSelection(50.0);
+          }),
           _buildSettingRow(Icons.compress, 'Contraer',
-              'Reduce el área seleccionada'),
+              'Reduce el área seleccionada', () {
+            Navigator.pop(ctx);
+            _expandSelection(-50.0);
+          }),
           _buildSettingRow(
               Icons.content_copy_outlined,
               'Copiar selección',
-              'Copia el área seleccionada'),
+              'Copia el área seleccionada', () {
+            Navigator.pop(ctx);
+            _controller.copySelected();
+          }),
           _buildSettingRow(Icons.cut_outlined,
               'Cortar selección',
-              'Corta el área seleccionada'),
+              'Corta el área seleccionada', () {
+            Navigator.pop(ctx);
+            _controller.cutSelected();
+            setState(() => _clearSelectionState());
+          }),
           _buildSettingRow(Icons.delete_outline,
               'Limpiar selección',
-              'Elimina el contenido seleccionado'),
+              'Elimina el contenido seleccionado', () {
+            Navigator.pop(ctx);
+            _controller.deleteSelected();
+            setState(() => _clearSelectionState());
+          }),
           const SizedBox(height: 16),
         ],
       ),
     );
   }
 
+  void _invertSelection() {
+    final layerIdx = _controller.layers
+        .indexWhere((l) => l.id == _controller.activeLayerId);
+    if (layerIdx == -1) return;
+    final total = _controller.layers[layerIdx].strokes.length;
+    final currentSet =
+        Set<int>.from(_controller.selectedStrokeIndices);
+    final inverted = [
+      for (int i = 0; i < total; i++)
+        if (!currentSet.contains(i)) i
+    ];
+    setState(() {
+      _controller.selectedStrokeIndices = inverted;
+      _controller.notifyListeners();
+    });
+  }
+
+  void _expandSelection(double delta) {
+    if (_finalizedStart == null || _finalizedEnd == null) return;
+    final rect = Rect.fromPoints(_finalizedStart!, _finalizedEnd!);
+    final expanded = rect.inflate(delta / _scale);
+    setState(() {
+      _finalizedStart = expanded.topLeft;
+      _finalizedEnd = expanded.bottomRight;
+    });
+    if (_finalizedMode == SelectionMode.rectangular) {
+      _controller.selectStrokesInRect(expanded);
+    } else if (_finalizedMode == SelectionMode.elipse) {
+      _controller.selectStrokesInEllipse(expanded);
+    }
+  }
+
   Widget _buildSettingRow(
-      IconData icon, String title, String subtitle) {
+      IconData icon, String title, String subtitle,
+      VoidCallback onTap) {
     return GestureDetector(
-      onTap: () => Navigator.pop(context),
+      onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(
             horizontal: 20, vertical: 12),
@@ -1872,12 +1929,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
         if (start != null && current != null) {
           _controller.selectStrokesInRect(
               Rect.fromPoints(start, current));
+          _finalizedMode = SelectionMode.rectangular;
+          _finalizedStart = start;
+          _finalizedEnd = current;
         }
         break;
       case SelectionMode.elipse:
         if (start != null && current != null) {
           _controller.selectStrokesInEllipse(
               Rect.fromPoints(start, current));
+          _finalizedMode = SelectionMode.elipse;
+          _finalizedStart = start;
+          _finalizedEnd = current;
         }
         break;
       case SelectionMode.libre:
@@ -1885,12 +1948,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
           final path = Path()
             ..addPolygon(_selectionPoints, true);
           _controller.selectStrokesInPath(path);
+          _finalizedMode = SelectionMode.libre;
+          _finalizedSelectionPoints = List.from(_selectionPoints);
         }
         break;
       case SelectionMode.automatico:
         if (start != null) {
-          _controller.selectStrokesNear(
-              start, 80.0 / _scale);
+          _controller.selectStrokesNear(start, 80.0 / _scale);
+          _finalizedMode = SelectionMode.automatico;
+          _finalizedStart = start;
+          _finalizedEnd = start;
         }
         break;
       default:
@@ -1903,6 +1970,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
     });
   }
 
+  void _clearSelectionState() {
+    _controller.clearSelection();
+    _finalizedMode = SelectionMode.ninguno;
+    _finalizedStart = null;
+    _finalizedEnd = null;
+    _finalizedSelectionPoints = [];
+    _selectionPoints = [];
+    _selectionDragStart = null;
+    _selectionDragCurrent = null;
+  }
+
   Widget _buildCanvas() {
     return Positioned.fill(
       child: GestureDetector(
@@ -1912,9 +1990,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
             setState(() => _showBrushPanel = false);
           if (_showSelectionOptions)
             setState(() => _showSelectionOptions = false);
-          if (_selectionMode != SelectionMode.ninguno &&
-              _controller.hasSelection) {
-            setState(() => _controller.clearSelection());
+          if (_selectionMode != SelectionMode.ninguno) {
+            setState(() => _clearSelectionState());
           }
         },
         onScaleStart: (details) {
@@ -2049,13 +2126,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     CustomPaint(
                       painter: _SelectionOverlayPainter(
                         mode: _selectionMode,
-                        points: _selectionPoints,
-                        dragStart: _selectionDragStart,
-                        dragCurrent: _selectionDragCurrent,
-                        selectedBounds:
-                            _controller.selectionBounds,
+                        points: _selectionPoints.isNotEmpty
+                            ? _selectionPoints
+                            : _finalizedSelectionPoints,
+                        dragStart: _selectionDragStart ?? _finalizedStart,
+                        dragCurrent: _selectionDragCurrent ?? _finalizedEnd,
+                        selectedBounds: _controller.selectionBounds,
                         selectedIndices:
                             _controller.selectedStrokeIndices,
+                        finalizedMode: _finalizedMode,
                       ),
                       size: Size(
                         _controller.canvasSize.width,
@@ -2493,7 +2572,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             });
           }),
           _selectionAction(Icons.deselect, 'Desel.', () {
-            setState(() => _controller.clearSelection());
+            setState(() => _clearSelectionState());
           }),
         ],
       ),
@@ -2607,6 +2686,7 @@ class _SelectionOverlayPainter extends CustomPainter {
   final Offset? dragCurrent;
   final Rect? selectedBounds;
   final List<int> selectedIndices;
+  final SelectionMode finalizedMode;
 
   _SelectionOverlayPainter({
     required this.mode,
@@ -2615,6 +2695,7 @@ class _SelectionOverlayPainter extends CustomPainter {
     required this.dragCurrent,
     required this.selectedBounds,
     required this.selectedIndices,
+    required this.finalizedMode,
   });
 
   @override
@@ -2727,5 +2808,6 @@ class _SelectionOverlayPainter extends CustomPainter {
       old.dragStart != dragStart ||
       old.dragCurrent != dragCurrent ||
       old.selectedBounds != selectedBounds ||
-      old.selectedIndices != selectedIndices;
+      old.selectedIndices != selectedIndices ||
+      old.finalizedMode != finalizedMode;
 }
