@@ -105,61 +105,46 @@ class CanvasPainter extends CustomPainter {
   }
 
   void _drawCanvasImage(Canvas canvas, CanvasImageModel img) {
+    if (img.rect.width <= 0 || img.rect.height <= 0) return;
+    if (img.image.width <= 0 || img.image.height <= 0) return;
+
+    final src = Rect.fromLTWH(
+      0, 0, img.image.width.toDouble(), img.image.height.toDouble(),
+    );
+
     canvas.save();
     canvas.clipRect(img.rect);
 
-    // saveLayer es necesario para que BlendMode.clear funcione correctamente
-    canvas.saveLayer(
-      img.rect,
-      Paint()..color = Colors.white.withOpacity(img.opacity),
-    );
-
-    // Dibujar la imagen
-    final src = Rect.fromLTWH(
-      0, 0,
-      img.image.width.toDouble(),
-      img.image.height.toDouble(),
-    );
-    canvas.drawImageRect(
-      img.image, src, img.rect,
-      Paint()..filterQuality = FilterQuality.medium,
-    );
-
-    // Aplicar trazos de borrador con BlendMode.clear (borrado GPU)
-    final allErases = [
-      ...img.eraseStrokes,
-      if (img.currentEraseStroke != null) img.currentEraseStroke!,
-    ];
-    for (final erase in allErases) {
-      _drawEraseStroke(canvas, erase);
+    if (!img.hasErases) {
+      // Sin borrados: render directo, más rápido y sin riesgo de crash GPU
+      canvas.drawImageRect(img.image, src, img.rect,
+          Paint()
+            ..color = Colors.white.withOpacity(img.opacity)
+            ..filterQuality = FilterQuality.medium);
+    } else {
+      // Con borrados: saveLayer necesario para BlendMode.clear
+      canvas.saveLayer(img.rect, Paint());
+      canvas.drawImageRect(img.image, src, img.rect,
+          Paint()
+            ..color = Colors.white.withOpacity(img.opacity)
+            ..filterQuality = FilterQuality.medium);
+      for (final erase in [...img.eraseStrokes,
+          if (img.currentEraseStroke != null) img.currentEraseStroke!]) {
+        _drawEraseStroke(canvas, erase);
+      }
+      canvas.restore(); // restore saveLayer
     }
 
-    canvas.restore(); // restore saveLayer
     canvas.restore(); // restore clipRect
 
-    // Borde + handles si está seleccionada
     if (img.isSelected) {
-      final borderPaint = Paint()
-        ..color = const Color(0xFF4A90E2)
-        ..strokeWidth = 2.0
-        ..style = PaintingStyle.stroke;
-      canvas.drawRect(img.rect, borderPaint);
-
-      final handleFill = Paint()
-        ..color = const Color(0xFF4A90E2)
-        ..style = PaintingStyle.fill;
-      final handleBorder = Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0;
-
-      const hr = 8.0;
-      for (final corner in [
-        img.rect.topLeft, img.rect.topRight,
-        img.rect.bottomLeft, img.rect.bottomRight,
-      ]) {
-        canvas.drawCircle(corner, hr, handleFill);
-        canvas.drawCircle(corner, hr, handleBorder);
+      canvas.drawRect(img.rect,
+          Paint()..color = const Color(0xFF4A90E2)..strokeWidth = 2.0..style = PaintingStyle.stroke);
+      final hp = Paint()..color = const Color(0xFF4A90E2)..style = PaintingStyle.fill;
+      final hb = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 2.0;
+      for (final c in [img.rect.topLeft, img.rect.topRight, img.rect.bottomLeft, img.rect.bottomRight]) {
+        canvas.drawCircle(c, 8.0, hp);
+        canvas.drawCircle(c, 8.0, hb);
       }
     }
   }
