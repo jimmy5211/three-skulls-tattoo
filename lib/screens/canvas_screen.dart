@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:io';
+import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
@@ -92,9 +93,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   // ─── BORRADOR EN IMAGEN ──────────────────────────────────
   String? _erasingImageId;
-  // Punto del canvas bajo el focal point al inicio del gesto
-  double _canvasFocalX = 0.0;
-  double _canvasFocalY = 0.0;
+  // Punto del CANVAS bajo el focal point al inicio del gesto (en coords canvas)
+  Offset _canvasFocalPoint = Offset.zero;
 
   static const double _sideBarWidth = 56.0;
   static const double _layerPanelWidth = 220.0;
@@ -167,6 +167,28 @@ class _CanvasScreenState extends State<CanvasScreen> {
     ..scale(_scale);
   final inverse = Matrix4.inverted(matrix);
   return MatrixUtils.transformPoint(inverse, p);
+  }
+
+  /// Convierte punto pantalla a canvas con transform explícito
+  /// (sin usar el estado actual — para usar valores guardados al inicio del gesto)
+  Offset _screenToCanvasWithTransform(
+      Offset screenPoint, Offset offset, double rotation, double scale) {
+    final matrix = Matrix4.identity()
+      ..translate(offset.dx, offset.dy)
+      ..rotateZ(rotation)
+      ..scale(scale);
+    final inverse = Matrix4.inverted(matrix);
+    return MatrixUtils.transformPoint(inverse, screenPoint);
+  }
+
+  /// Convierte un delta de pantalla a delta de canvas (con rotación actual)
+  Offset _screenDeltaToCanvas(Offset screenDelta) {
+    final cosR = cos(_rotation);
+    final sinR = sin(_rotation);
+    return Offset(
+      (screenDelta.dx * cosR + screenDelta.dy * sinR) / _scale,
+      (-screenDelta.dx * sinR + screenDelta.dy * cosR) / _scale,
+    );
   }
 
   bool _isTouchOnCanvas(Offset point) {
@@ -2067,8 +2089,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _startOffset = _offset;
             _startFocalPoint = details.localFocalPoint;
             _startRotation = _rotation;
-            _canvasFocalX = (_startFocalPoint.dx - _startOffset.dx) / _startScale;
-            _canvasFocalY = (_startFocalPoint.dy - _startOffset.dy) / _startScale;
+            // Punto canvas bajo el focal (usa matriz completa con rotación)
+            _canvasFocalPoint = _screenToCanvasWithTransform(
+              _startFocalPoint, _startOffset, _startRotation, _startScale);
             return;
           }
 
@@ -2204,22 +2227,25 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _startOffset = _offset;
               _startFocalPoint = details.localFocalPoint;
               _startRotation = _rotation;
-              _canvasFocalX = (_startFocalPoint.dx - _startOffset.dx) / _startScale;
-              _canvasFocalY = (_startFocalPoint.dy - _startOffset.dy) / _startScale;
+              _canvasFocalPoint = _screenToCanvasWithTransform(
+                _startFocalPoint, _startOffset, _startRotation, _startScale);
               return;
             }
 
-            // ── Fórmula correcta pan/zoom ────────────────────
-            // newOffset = startFocal + (startOffset - startFocal) * scaleRatio + panDelta
-            // Garantiza que el punto bajo los dedos NO se mueve
+            // ── Fórmula correcta pan/zoom CON ROTACIÓN ──────
+            // El punto canvas bajo los dedos siempre se queda fijo
+            // Funciona correctamente aunque el lienzo esté rotado
             final newScale = (_startScale * details.scale).clamp(0.1, 10.0);
-            final scaleRatio = newScale / _startScale;
-            final panDelta = details.localFocalPoint - _startFocalPoint;
-            final newOffset = Offset(
-              _startFocalPoint.dx + (_startOffset.dx - _startFocalPoint.dx) * scaleRatio + panDelta.dx,
-              _startFocalPoint.dy + (_startOffset.dy - _startFocalPoint.dy) * scaleRatio + panDelta.dy,
-            );
             final newRotation = _startRotation + details.rotation;
+            // newOffset = screenFocal - R(newRotation) * S(newScale) * canvasFocal
+            final cosR = cos(newRotation);
+            final sinR = sin(newRotation);
+            final cfx = _canvasFocalPoint.dx;
+            final cfy = _canvasFocalPoint.dy;
+            final newOffset = Offset(
+              details.localFocalPoint.dx - (cfx * cosR - cfy * sinR) * newScale,
+              details.localFocalPoint.dy - (cfx * sinR + cfy * cosR) * newScale,
+            );
             setState(() {
               _scale = newScale;
               _offset = newOffset;
@@ -2229,10 +2255,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
 
           if (_isScaling && _zoomMode) {
-            // Zoom mode 1 dedo: solo pan usando mismo focal correcto
+            // Zoom mode 1 dedo: solo pan
+            final cosR = cos(_rotation);
+            final sinR = sin(_rotation);
+            final cfx = _canvasFocalPoint.dx;
+            final cfy = _canvasFocalPoint.dy;
             final newOffset = Offset(
-              details.localFocalPoint.dx - _canvasFocalX * _scale,
-              details.localFocalPoint.dy - _canvasFocalY * _scale,
+              details.localFocalPoint.dx - (cfx * cosR - cfy * sinR) * _scale,
+              details.localFocalPoint.dy - (cfx * sinR + cfy * cosR) * _scale,
             );
             setState(() => _offset = newOffset);
             return;
@@ -2242,12 +2272,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
           final cp = _screenToCanvas(details.localFocalPoint);
 
-          // ── Mover imagen (posición absoluta, sin acumulación) ──
+          // ── Mover imagen (delta con rotación correcta) ───
           if (_isDraggingImage && _imageDragStartScreen != null &&
               _imageDragStartCanvas != null && _selectedImageId != null) {
             final screenDelta = details.localFocalPoint - _imageDragStartScreen!;
-            final newPos = _imageDragStartCanvas! + screenDelta / _scale;
-            _controller.setCanvasImagePosition(_selectedImageId!, newPos);
+            // Convertir delta pantalla a delta canvas (respeta rotación)
+            final canvasDelta = _screenDeltaToCanvas(screenDelta);
+            _controller.setCanvasImagePosition(
+                _selectedImageId!, _imageDragStartCanvas! + canvasDelta);
             return;
           }
 
@@ -2255,22 +2287,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
           if (_isResizingImage && _imageResizeStartRect != null &&
               _imageResizeStartScreen != null && _selectedImageId != null) {
             final screenDelta = details.localFocalPoint - _imageResizeStartScreen!;
+            final cd = _screenDeltaToCanvas(screenDelta);
             final startRect = _imageResizeStartRect!;
             Rect newRect;
-            final dx = screenDelta.dx / _scale;
-            final dy = screenDelta.dy / _scale;
             switch (_activeImageHandle) {
-              case 0: // TL
-                newRect = Rect.fromLTRB(startRect.left + dx, startRect.top + dy, startRect.right, startRect.bottom);
-                break;
-              case 1: // TR
-                newRect = Rect.fromLTRB(startRect.left, startRect.top + dy, startRect.right + dx, startRect.bottom);
-                break;
-              case 2: // BL
-                newRect = Rect.fromLTRB(startRect.left + dx, startRect.top, startRect.right, startRect.bottom + dy);
-                break;
-              default: // BR
-                newRect = Rect.fromLTRB(startRect.left, startRect.top, startRect.right + dx, startRect.bottom + dy);
+              case 0: newRect = Rect.fromLTRB(startRect.left + cd.dx, startRect.top + cd.dy, startRect.right, startRect.bottom); break;
+              case 1: newRect = Rect.fromLTRB(startRect.left, startRect.top + cd.dy, startRect.right + cd.dx, startRect.bottom); break;
+              case 2: newRect = Rect.fromLTRB(startRect.left + cd.dx, startRect.top, startRect.right, startRect.bottom + cd.dy); break;
+              default: newRect = Rect.fromLTRB(startRect.left, startRect.top, startRect.right + cd.dx, startRect.bottom + cd.dy);
             }
             if (newRect.width > 20 && newRect.height > 20) {
               _controller.setCanvasImageRect(_selectedImageId!, newRect);
