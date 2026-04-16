@@ -1,13 +1,31 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
+/// Un trazo del borrador sobre la imagen (coordenadas canvas)
+class EraseStroke {
+  final List<Offset> points;
+  final double radius;
+
+  EraseStroke({required this.points, required this.radius});
+
+  EraseStroke copyWithPoint(Offset point) => EraseStroke(
+        points: [...points, point],
+        radius: radius,
+      );
+}
+
 class CanvasImageModel {
   final String id;
   final ui.Image image;
-  Offset position; // en coordenadas del canvas
-  Size size;       // en píxeles del canvas
+  Offset position;
+  Size size;
   double opacity;
   bool isSelected;
+
+  /// Trazos del borrador ya confirmados
+  List<EraseStroke> eraseStrokes;
+  /// Trazo en progreso (se muestra en tiempo real)
+  EraseStroke? currentEraseStroke;
 
   CanvasImageModel({
     required this.id,
@@ -16,24 +34,9 @@ class CanvasImageModel {
     required this.size,
     this.opacity = 1.0,
     this.isSelected = false,
-  });
-
-  CanvasImageModel copyWith({
-    ui.Image? image,
-    Offset? position,
-    Size? size,
-    double? opacity,
-    bool? isSelected,
-  }) {
-    return CanvasImageModel(
-      id: id,
-      image: image ?? this.image,
-      position: position ?? this.position,
-      size: size ?? this.size,
-      opacity: opacity ?? this.opacity,
-      isSelected: isSelected ?? this.isSelected,
-    );
-  }
+    List<EraseStroke>? eraseStrokes,
+    this.currentEraseStroke,
+  }) : eraseStrokes = eraseStrokes ?? [];
 
   Rect get rect => Rect.fromLTWH(
         position.dx,
@@ -41,4 +44,7 @@ class CanvasImageModel {
         size.width,
         size.height,
       );
+
+  bool get hasErases =>
+      eraseStrokes.isNotEmpty || currentEraseStroke != null;
 }
