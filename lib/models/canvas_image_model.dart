@@ -24,10 +24,10 @@ class CanvasImageModel {
   bool isSelected;
   bool flipX;
   bool flipY;
+  int layerId; // capa a la que pertenece esta imagen
 
   /// Trazos del borrador ya confirmados
   List<EraseStroke> eraseStrokes;
-  /// Trazo en progreso (se muestra en tiempo real)
   EraseStroke? currentEraseStroke;
 
   CanvasImageModel({
@@ -35,6 +35,7 @@ class CanvasImageModel {
     required this.image,
     required this.position,
     required this.size,
+    required this.layerId,
     this.opacity = 1.0,
     this.isSelected = false,
     this.flipX = false,
