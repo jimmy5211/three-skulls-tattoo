@@ -5,7 +5,6 @@ import '../models/stroke_model.dart';
 import '../models/layer_model.dart';
 import '../models/brush_model.dart';
 import '../models/canvas_image_model.dart';
-
 class CanvasController extends ChangeNotifier {
   List<LayerModel> layers = [];
   int activeLayerId = 0;
@@ -478,6 +477,47 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setCanvasImagePosition(String id, Offset position) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    canvasImages[idx].position = position;
+    notifyListeners();
+  }
+
+  void setCanvasImageRect(String id, Rect rect) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    canvasImages[idx].position = rect.topLeft;
+    canvasImages[idx].size = rect.size;
+    notifyListeners();
+  }
+
+  void rotateSelected(Offset center, double angle) {
+    if (selectedStrokeIndices.isEmpty) return;
+    final idx = layers.indexWhere((l) => l.id == activeLayerId);
+    if (idx == -1) return;
+    final cosA = cos(angle);
+    final sinA = sin(angle);
+    final strokes = List<StrokeModel>.from(layers[idx].strokes);
+    for (final i in selectedStrokeIndices) {
+      if (i < strokes.length) {
+        strokes[i] = strokes[i].copyWith(
+          points: strokes[i].points.map((p) {
+            final dx = p.dx - center.dx;
+            final dy = p.dy - center.dy;
+            return Offset(
+              center.dx + dx * cosA - dy * sinA,
+              center.dy + dx * sinA + dy * cosA,
+            );
+          }).toList(),
+        );
+      }
+    }
+    layers[idx] = layers[idx].copyWith(strokes: strokes);
+    invalidateLayerCache(activeLayerId);
+    notifyListeners();
+  }
+
   void moveCanvasImage(String id, Offset delta) {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
@@ -515,6 +555,58 @@ class CanvasController extends ChangeNotifier {
 
   void clearCanvasImages() {
     canvasImages.clear();
+    notifyListeners();
+  }
+
+  // ─── BORRADOR EN IMAGEN ──────────────────────────────────
+
+  void startEraseOnImage(String id, Offset point, double radius) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    canvasImages[idx].currentEraseStroke = EraseStroke(
+      points: [point],
+      radius: radius,
+    );
+    notifyListeners();
+  }
+
+  void continueEraseOnImage(String id, Offset point) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    final current = canvasImages[idx].currentEraseStroke;
+    if (current == null) return;
+    // Filtrar puntos demasiado cercanos para suavidad
+    final last = current.points.last;
+    if ((last - point).distance < current.radius * 0.1) return;
+    canvasImages[idx].currentEraseStroke = current.copyWithPoint(point);
+    notifyListeners();
+  }
+
+  void endEraseOnImage(String id) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    final current = canvasImages[idx].currentEraseStroke;
+    if (current != null) {
+      canvasImages[idx].eraseStrokes.add(current);
+      canvasImages[idx].currentEraseStroke = null;
+    }
+    notifyListeners();
+  }
+
+  void undoLastEraseOnImage(String id) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    if (canvasImages[idx].eraseStrokes.isNotEmpty) {
+      canvasImages[idx].eraseStrokes.removeLast();
+      notifyListeners();
+    }
+  }
+
+  void clearErasesOnImage(String id) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    canvasImages[idx].eraseStrokes.clear();
+    canvasImages[idx].currentEraseStroke = null;
     notifyListeners();
   }
 
