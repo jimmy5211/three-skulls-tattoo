@@ -1,13 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 🔥 NECESARIO PARA INSTALAR APK EN ANDROID 11+ -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:mimeType="application/vnd.android.package-archive"/>
+        </intent>
+    </queries>
+
+    <!-- PERMISOS -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
-
-    <!-- 🔔 PERMISO PARA NOTIFICACIONES -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
@@ -26,8 +33,8 @@
             android:windowSoftInputMode="adjustResize">
 
             <meta-data
-              android:name="io.flutter.embedding.android.NormalTheme"
-              android:resource="@style/NormalTheme"/>
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme"/>
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -40,6 +47,7 @@
             android:name="flutterEmbedding"
             android:value="2"/>
 
+        <!-- 🔥 NECESARIO PARA ABRIR EL APK -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
