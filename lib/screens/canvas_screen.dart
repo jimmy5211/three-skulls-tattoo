@@ -80,8 +80,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // ─── RESIZE DE IMAGEN ────────────────────────────────────
   bool _isResizingImage = false;
   int _activeImageHandle = -1;     // 0=TL 1=TR 2=BL 3=BR
-  Rect? _imageResizeStartRect;
-  Offset? _imageResizeStartScreen;
+  Offset? _lastResizeCanvas;       // último punto canvas durante resize (delta acumulativo)
 
   // ─── RESIZE DE SELECCIÓN ─────────────────────────────────
   bool _isResizingHandle = false;
@@ -2112,8 +2111,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 if ((handles[i] - cp).distance < hitRadius) {
                   _isResizingImage = true;
                   _activeImageHandle = i;
-                  _imageResizeStartRect = selImg.rect;
-                  _imageResizeStartScreen = details.localFocalPoint;
+                  _lastResizeCanvas = cp;
                   return;
                 }
               }
@@ -2285,20 +2283,22 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
 
           // ── Resize de imagen ─────────────────────────────
-          if (_isResizingImage && _imageResizeStartRect != null &&
-              _imageResizeStartScreen != null && _selectedImageId != null) {
-            final screenDelta = details.localFocalPoint - _imageResizeStartScreen!;
-            final cd = _screenDeltaToCanvas(screenDelta);
-            final startRect = _imageResizeStartRect!;
-            Rect newRect;
-            switch (_activeImageHandle) {
-              case 0: newRect = Rect.fromLTRB(startRect.left + cd.dx, startRect.top + cd.dy, startRect.right, startRect.bottom); break;
-              case 1: newRect = Rect.fromLTRB(startRect.left, startRect.top + cd.dy, startRect.right + cd.dx, startRect.bottom); break;
-              case 2: newRect = Rect.fromLTRB(startRect.left + cd.dx, startRect.top, startRect.right, startRect.bottom + cd.dy); break;
-              default: newRect = Rect.fromLTRB(startRect.left, startRect.top, startRect.right + cd.dx, startRect.bottom + cd.dy);
-            }
-            if (newRect.width > 20 && newRect.height > 20) {
-              _controller.setCanvasImageRect(_selectedImageId!, newRect);
+          if (_isResizingImage && _lastResizeCanvas != null && _selectedImageId != null) {
+            final delta = cp - _lastResizeCanvas!;
+            _lastResizeCanvas = cp;
+            final imgList = _controller.canvasImages.where((i) => i.id == _selectedImageId);
+            if (imgList.isNotEmpty) {
+              final cur = imgList.first.rect;
+              Rect newRect;
+              switch (_activeImageHandle) {
+                case 0: newRect = Rect.fromLTRB(cur.left + delta.dx, cur.top + delta.dy, cur.right, cur.bottom); break; // TL
+                case 1: newRect = Rect.fromLTRB(cur.left, cur.top + delta.dy, cur.right + delta.dx, cur.bottom); break; // TR
+                case 2: newRect = Rect.fromLTRB(cur.left + delta.dx, cur.top, cur.right, cur.bottom + delta.dy); break; // BL
+                default: newRect = Rect.fromLTRB(cur.left, cur.top, cur.right + delta.dx, cur.bottom + delta.dy); break; // BR
+              }
+              if (newRect.width > 20 && newRect.height > 20) {
+                _controller.setCanvasImageRect(_selectedImageId!, newRect);
+              }
             }
             return;
           }
@@ -2370,12 +2370,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
           if (_isResizingImage) {
-            setState(() {
-              _isResizingImage = false;
-              _activeImageHandle = -1;
-              _imageResizeStartRect = null;
-              _imageResizeStartScreen = null;
-            });
+            _isResizingImage = false;
+            _activeImageHandle = -1;
+            _lastResizeCanvas = null;
             return;
           }
           if (_isResizingHandle) {
