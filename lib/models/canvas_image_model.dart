@@ -22,6 +22,8 @@ class CanvasImageModel {
   Size size;
   double opacity;
   bool isSelected;
+  bool flipX;
+  bool flipY;
 
   /// Trazos del borrador ya confirmados
   List<EraseStroke> eraseStrokes;
@@ -35,6 +37,8 @@ class CanvasImageModel {
     required this.size,
     this.opacity = 1.0,
     this.isSelected = false,
+    this.flipX = false,
+    this.flipY = false,
     List<EraseStroke>? eraseStrokes,
     this.currentEraseStroke,
   }) : eraseStrokes = eraseStrokes ?? [];
