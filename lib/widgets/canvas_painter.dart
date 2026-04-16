@@ -117,10 +117,15 @@ class CanvasPainter extends CustomPainter {
 
     // Aplicar flip si es necesario
     if (img.flipX || img.flipY) {
+      // Flip alrededor del centro de la imagen
       final cx = img.rect.center.dx;
       final cy = img.rect.center.dy;
-      canvas.translate(img.flipX ? cx * 2 : 0, img.flipY ? cy * 2 : 0);
+      // 1. Mover origen al centro de la imagen
+      canvas.translate(cx, cy);
+      // 2. Aplicar escala de flip
       canvas.scale(img.flipX ? -1.0 : 1.0, img.flipY ? -1.0 : 1.0);
+      // 3. Restaurar origen
+      canvas.translate(-cx, -cy);
     }
 
     final imgPaint = Paint()
@@ -559,19 +564,23 @@ class CanvasPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(CanvasPainter oldDelegate) {
-    if (oldDelegate.currentStroke != currentStroke)
-      return true;
-    if (oldDelegate.currentMirrorStroke != currentMirrorStroke)
-      return true;
+    if (oldDelegate.currentStroke != currentStroke) return true;
+    if (oldDelegate.currentMirrorStroke != currentMirrorStroke) return true;
     if (oldDelegate.showGrid != showGrid) return true;
-    if (oldDelegate.symmetryEnabled != symmetryEnabled)
-      return true;
-    if (oldDelegate.showSymmetryLine != showSymmetryLine)
-      return true;
+    if (oldDelegate.symmetryEnabled != symmetryEnabled) return true;
+    if (oldDelegate.showSymmetryLine != showSymmetryLine) return true;
     if (oldDelegate.activeLayerId != activeLayerId) return true;
     if (oldDelegate.layers.length != layers.length) return true;
-    if (oldDelegate.backgroundColor != backgroundColor)
+    if (oldDelegate.backgroundColor != backgroundColor) return true;
+    // Detectar cambios en imágenes (posición, resize, flip, borrador)
+    if (controller.imagesChanged) {
+      controller.resetImagesChanged();
       return true;
+    }
+    // Siempre repintar si hay imágenes activas (fallback para borrador en tiempo real)
+    if (controller.canvasImages.any((img) => img.currentEraseStroke != null)) {
+      return true;
+    }
     if (controller.cacheInvalidated) {
       controller.resetCacheFlag();
       return true;
