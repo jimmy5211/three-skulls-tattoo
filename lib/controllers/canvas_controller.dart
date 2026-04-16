@@ -492,6 +492,20 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleFlipX(String id) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    canvasImages[idx].flipX = !canvasImages[idx].flipX;
+    notifyListeners();
+  }
+
+  void toggleFlipY(String id) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    canvasImages[idx].flipY = !canvasImages[idx].flipY;
+    notifyListeners();
+  }
+
   void rotateSelected(Offset center, double angle) {
     if (selectedStrokeIndices.isEmpty) return;
     final idx = layers.indexWhere((l) => l.id == activeLayerId);
@@ -576,12 +590,14 @@ class CanvasController extends ChangeNotifier {
     final current = canvasImages[idx].currentEraseStroke;
     if (current == null) return;
     final last = current.points.last;
-    // Umbral mínimo: al menos 2px de distancia (más fluido que el 10% del radio)
-    final minDist = max(current.radius * 0.2, 2.0);
+    // Distancia mínima: 30% del radio o 4px mínimo para suavidad
+    final minDist = max(current.radius * 0.3, 4.0);
     if ((last - point).distance < minDist) return;
-    // Mutar la lista directamente en lugar de crear nuevo objeto
     current.points.add(point);
-    notifyListeners();
+    // Solo notificar cada 3 puntos para reducir repaints sin perder fluidez
+    if (current.points.length % 3 == 0) {
+      notifyListeners();
+    }
   }
 
   void endEraseOnImage(String id) {
