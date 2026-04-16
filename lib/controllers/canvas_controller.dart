@@ -472,7 +472,9 @@ class CanvasController extends ChangeNotifier {
       image: image,
       position: pos,
       size: Size(scaledW, scaledH),
+      layerId: activeLayerId, // asociar a la capa activa
     ));
+    _imagesChanged = true;
     notifyListeners();
   }
 
