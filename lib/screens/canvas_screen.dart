@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import '../controllers/canvas_controller.dart';
 import '../widgets/canvas_painter.dart';
@@ -380,6 +383,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
               const Spacer(),
+              _btn(Icons.add_photo_alternate_outlined,
+                  onTap: _showImportImageSheet),
             ],
           ),
         ),
@@ -2493,6 +2498,191 @@ class _CanvasScreenState extends State<CanvasScreen> {
         },
       ),
     );
+  }
+
+  // ─── IMPORTAR IMAGEN ─────────────────────────────────────
+
+  void _showImportImageSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 36, height: 4,
+            margin: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: _borderColor,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const Text('AGREGAR IMAGEN',
+              style: TextStyle(
+                  fontFamily: 'BlackOpsOne',
+                  fontSize: 13,
+                  color: _textPrimary,
+                  letterSpacing: 1.5)),
+          const SizedBox(height: 8),
+          _importOption(
+            icon: Icons.photo_library_outlined,
+            title: 'Galería del celular',
+            subtitle: 'Importa una foto o imagen guardada',
+            onTap: () {
+              Navigator.pop(ctx);
+              _importFromGallery();
+            },
+          ),
+          _importOption(
+            icon: Icons.palette_outlined,
+            title: 'Diseños de la app',
+            subtitle: 'Usa un diseño creado en Three Skulls',
+            onTap: () {
+              Navigator.pop(ctx);
+              // TODO: navegar a galería de diseños
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: _cardColor,
+                  content: const Text('Próximamente',
+                      style: TextStyle(fontFamily: 'Raleway', color: Colors.white)),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              );
+            },
+          ),
+          _importOption(
+            icon: Icons.auto_awesome_outlined,
+            title: 'Imagen de IA',
+            subtitle: 'Genera una imagen con inteligencia artificial',
+            onTap: () {
+              Navigator.pop(ctx);
+              // TODO: navegar a pantalla de IA
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: _cardColor,
+                  content: const Text('Próximamente',
+                      style: TextStyle(fontFamily: 'Raleway', color: Colors.white)),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _importOption({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        decoration: BoxDecoration(
+          border: Border(
+              bottom: BorderSide(color: _borderColor.withOpacity(0.4), width: 0.5)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                color: AppTheme.accentRed.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.accentRed.withOpacity(0.3)),
+              ),
+              child: Icon(icon, color: AppTheme.accentRed, size: 22),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontFamily: 'Raleway',
+                          fontSize: 14,
+                          color: _textPrimary,
+                          fontWeight: FontWeight.bold)),
+                  Text(subtitle,
+                      style: TextStyle(
+                          fontFamily: 'Raleway',
+                          fontSize: 11,
+                          color: _textSecondary)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: _textSecondary, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _importFromGallery() async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+      await _loadImageFile(picked.path);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _cardColor,
+            content: Text('Error al importar: $e',
+                style: const TextStyle(
+                    fontFamily: 'Raleway', color: Colors.white)),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
+  }
+
+  dynamic _getImagePicker() => null; // obsoleto, no usar
+
+  Future<void> _loadImageFile(String path) async {
+    final bytes = await File(path).readAsBytes();
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    if (mounted) {
+      _controller.addCanvasImage(image);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: _cardColor,
+          content: const Row(children: [
+            Text('🖼️', style: TextStyle(fontSize: 18)),
+            SizedBox(width: 10),
+            Text('Imagen agregada al canvas',
+                style: TextStyle(
+                    fontFamily: 'Raleway', color: Colors.white)),
+          ]),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
   }
 
   void _saveDesign() {
