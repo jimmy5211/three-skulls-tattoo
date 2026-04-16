@@ -74,13 +74,27 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // ─── IMAGEN EN CANVAS ────────────────────────────────────
   String? _selectedImageId;
   bool _isDraggingImage = false;
-  Offset? _imageDragStart;
+  Offset? _imageDragStartScreen;   // posición pantalla al iniciar drag
+  Offset? _imageDragStartCanvas;   // posición canvas de la imagen al iniciar drag
+
+  // ─── RESIZE DE IMAGEN ────────────────────────────────────
+  bool _isResizingImage = false;
+  int _activeImageHandle = -1;     // 0=TL 1=TR 2=BL 3=BR
+  Rect? _imageResizeStartRect;
+  Offset? _imageResizeStartScreen;
 
   // ─── RESIZE DE SELECCIÓN ─────────────────────────────────
   bool _isResizingHandle = false;
-  int _activeResizeHandle = -1; // 0=TL 1=TR 2=BL 3=BR
+  int _activeResizeHandle = -1;    // 0-7 = handles, 8 = rotación
   Rect? _resizeStartBounds;
   Offset? _resizeHandleStart;
+  double _selectionStartRotation = 0.0;
+
+  // ─── BORRADOR EN IMAGEN ──────────────────────────────────
+  String? _erasingImageId;
+  // Punto del canvas bajo el focal point al inicio del gesto
+  double _canvasFocalX = 0.0;
+  double _canvasFocalY = 0.0;
 
   static const double _sideBarWidth = 56.0;
   static const double _layerPanelWidth = 220.0;
@@ -2044,11 +2058,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _isDraggingImage = false;
             _isDraggingSelection = false;
             _isResizingHandle = false;
+            _isResizingImage = false;
             _isScaling = true;
             _startScale = _scale;
             _startOffset = _offset;
             _startFocalPoint = details.localFocalPoint;
             _startRotation = _rotation;
+            // Guardar el punto del canvas bajo el focal point
+            // para zoom correcto (sin desplazamiento inverso)
+            _canvasFocalX = (_startFocalPoint.dx - _startOffset.dx) / _startScale;
+            _canvasFocalY = (_startFocalPoint.dy - _startOffset.dy) / _startScale;
             return;
           }
 
@@ -2066,11 +2085,30 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _controller.selectCanvasImage(img.id);
               _selectedImageId = img.id;
               _isDraggingImage = true;
-              _imageDragStart = cp;
+              // Guardar posición absoluta para drag sin acumulación de error
+              _imageDragStartScreen = details.localFocalPoint;
+              _imageDragStartCanvas = img.position;
               setState(() {});
               return;
             }
             if (_selectedImageId != null) {
+              // Verificar si tocó un handle de resize
+              final selImg = _controller.canvasImages
+                  .where((i) => i.id == _selectedImageId)
+                  .firstOrNull;
+              if (selImg != null) {
+                final handles = _imageHandlePositions(selImg.rect);
+                final hitRadius = 18.0 / _scale;
+                for (int i = 0; i < handles.length; i++) {
+                  if ((handles[i] - cp).distance < hitRadius) {
+                    _isResizingImage = true;
+                    _activeImageHandle = i;
+                    _imageResizeStartRect = selImg.rect;
+                    _imageResizeStartScreen = details.localFocalPoint;
+                    return;
+                  }
+                }
+              }
               _controller.selectCanvasImage(null);
               _selectedImageId = null;
               _isDraggingImage = false;
@@ -2080,13 +2118,31 @@ class _CanvasScreenState extends State<CanvasScreen> {
           // ── Handle de resize de selección ────────────────
           if (_selectionMode != SelectionMode.ninguno &&
               _controller.hasSelection) {
-            final bounds = _controller.selectionBounds?.inflate(8);
+            final bounds = _controller.selectionBounds?.inflate(10);
             if (bounds != null) {
+              // Handle de rotación
+              final rotHandle = bounds.topCenter - const Offset(0, 36);
+              if ((rotHandle - cp).distance < 14 / _scale) {
+                _controller.saveSelectionMoveToHistory();
+                _isResizingHandle = true;
+                _activeResizeHandle = 8; // rotación
+                _resizeStartBounds = _controller.selectionBounds;
+                _resizeHandleStart = cp;
+                _selectionStartRotation = 0;
+                return;
+              }
+              // 8 handles
               final handles = [
-                bounds.topLeft, bounds.topRight,
-                bounds.bottomLeft, bounds.bottomRight,
+                bounds.topLeft,
+                bounds.topCenter,
+                bounds.topRight,
+                Offset(bounds.left, bounds.center.dy),
+                Offset(bounds.right, bounds.center.dy),
+                bounds.bottomLeft,
+                bounds.bottomCenter,
+                bounds.bottomRight,
               ];
-              final hitRadius = 22.0 / _scale;
+              final hitRadius = 14.0 / _scale;
               for (int i = 0; i < handles.length; i++) {
                 if ((handles[i] - cp).distance < hitRadius) {
                   _controller.saveSelectionMoveToHistory();
@@ -2122,45 +2178,61 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
 
-          // ── Dibujo normal ────────────────────────────────
+          // ── Dibujo normal / borrador en imagen ───────────
+          final isEraser = _controller.activeBrush.type == StrokeType.eraser;
+          if (isEraser && _selectionMode == SelectionMode.ninguno) {
+            final img = _controller.imageAtPoint(cp);
+            if (img != null) {
+              _erasingImageId = img.id;
+              _controller.startEraseOnImage(
+                  img.id, cp, _controller.activeBrush.size);
+              return;
+            }
+          }
           _controller.startStroke(cp);
         },
         onScaleUpdate: (details) {
           // ── PRIORIDAD: 2 dedos siempre pan/zoom ──────────
           if (details.pointerCount >= 2) {
             if (!_isScaling) {
-              // Transición de 1 a 2 dedos en medio del gesto
               _controller.endStroke();
               _isDraggingImage = false;
               _isDraggingSelection = false;
               _isResizingHandle = false;
+              _isResizingImage = false;
               _isScaling = true;
               _startScale = _scale;
               _startOffset = _offset;
               _startFocalPoint = details.localFocalPoint;
               _startRotation = _rotation;
+              _canvasFocalX = (_startFocalPoint.dx - _startOffset.dx) / _startScale;
+              _canvasFocalY = (_startFocalPoint.dy - _startOffset.dy) / _startScale;
               return;
             }
-            // Actualizar transform — mínimo setState
+
+            // ── Matemática correcta de zoom con focal point ──
+            // El punto canvas bajo el focal siempre se mantiene fijo
             final newScale = (_startScale * details.scale).clamp(0.1, 10.0);
-            final newOffset = _startOffset + (details.localFocalPoint - _startFocalPoint);
+            final newOffset = Offset(
+              details.localFocalPoint.dx - _canvasFocalX * newScale,
+              details.localFocalPoint.dy - _canvasFocalY * newScale,
+            );
             final newRotation = _startRotation + details.rotation;
-            if (_scale != newScale || _offset != newOffset || _rotation != newRotation) {
-              setState(() {
-                _scale = newScale;
-                _offset = newOffset;
-                _rotation = newRotation;
-              });
-            }
+            setState(() {
+              _scale = newScale;
+              _offset = newOffset;
+              _rotation = newRotation;
+            });
             return;
           }
 
           if (_isScaling && _zoomMode) {
-            // Zoom mode con 1 dedo: solo pan
-            final newOffset = _startOffset + (details.localFocalPoint - _startFocalPoint);
-            if (_offset != newOffset) {
-              setState(() => _offset = newOffset);
-            }
+            // Zoom mode 1 dedo: solo pan usando mismo focal correcto
+            final newOffset = Offset(
+              details.localFocalPoint.dx - _canvasFocalX * _scale,
+              details.localFocalPoint.dy - _canvasFocalY * _scale,
+            );
+            setState(() => _offset = newOffset);
             return;
           }
 
@@ -2168,24 +2240,64 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
           final cp = _screenToCanvas(details.localFocalPoint);
 
-          // ── Mover imagen ──────────────────────────────────
-          if (_isDraggingImage && _imageDragStart != null && _selectedImageId != null) {
-            final delta = cp - _imageDragStart!;
-            _controller.moveCanvasImage(_selectedImageId!, delta);
-            _imageDragStart = cp;
+          // ── Mover imagen (posición absoluta, sin acumulación) ──
+          if (_isDraggingImage && _imageDragStartScreen != null &&
+              _imageDragStartCanvas != null && _selectedImageId != null) {
+            final screenDelta = details.localFocalPoint - _imageDragStartScreen!;
+            final newPos = _imageDragStartCanvas! + screenDelta / _scale;
+            _controller.setCanvasImagePosition(_selectedImageId!, newPos);
             return;
           }
 
-          // ── Resize handle ─────────────────────────────────
+          // ── Resize de imagen ─────────────────────────────
+          if (_isResizingImage && _imageResizeStartRect != null &&
+              _imageResizeStartScreen != null && _selectedImageId != null) {
+            final screenDelta = details.localFocalPoint - _imageResizeStartScreen!;
+            final startRect = _imageResizeStartRect!;
+            Rect newRect;
+            final dx = screenDelta.dx / _scale;
+            final dy = screenDelta.dy / _scale;
+            switch (_activeImageHandle) {
+              case 0: // TL
+                newRect = Rect.fromLTRB(startRect.left + dx, startRect.top + dy, startRect.right, startRect.bottom);
+                break;
+              case 1: // TR
+                newRect = Rect.fromLTRB(startRect.left, startRect.top + dy, startRect.right + dx, startRect.bottom);
+                break;
+              case 2: // BL
+                newRect = Rect.fromLTRB(startRect.left + dx, startRect.top, startRect.right, startRect.bottom + dy);
+                break;
+              default: // BR
+                newRect = Rect.fromLTRB(startRect.left, startRect.top, startRect.right + dx, startRect.bottom + dy);
+            }
+            if (newRect.width > 20 && newRect.height > 20) {
+              _controller.setCanvasImageRect(_selectedImageId!, newRect);
+            }
+            return;
+          }
+
+          // ── Resize handle de selección ────────────────────
           if (_isResizingHandle && _resizeStartBounds != null && _resizeHandleStart != null) {
             final startBounds = _resizeStartBounds!;
             final delta = cp - _resizeHandleStart!;
             Rect newBounds;
             switch (_activeResizeHandle) {
               case 0: newBounds = Rect.fromLTRB(startBounds.left + delta.dx, startBounds.top + delta.dy, startBounds.right, startBounds.bottom); break;
-              case 1: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top + delta.dy, startBounds.right + delta.dx, startBounds.bottom); break;
-              case 2: newBounds = Rect.fromLTRB(startBounds.left + delta.dx, startBounds.top, startBounds.right, startBounds.bottom + delta.dy); break;
-              default: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top, startBounds.right + delta.dx, startBounds.bottom + delta.dy);
+              case 1: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top + delta.dy, startBounds.right, startBounds.bottom); break; // TC
+              case 2: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top + delta.dy, startBounds.right + delta.dx, startBounds.bottom); break;
+              case 3: newBounds = Rect.fromLTRB(startBounds.left + delta.dx, startBounds.top, startBounds.right, startBounds.bottom); break; // ML
+              case 4: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top, startBounds.right + delta.dx, startBounds.bottom); break; // MR
+              case 5: newBounds = Rect.fromLTRB(startBounds.left + delta.dx, startBounds.top, startBounds.right, startBounds.bottom + delta.dy); break;
+              case 6: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top, startBounds.right, startBounds.bottom + delta.dy); break; // BC
+              default: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top, startBounds.right + delta.dx, startBounds.bottom + delta.dy); break;
+            }
+            // Handle 8 = rotación
+            if (_activeResizeHandle == 8) {
+              final center = startBounds.center;
+              final angle = (cp - center).direction - (startBounds.topCenter - center).direction;
+              _controller.rotateSelected(center, angle - _selectionStartRotation);
+              _selectionStartRotation = angle;
+              return;
             }
             if (newBounds.width > 5 && newBounds.height > 5) {
               final scaleX = newBounds.width / startBounds.width;
@@ -2214,23 +2326,34 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
 
+          // ── Borrador en imagen ────────────────────────────
+          if (_erasingImageId != null) {
+            _controller.continueEraseOnImage(_erasingImageId!, cp);
+            return;
+          }
+
           // ── Dibujo normal ─────────────────────────────────
           _controller.continueStroke(cp);
         },
         onScaleEnd: (details) {
-          if (_isScaling) {
-            _isScaling = false;
-            return;
-          }
-          // Fin de drag de imagen
+          if (_isScaling) { _isScaling = false; return; }
           if (_isDraggingImage) {
             setState(() {
               _isDraggingImage = false;
-              _imageDragStart = null;
+              _imageDragStartScreen = null;
+              _imageDragStartCanvas = null;
             });
             return;
           }
-          // Fin de resize de handle
+          if (_isResizingImage) {
+            setState(() {
+              _isResizingImage = false;
+              _activeImageHandle = -1;
+              _imageResizeStartRect = null;
+              _imageResizeStartScreen = null;
+            });
+            return;
+          }
           if (_isResizingHandle) {
             setState(() {
               _isResizingHandle = false;
@@ -2242,15 +2365,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
           if (_selectionMode != SelectionMode.ninguno) {
             if (_isDraggingSelection) {
-              setState(() {
-                _isDraggingSelection = false;
-                _selectionMoveStart = null;
-              });
+              setState(() { _isDraggingSelection = false; _selectionMoveStart = null; });
             } else {
               _finalizeSelection();
             }
           } else {
-            _controller.endStroke();
+            if (_erasingImageId != null) {
+              _controller.endEraseOnImage(_erasingImageId!);
+              _erasingImageId = null;
+            } else {
+              _controller.endStroke();
+            }
           }
           _isScaling = false;
         },
@@ -2844,6 +2969,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
+  /// Retorna las 4 esquinas de la imagen para handles de resize
+  List<Offset> _imageHandlePositions(Rect rect) => [
+    rect.topLeft, rect.topRight, rect.bottomLeft, rect.bottomRight,
+  ];
+
   void _saveDesign() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -2987,21 +3117,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _selectionAction(Icons.zoom_out_map, 'Ajustar', () {
-                  // Centrar y ajustar al canvas
                   final cs = _controller.canvasSize;
                   final scale = (cs.width * 0.6) / img.image.width;
                   setState(() {
-                    img.size = Size(
-                      img.image.width * scale,
-                      img.image.height * scale,
-                    );
-                    img.position = Offset(
-                      (cs.width - img.size.width) / 2,
-                      (cs.height - img.size.height) / 2,
-                    );
+                    img.size = Size(img.image.width * scale, img.image.height * scale);
+                    img.position = Offset((cs.width - img.size.width) / 2, (cs.height - img.size.height) / 2);
                   });
                   _controller.notifyListeners();
                 }),
+                _selectionAction(Icons.undo, 'Deshacer', () {
+                  _controller.undoLastEraseOnImage(imgId);
+                }, enabled: img.eraseStrokes.isNotEmpty),
+                _selectionAction(Icons.restore, 'Restaurar', () {
+                  _controller.clearErasesOnImage(imgId);
+                }, enabled: img.hasErases),
                 _selectionAction(Icons.flip, 'Voltear', () {
                   // TODO: flip horizontal
                 }),
@@ -3200,21 +3329,40 @@ class _SelectionOverlayPainter extends CustomPainter {
 
     // Dibujar bounding box de selección finalizada
     if (selectedBounds != null && selectedIndices.isNotEmpty) {
-      final bounds = selectedBounds!.inflate(8);
+      final bounds = selectedBounds!.inflate(10);
       _drawDashedRect(canvas, bounds, dashPaint);
-      // Corner handles
+
       final handlePaint = Paint()
         ..color = const Color(0xFF4A90E2)
         ..style = PaintingStyle.fill;
-      const hr = 5.0;
-      for (final corner in [
+      final handleBorder = Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+
+      const hr = 8.0;
+      final handles = [
         bounds.topLeft,
+        bounds.topCenter,
         bounds.topRight,
+        Offset(bounds.left, bounds.center.dy),
+        Offset(bounds.right, bounds.center.dy),
         bounds.bottomLeft,
+        bounds.bottomCenter,
         bounds.bottomRight,
-      ]) {
-        canvas.drawCircle(corner, hr, handlePaint);
+      ];
+      for (final h in handles) {
+        canvas.drawCircle(h, hr, handlePaint);
+        canvas.drawCircle(h, hr, handleBorder);
       }
+
+      // Handle de rotación
+      final rotHandle = bounds.topCenter - const Offset(0, 36);
+      canvas.drawLine(bounds.topCenter, rotHandle,
+          Paint()..color = Colors.white..strokeWidth = 1.5);
+      canvas.drawCircle(rotHandle, 10,
+          Paint()..color = const Color(0xFFE74C3C)..style = PaintingStyle.fill);
+      canvas.drawCircle(rotHandle, 10, handleBorder);
     }
   }
 
