@@ -71,6 +71,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Offset? _finalizedEnd;
   SelectionMode _finalizedMode = SelectionMode.ninguno;
 
+  // ─── IMAGEN EN CANVAS ────────────────────────────────────
+  String? _selectedImageId;
+  bool _isDraggingImage = false;
+  Offset? _imageDragStart;
+
+  // ─── RESIZE DE SELECCIÓN ─────────────────────────────────
+  bool _isResizingHandle = false;
+  int _activeResizeHandle = -1; // 0=TL 1=TR 2=BL 3=BR
+  Rect? _resizeStartBounds;
+  Offset? _resizeHandleStart;
+
   static const double _sideBarWidth = 56.0;
   static const double _layerPanelWidth = 220.0;
 
@@ -254,7 +265,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   animation: _controller,
                   builder: (context, child) => ColorPicker(
                     activeColor: _controller.activeColor,
-                    onColorSelected: _controller.setActiveColor,
+                    onColorSelected: (color) {
+                      _controller.setActiveColor(color);
+                      // Si hay selección activa, aplicar color
+                      if (_selectionMode != SelectionMode.ninguno &&
+                          _controller.hasSelection) {
+                        _controller.colorSelected(color);
+                      }
+                    },
                   ),
                 ),
               ),
@@ -288,6 +306,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 left: _sideBarWidth + 8,
                 right: 8,
                 child: _buildSelectionActionBar(),
+              ),
+
+            // Control bar de imagen seleccionada
+            if (_selectedImageId != null && !_isFullscreen)
+              Positioned(
+                bottom: 60,
+                left: _sideBarWidth + 8,
+                right: 8,
+                child: _buildImageControlBar(),
               ),
           ],
         ),
@@ -1995,6 +2022,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
             setState(() => _showBrushPanel = false);
           if (_showSelectionOptions)
             setState(() => _showSelectionOptions = false);
+          if (_showColors)
+            setState(() => _showColors = false);
+          // Deseleccionar imagen
+          if (_selectedImageId != null) {
+            setState(() {
+              _controller.selectCanvasImage(null);
+              _selectedImageId = null;
+            });
+            return;
+          }
           if (_selectionMode != SelectionMode.ninguno) {
             setState(() => _clearSelectionState());
           }
@@ -2015,9 +2052,62 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _startOffset = _offset;
             _startFocalPoint = details.localFocalPoint;
             _startRotation = _rotation;
-          } else if (_selectionMode != SelectionMode.ninguno) {
-            _isScaling = false;
-            final cp = _screenToCanvas(details.localFocalPoint);
+            return;
+          }
+          _isScaling = false;
+          final cp = _screenToCanvas(details.localFocalPoint);
+
+          // ── 1. Imagen en canvas ─────────────────────────
+          if (_selectionMode == SelectionMode.ninguno) {
+            final img = _controller.imageAtPoint(cp);
+            if (img != null) {
+              _controller.selectCanvasImage(img.id);
+              setState(() {
+                _selectedImageId = img.id;
+                _isDraggingImage = true;
+                _imageDragStart = cp;
+              });
+              return;
+            }
+            // Deseleccionar imagen si toca fuera
+            if (_selectedImageId != null) {
+              _controller.selectCanvasImage(null);
+              setState(() {
+                _selectedImageId = null;
+                _isDraggingImage = false;
+              });
+            }
+          }
+
+          // ── 2. Handle de resize de selección ────────────
+          if (_selectionMode != SelectionMode.ninguno &&
+              _controller.hasSelection) {
+            final bounds = _controller.selectionBounds?.inflate(8);
+            if (bounds != null) {
+              final handles = [
+                bounds.topLeft,
+                bounds.topRight,
+                bounds.bottomLeft,
+                bounds.bottomRight,
+              ];
+              final hitRadius = 20.0 / _scale;
+              for (int i = 0; i < handles.length; i++) {
+                if ((handles[i] - cp).distance < hitRadius) {
+                  _controller.saveSelectionMoveToHistory();
+                  setState(() {
+                    _isResizingHandle = true;
+                    _activeResizeHandle = i;
+                    _resizeStartBounds = _controller.selectionBounds;
+                    _resizeHandleStart = cp;
+                  });
+                  return;
+                }
+              }
+            }
+          }
+
+          // ── 3. Modo selección ───────────────────────────
+          if (_selectionMode != SelectionMode.ninguno) {
             final bounds = _controller.selectionBounds;
             if (bounds != null && _controller.hasSelection) {
               final expanded = bounds.inflate(40 / _scale);
@@ -2033,36 +2123,98 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _controller.clearSelection();
             setState(() {
               _isDraggingSelection = false;
+              _isResizingHandle = false;
               _selectionPoints = [cp];
               _selectionDragStart = cp;
               _selectionDragCurrent = cp;
+              _finalizedMode = SelectionMode.ninguno;
             });
-          } else {
-            _isScaling = false;
-            _controller.startStroke(
-                _screenToCanvas(details.localFocalPoint));
+            return;
           }
+
+          // ── 4. Dibujo normal ────────────────────────────
+          _controller.startStroke(cp);
         },
         onScaleUpdate: (details) {
           if (_showBrushPanel || _showSelectionOptions) return;
           if (_isScaling) {
             setState(() {
               if (details.pointerCount >= 2) {
-                _scale = (_startScale * details.scale)
-                    .clamp(0.1, 10.0);
+                _scale = (_startScale * details.scale).clamp(0.1, 10.0);
                 _rotation = _startRotation + details.rotation;
               }
               _offset = _startOffset +
                   (details.localFocalPoint - _startFocalPoint);
             });
-          } else if (_selectionMode != SelectionMode.ninguno) {
-            final cp = _screenToCanvas(details.localFocalPoint);
-            if (_isDraggingSelection) {
-              if (_selectionMoveStart != null) {
-                final delta = cp - _selectionMoveStart!;
-                _controller.moveSelected(delta);
-                setState(() => _selectionMoveStart = cp);
-              }
+            return;
+          }
+          final cp = _screenToCanvas(details.localFocalPoint);
+
+          // ── Mover imagen ────────────────────────────────
+          if (_isDraggingImage && _imageDragStart != null && _selectedImageId != null) {
+            final delta = cp - _imageDragStart!;
+            _controller.moveCanvasImage(_selectedImageId!, delta);
+            setState(() => _imageDragStart = cp);
+            return;
+          }
+
+          // ── Resize handle de selección ──────────────────
+          if (_isResizingHandle && _resizeStartBounds != null && _resizeHandleStart != null) {
+            final startBounds = _resizeStartBounds!;
+            final delta = cp - _resizeHandleStart!;
+            Rect newBounds;
+            switch (_activeResizeHandle) {
+              case 0: // TL
+                newBounds = Rect.fromLTRB(
+                  startBounds.left + delta.dx,
+                  startBounds.top + delta.dy,
+                  startBounds.right,
+                  startBounds.bottom,
+                );
+                break;
+              case 1: // TR
+                newBounds = Rect.fromLTRB(
+                  startBounds.left,
+                  startBounds.top + delta.dy,
+                  startBounds.right + delta.dx,
+                  startBounds.bottom,
+                );
+                break;
+              case 2: // BL
+                newBounds = Rect.fromLTRB(
+                  startBounds.left + delta.dx,
+                  startBounds.top,
+                  startBounds.right,
+                  startBounds.bottom + delta.dy,
+                );
+                break;
+              default: // BR
+                newBounds = Rect.fromLTRB(
+                  startBounds.left,
+                  startBounds.top,
+                  startBounds.right + delta.dx,
+                  startBounds.bottom + delta.dy,
+                );
+            }
+            if (newBounds.width > 5 && newBounds.height > 5) {
+              final scaleX = newBounds.width / startBounds.width;
+              final scaleY = newBounds.height / startBounds.height;
+              _controller.scaleSelectedStrokes(
+                  startBounds.center, scaleX, scaleY);
+              setState(() {
+                _resizeStartBounds = _controller.selectionBounds;
+                _resizeHandleStart = cp;
+              });
+            }
+            return;
+          }
+
+          // ── Modo selección ──────────────────────────────
+          if (_selectionMode != SelectionMode.ninguno) {
+            if (_isDraggingSelection && _selectionMoveStart != null) {
+              final delta = cp - _selectionMoveStart!;
+              _controller.moveSelected(delta);
+              setState(() => _selectionMoveStart = cp);
             } else {
               setState(() {
                 _selectionDragCurrent = cp;
@@ -2071,14 +2223,33 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 }
               });
             }
-          } else {
-            _controller.continueStroke(
-                _screenToCanvas(details.localFocalPoint));
+            return;
           }
+
+          // ── Dibujo normal ───────────────────────────────
+          _controller.continueStroke(cp);
         },
         onScaleEnd: (details) {
           if (_isScaling) {
             _isScaling = false;
+            return;
+          }
+          // Fin de drag de imagen
+          if (_isDraggingImage) {
+            setState(() {
+              _isDraggingImage = false;
+              _imageDragStart = null;
+            });
+            return;
+          }
+          // Fin de resize de handle
+          if (_isResizingHandle) {
+            setState(() {
+              _isResizingHandle = false;
+              _activeResizeHandle = -1;
+              _resizeStartBounds = null;
+              _resizeHandleStart = null;
+            });
             return;
           }
           if (_selectionMode != SelectionMode.ninguno) {
@@ -2753,14 +2924,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
             setState(() {});
           }, isDestructive: true),
           _selectionAction(Icons.color_lens_outlined, 'Color', () {
-            setState(() {
-              _showColors = true;
-            });
-            // Al cambiar color, aplicarlo a la selección
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _controller.colorSelected(_controller.activeColor);
-            });
-          }),
+            setState(() => _showColors = !_showColors);
+          }, isActive: _showColors),
           _selectionAction(Icons.deselect, 'Desel.', () {
             setState(() => _clearSelectionState());
           }),
@@ -2775,12 +2940,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
     VoidCallback onTap, {
     bool enabled = true,
     bool isDestructive = false,
+    bool isActive = false,
   }) {
     final color = !enabled
         ? _textSecondary.withOpacity(0.3)
         : isDestructive
             ? AppTheme.accentRed
-            : _textPrimary;
+            : isActive
+                ? AppTheme.accentRed
+                : _textPrimary;
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Padding(
@@ -2795,6 +2963,115 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     fontFamily: 'Raleway',
                     fontSize: 9,
                     color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageControlBar() {
+    final imgId = _selectedImageId;
+    if (imgId == null) return const SizedBox.shrink();
+    final img = _controller.canvasImages
+        .firstWhere((i) => i.id == imgId,
+            orElse: () => _controller.canvasImages.first);
+
+    return StatefulBuilder(
+      builder: (ctx, setStateBar) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: _panelColor.withOpacity(0.95),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _borderColor, width: 0.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.4),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            )
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Fila de acciones
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _selectionAction(Icons.zoom_out_map, 'Ajustar', () {
+                  // Centrar y ajustar al canvas
+                  final cs = _controller.canvasSize;
+                  final scale = (cs.width * 0.6) / img.image.width;
+                  setState(() {
+                    img.size = Size(
+                      img.image.width * scale,
+                      img.image.height * scale,
+                    );
+                    img.position = Offset(
+                      (cs.width - img.size.width) / 2,
+                      (cs.height - img.size.height) / 2,
+                    );
+                  });
+                  _controller.notifyListeners();
+                }),
+                _selectionAction(Icons.flip, 'Voltear', () {
+                  // TODO: flip horizontal
+                }),
+                _selectionAction(
+                  Icons.delete_outline, 'Eliminar',
+                  () {
+                    _controller.removeCanvasImage(imgId);
+                    setState(() {
+                      _selectedImageId = null;
+                    });
+                  },
+                  isDestructive: true,
+                ),
+                _selectionAction(Icons.check, 'Listo', () {
+                  _controller.selectCanvasImage(null);
+                  setState(() => _selectedImageId = null);
+                }),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Slider de opacidad
+            Row(
+              children: [
+                const Text('OPA',
+                    style: TextStyle(
+                        fontFamily: 'Raleway',
+                        fontSize: 9,
+                        color: Color(0xFF8E8E93))),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: AppTheme.accentRed,
+                      inactiveTrackColor: _borderColor,
+                      thumbColor: Colors.white,
+                      thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 7),
+                      trackHeight: 3,
+                    ),
+                    child: Slider(
+                      value: img.opacity,
+                      min: 0.1,
+                      max: 1.0,
+                      onChanged: (v) {
+                        setState(() => img.opacity = v);
+                        setStateBar(() {});
+                        _controller.notifyListeners();
+                      },
+                    ),
+                  ),
+                ),
+                Text('${(img.opacity * 100).round()}%',
+                    style: const TextStyle(
+                        fontFamily: 'Raleway',
+                        fontSize: 10,
+                        color: Colors.white)),
+              ],
+            ),
           ],
         ),
       ),
