@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../models/stroke_model.dart';
 import '../models/layer_model.dart';
+import '../models/canvas_image_model.dart';
 import '../controllers/canvas_controller.dart';
 import 'brush_texture_painter.dart';
 
@@ -71,6 +72,11 @@ class CanvasPainter extends CustomPainter {
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(0, 0, canvasW, canvasH));
 
+    // 5a. Imágenes de referencia (debajo de las capas)
+    for (final img in controller.canvasImages) {
+      _drawCanvasImage(canvas, img);
+    }
+
     for (final layer in layers) {
       if (!layer.isVisible) continue;
       _drawLayerOptimized(canvas, size, layer);
@@ -93,6 +99,43 @@ class CanvasPainter extends CustomPainter {
         ..strokeWidth = 1.0
         ..style = PaintingStyle.stroke,
     );
+  }
+
+  void _drawCanvasImage(Canvas canvas, CanvasImageModel img) {
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(img.opacity)
+      ..filterQuality = FilterQuality.medium;
+
+    final src = Rect.fromLTWH(
+      0, 0,
+      img.image.width.toDouble(),
+      img.image.height.toDouble(),
+    );
+    final dst = img.rect;
+    canvas.drawImageRect(img.image, src, dst, paint);
+
+    // Borde si está seleccionada
+    if (img.isSelected) {
+      final borderPaint = Paint()
+        ..color = const Color(0xFF4A90E2)
+        ..strokeWidth = 2.0
+        ..style = PaintingStyle.stroke;
+      canvas.drawRect(dst, borderPaint);
+
+      // Handles en esquinas
+      final handlePaint = Paint()
+        ..color = const Color(0xFF4A90E2)
+        ..style = PaintingStyle.fill;
+      const hr = 6.0;
+      for (final corner in [
+        dst.topLeft, dst.topRight,
+        dst.bottomLeft, dst.bottomRight,
+      ]) {
+        canvas.drawCircle(corner, hr, handlePaint);
+        canvas.drawCircle(corner, hr,
+            Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 1.5);
+      }
+    }
   }
 
   void _drawCheckerboard(Canvas canvas, double w, double h) {
