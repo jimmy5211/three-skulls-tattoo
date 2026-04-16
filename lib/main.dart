@@ -1,21 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:workmanager/workmanager.dart';
-import 'package:dio/dio.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'theme/app_theme.dart';
 import 'app_router.dart';
+import 'services/update_service.dart'; // 👈 TU updater
 
 // 🔔 Notificaciones
 final FlutterLocalNotificationsPlugin notificationsPlugin =
     FlutterLocalNotificationsPlugin();
-
-// 📡 URL JSON
-const String updateUrl =
-    "https://api.jsonbin.io/v3/b/69b8b65eaa77b81da9ef4f41";
 
 // 🔄 BACKGROUND
 void callbackDispatcher() {
@@ -25,23 +20,17 @@ void callbackDispatcher() {
   });
 }
 
-// 🔍 VERIFICAR UPDATE
+// 🔍 VERIFICAR UPDATE (USA TU SISTEMA)
 Future<void> checkForUpdate() async {
   try {
-    final response = await Dio().get(updateUrl);
-    final data = response.data["record"];
-
-    final packageInfo = await PackageInfo.fromPlatform();
-    final currentVersion = int.parse(packageInfo.buildNumber);
-    final serverVersion = data["versionCode"];
+    final update = await UpdateService.checkForUpdates();
 
     final prefs = await SharedPreferences.getInstance();
-    final lastNotified = prefs.getInt("last_version") ?? 0;
+    final lastVersion = prefs.getString("last_version") ?? "";
 
-    if (serverVersion > currentVersion &&
-        serverVersion != lastNotified) {
-      await showNotification();
-      await prefs.setInt("last_version", serverVersion);
+    if (update.isAvailable && update.version != lastVersion) {
+      await showNotification(update);
+      await prefs.setString("last_version", update.version);
     }
   } catch (e) {
     print("Error verificando actualización: $e");
@@ -49,7 +38,7 @@ Future<void> checkForUpdate() async {
 }
 
 // 🔔 NOTIFICACIÓN
-Future<void> showNotification() async {
+Future<void> showNotification(UpdateInfo update) async {
   const androidDetails = AndroidNotificationDetails(
     'update_channel',
     'Actualizaciones',
@@ -61,7 +50,7 @@ Future<void> showNotification() async {
 
   await notificationsPlugin.show(
     0,
-    'Nueva versión disponible 🚀',
+    'Nueva versión ${update.version} disponible 🚀',
     'Toca para actualizar',
     details,
   );
@@ -77,11 +66,12 @@ void main() async {
   await notificationsPlugin.initialize(
     initSettings,
     onDidReceiveNotificationResponse: (response) async {
-      print("Notificación tocada");
+      final update = await UpdateService.checkForUpdates();
 
-      // 🔥 AQUÍ LLAMAMOS TU SISTEMA DE UPDATE
-      // (como ya tienes uno, esto lo dispara)
-      await checkForUpdate();
+      if (update.isAvailable) {
+        // 👉 Aquí se dispara tu sistema actual de actualización
+        print("Actualizar desde: ${update.downloadUrl}");
+      }
     },
   );
 
@@ -94,7 +84,7 @@ void main() async {
     frequency: const Duration(hours: 6),
   );
 
-  // 🔒 TU CONFIGURACIÓN ORIGINAL (NO SE TOCA)
+  // 🔒 CONFIG ORIGINAL (NO TOCADA)
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
