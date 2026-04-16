@@ -1,127 +1,60 @@
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:workmanager/workmanager.dart';
-import 'package:dio/dio.dart';
-import 'package:package_info_plus/package_info_plus.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+name: three_skulls_tattoo
+description: Three Skulls Tattoo App
+publish_to: 'none'
+version: 1.0.0+1
 
-// 🔔 Notificaciones
-final FlutterLocalNotificationsPlugin notificationsPlugin =
-    FlutterLocalNotificationsPlugin();
+environment:
+  sdk: '>=3.0.0 <4.0.0'
 
-// 📡 URL de tu JSON (el mismo que ya usas)
-const String updateUrl =
-    "https://api.jsonbin.io/v3/b/69b8b65eaa77b81da9ef4f41";
+dependencies:
+  flutter:
+    sdk: flutter
+  go_router: ^13.0.0
+  animated_splash_screen: ^1.3.0
+  lottie: ^3.0.0
+  flutter_svg: ^2.0.9
+  google_sign_in: ^6.2.1
+  googleapis: ^12.0.0
+  shared_preferences: ^2.2.2
+  permission_handler: ^11.3.0
+  path_provider: ^2.1.2
+  uuid: ^4.3.3
+  image_picker: ^1.0.7
+  image: ^4.1.7
+  http: ^1.2.0
+  file_picker: ^8.0.3
+  open_file: ^3.3.2
+  package_info_plus: ^4.2.0
 
-// 🔧 BACKGROUND TASK
-void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    await checkForUpdateBackground();
-    return Future.value(true);
-  });
-}
+  # 🔔 Actualizaciones y notificaciones
+  dio: ^5.4.0
+  flutter_local_notifications: ^17.0.0
+  workmanager: ^0.5.2
 
-// 🔍 FUNCIÓN DE VERIFICACIÓN
-Future<void> checkForUpdateBackground() async {
-  try {
-    final response = await Dio().get(updateUrl);
-    final data = response.data["record"];
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
 
-    final packageInfo = await PackageInfo.fromPlatform();
-    final currentVersion = int.parse(packageInfo.buildNumber);
-    final serverVersion = data["versionCode"];
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/images/icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/images/icon.png"
 
-    final prefs = await SharedPreferences.getInstance();
-    final lastNotifiedVersion = prefs.getInt("last_notified") ?? 0;
-
-    if (serverVersion > currentVersion &&
-        serverVersion != lastNotifiedVersion) {
-      await showUpdateNotification();
-
-      await prefs.setInt("last_notified", serverVersion);
-    }
-  } catch (e) {
-    print("Error verificando actualización: $e");
-  }
-}
-
-// 🔔 MOSTRAR NOTIFICACIÓN
-Future<void> showUpdateNotification() async {
-  const AndroidNotificationDetails androidDetails =
-      AndroidNotificationDetails(
-    'update_channel',
-    'Actualizaciones',
-    importance: Importance.high,
-    priority: Priority.high,
-  );
-
-  const NotificationDetails notificationDetails =
-      NotificationDetails(android: androidDetails);
-
-  await notificationsPlugin.show(
-    0,
-    'Nueva actualización disponible',
-    'Toca para actualizar tu app',
-    notificationDetails,
-  );
-}
-
-// 🚀 MAIN
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // 🔔 Inicializar notificaciones
-  const AndroidInitializationSettings androidSettings =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
-
-  const InitializationSettings initSettings =
-      InitializationSettings(android: androidSettings);
-
-  await notificationsPlugin.initialize(initSettings);
-
-  // ⚙️ Inicializar Workmanager
-  Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
-
-  // ⏱ Ejecutar cada 6 horas
-  Workmanager().registerPeriodicTask(
-    "checkUpdateTask",
-    "checkUpdate",
-    frequency: const Duration(hours: 6),
-  );
-
-  runApp(const MyApp());
-}
-
-// 🎨 APP BASE
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Three Skulls Tattoo',
-      home: const HomePage(),
-    );
-  }
-}
-
-// 🏠 PANTALLA PRINCIPAL (ejemplo simple)
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Three Skulls Tattoo")),
-      body: Center(
-        child: ElevatedButton(
-          onPressed: () async {
-            await checkForUpdateBackground();
-          },
-          child: const Text("Buscar actualización"),
-        ),
-      ),
-    );
-  }
-}
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/fonts/
+  fonts:
+    - family: BlackOpsOne
+      fonts:
+        - asset: assets/fonts/BlackOpsOne-Regular.ttf
+    - family: Raleway
+      fonts:
+        - asset: assets/fonts/Raleway-Regular.ttf
+        - asset: assets/fonts/Raleway-Bold.ttf
