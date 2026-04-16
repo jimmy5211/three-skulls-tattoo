@@ -115,36 +115,44 @@ class CanvasPainter extends CustomPainter {
     canvas.save();
     canvas.clipRect(img.rect);
 
-    if (!img.hasErases) {
-      // Sin borrados: render directo, más rápido y sin riesgo de crash GPU
-      canvas.drawImageRect(img.image, src, img.rect,
-          Paint()
-            ..color = Colors.white.withOpacity(img.opacity)
-            ..filterQuality = FilterQuality.medium);
-    } else {
-      // Con borrados: saveLayer necesario para BlendMode.clear
-      canvas.saveLayer(img.rect, Paint());
-      canvas.drawImageRect(img.image, src, img.rect,
-          Paint()
-            ..color = Colors.white.withOpacity(img.opacity)
-            ..filterQuality = FilterQuality.medium);
-      for (final erase in [...img.eraseStrokes,
-          if (img.currentEraseStroke != null) img.currentEraseStroke!]) {
-        _drawEraseStroke(canvas, erase);
-      }
-      canvas.restore(); // restore saveLayer
+    // Aplicar flip si es necesario
+    if (img.flipX || img.flipY) {
+      final cx = img.rect.center.dx;
+      final cy = img.rect.center.dy;
+      canvas.translate(img.flipX ? cx * 2 : 0, img.flipY ? cy * 2 : 0);
+      canvas.scale(img.flipX ? -1.0 : 1.0, img.flipY ? -1.0 : 1.0);
     }
 
-    canvas.restore(); // restore clipRect
+    final imgPaint = Paint()
+      ..color = Colors.white.withOpacity(img.opacity)
+      ..filterQuality = FilterQuality.medium;
+
+    if (!img.hasErases) {
+      canvas.drawImageRect(img.image, src, img.rect, imgPaint);
+    } else {
+      canvas.saveLayer(img.rect, Paint());
+      canvas.drawImageRect(img.image, src, img.rect, imgPaint);
+      for (final erase in [
+        ...img.eraseStrokes,
+        if (img.currentEraseStroke != null) img.currentEraseStroke!,
+      ]) {
+        _drawEraseStroke(canvas, erase);
+      }
+      canvas.restore();
+    }
+
+    canvas.restore(); // restore clipRect + flip
 
     if (img.isSelected) {
       canvas.drawRect(img.rect,
-          Paint()..color = const Color(0xFF4A90E2)..strokeWidth = 2.0..style = PaintingStyle.stroke);
+          Paint()..color = const Color(0xFF4A90E2)..strokeWidth = 2.5..style = PaintingStyle.stroke);
       final hp = Paint()..color = const Color(0xFF4A90E2)..style = PaintingStyle.fill;
       final hb = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 2.0;
-      for (final c in [img.rect.topLeft, img.rect.topRight, img.rect.bottomLeft, img.rect.bottomRight]) {
-        canvas.drawCircle(c, 8.0, hp);
-        canvas.drawCircle(c, 8.0, hb);
+      // Handles más grandes para mejor usabilidad
+      for (final c in [img.rect.topLeft, img.rect.topRight,
+                       img.rect.bottomLeft, img.rect.bottomRight]) {
+        canvas.drawCircle(c, 10.0, hp);
+        canvas.drawCircle(c, 10.0, hb);
       }
     }
   }
