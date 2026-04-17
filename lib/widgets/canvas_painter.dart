@@ -186,8 +186,7 @@ class CanvasPainter extends CustomPainter {
   void _drawEraseStroke(Canvas canvas, EraseStroke erase) {
     if (erase.points.isEmpty) return;
     final erasePaint = Paint()
-      ..blendMode = BlendMode.dstOut
-      ..color = Colors.white
+      ..blendMode = BlendMode.clear
       ..strokeWidth = erase.radius * 2
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
@@ -198,8 +197,7 @@ class CanvasPainter extends CustomPainter {
         erase.points.first,
         erase.radius,
         Paint()
-          ..blendMode = BlendMode.dstOut
-          ..color = Colors.white
+          ..blendMode = BlendMode.clear
           ..style = PaintingStyle.fill,
       );
       return;
@@ -250,40 +248,57 @@ class CanvasPainter extends CustomPainter {
     final rect = Rect.fromLTWH(
         0, 0, controller.canvasSize.width, controller.canvasSize.height);
 
+    // Imágenes de esta capa, ordenadas por insertionIndex
     final layerImages = controller.canvasImages
         .where((img) => img.layerId == layer.id)
-        .toList();
+        .toList()
+      ..sort((a, b) => a.insertionIndex.compareTo(b.insertionIndex));
 
     final hasEraserStrokes =
         layer.strokes.any((s) => s.type == StrokeType.eraser);
 
-    // Capa exterior — opacidad de la capa
-    final layerPaint = layer.opacity < 1.0
-        ? (Paint()
-          ..colorFilter = ColorFilter.mode(
-            Colors.white.withOpacity(layer.opacity),
-            BlendMode.dstIn,
-          ))
-        : Paint();
-    canvas.saveLayer(rect, layerPaint);
-
-    // ── 1. IMÁGENES: se dibujan en la capa exterior ──────────
-    // FUERA del saveLayer de trazos, para que el borrador
-    // de trazos NO las afecte. Las imágenes tienen su propio
-    // sistema de borrado (EraseStroke en CanvasImageModel).
-    for (final img in layerImages) {
-      _drawCanvasImage(canvas, img);
-    }
-
-    // ── 2. TRAZOS: renderizados en grupos por borrador ───────
-    // Cada borrador "cierra" un grupo → los trazos nuevos (después
-    // del borrador) no son afectados por borradores anteriores.
+    // Estructura de dos saveLayer para que BlendMode.clear funcione correctamente:
     //
-    // Ejemplo: [A, B, borrador, C] →
-    //   Grupo 1: saveLayer(A, B, borrador) → restore  [A+B con huecos]
-    //   Grupo 2: C → dibujado directo encima           [C visible siempre]
-    _drawStrokesGrouped(canvas, rect, layer.strokes,
-        isActiveLayer: layer.id == activeLayerId);
+    // Externo: aplica opacidad de la capa (si <1.0)
+    // Interno: Paint() limpio — OBLIGATORIO para que BlendMode.clear borre
+    //          píxeles a transparente en lugar de dejar rastro negro
+    //
+    // Sin esta separación, el color del saveLayer externo interfiere con clear.
+    if (layer.opacity < 1.0) {
+      canvas.saveLayer(
+          rect, Paint()..color = Colors.white.withOpacity(layer.opacity));
+    }
+    canvas.saveLayer(rect, Paint()); // LIMPIO — requerido para BlendMode.clear
+
+    // ── RENDERIZADO EN ORDEN TEMPORAL ────────────────────────
+    // Strokes e imágenes se intercalan según su orden de inserción.
+    //
+    // Regla: el borrador (dstOut) solo afecta contenido renderizado
+    // ANTES que él. Una imagen importada DESPUÉS de borrar no es
+    // afectada por ese borrador. ✓
+    //
+    // Ejemplo: [Stroke A, Borrador, Imagen, Stroke B]
+    //   1. Stroke A dibujado
+    //   2. Borrador borra parte de A (dstOut)
+    //   3. Imagen dibujada encima (no afectada por borrador anterior)
+    //   4. Stroke B dibujado encima de todo
+    final strokes = layer.strokes;
+    int imgIdx = 0;
+
+    for (int i = 0; i < strokes.length; i++) {
+      // Insertar imágenes cuyo insertionIndex <= i
+      while (imgIdx < layerImages.length &&
+          layerImages[imgIdx].insertionIndex <= i) {
+        _drawCanvasImage(canvas, layerImages[imgIdx]);
+        imgIdx++;
+      }
+      _drawStroke(canvas, strokes[i]);
+    }
+    // Imágenes insertadas después del último stroke
+    while (imgIdx < layerImages.length) {
+      _drawCanvasImage(canvas, layerImages[imgIdx]);
+      imgIdx++;
+    }
 
     // Stroke activo en tiempo real
     if (layer.id == activeLayerId) {
@@ -292,59 +307,20 @@ class CanvasPainter extends CustomPainter {
         _drawStroke(canvas, currentMirrorStroke!);
     }
 
-    canvas.restore(); // fin capa exterior
-  }
+    if (hasEraserStrokes) controller.invalidateLayerCache(layer.id);
 
-  /// Renderiza strokes en ORDEN TEMPORAL dentro del saveLayer del canvas.
-  ///
-  /// La clave: dibujar en orden cronológico garantiza el comportamiento correcto:
-  ///   [B1, E1, B2, E2] →
-  ///     1. B1 dibujado
-  ///     2. E1 (dstOut) borra parte de B1
-  ///     3. B2 dibujado encima (incluso sobre zona borrada por E1)
-  ///     4. E2 (dstOut) borra de todo lo que hay en ese momento (B1 restante + B2)
-  ///
-  /// Resultado: B2 no es afectado por E1. E2 borra permanentemente sin "restaurar".
-  void _drawStrokesGrouped(Canvas canvas, Rect rect,
-      List<StrokeModel> strokes, {required bool isActiveLayer}) {
-    if (strokes.isEmpty) return;
-
-    final hasEraser = strokes.any((s) => s.type == StrokeType.eraser);
-
-    if (!hasEraser && !isActiveLayer) {
-      // Sin borrador: usar caché para performance
-      final layerId = strokes.first.layerId;
-      final cached = controller.getLayerCache(layerId);
-      if (cached != null) {
-        canvas.drawPicture(cached);
-        return;
-      }
-      final recorder = ui.PictureRecorder();
-      final offCanvas = Canvas(recorder);
-      for (final s in strokes) _drawStroke(offCanvas, s);
-      final picture = recorder.endRecording();
-      controller.setLayerCache(layerId, picture);
-      canvas.drawPicture(picture);
-      return;
-    }
-
-    // Con borrador: renderizar EN ORDEN TEMPORAL directamente en el canvas.
-    // El canvas (saveLayer) empieza transparente.
-    // dstOut en orden correcto borra permanentemente sin restaurar nada.
-    for (final stroke in strokes) {
-      _drawStroke(canvas, stroke);
-    }
+    canvas.restore(); // interno (dibujo)
+    if (layer.opacity < 1.0) canvas.restore(); // externo (opacidad)
   }
 
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
-      // BlendMode.dstOut: resultado = dst * (1 - src.alpha)
-      // Con color blanco (alpha=1): resultado = 0 = transparente
-      // Más compatible que BlendMode.clear en GPUs Android
+      // BlendMode.clear: borra píxeles a transparente real.
+      // Funciona correctamente porque estamos dentro de un saveLayer(rect, Paint())
+      // (sin color ni filtro en el Paint del saveLayer).
       final paint = Paint()
-        ..blendMode = BlendMode.dstOut
-        ..color = Colors.white
+        ..blendMode = BlendMode.clear
         ..strokeWidth = stroke.strokeWidth * 2
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
