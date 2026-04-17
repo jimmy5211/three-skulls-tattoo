@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -27,8 +28,13 @@ class UpdateService {
   static const String _versionUrl =
       'https://api.jsonbin.io/v3/b/69b8b65eaa77b81da9ef4f41';
 
-  static const String _readKey =
-      r'$2a$10$FOj0uoW3syBnsFzUfq2P9ujG3wIwwTiERr9zVll9emK1RCIL6AvtG';
+  // ⚠️ En producción usar flutter_dotenv o variable de entorno:
+  //   flutter build apk --dart-define=JSONBIN_READ_KEY=tu_clave
+  static String get _readKey => const String.fromEnvironment(
+        'JSONBIN_READ_KEY',
+        defaultValue:
+            r'$2a$10$FOj0uoW3syBnsFzUfq2P9ujG3wIwwTiERr9zVll9emK1RCIL6AvtG',
+      );
 
   static const String _lastCheckKey = 'last_update_check';
 
@@ -52,30 +58,18 @@ class UpdateService {
       );
 
       final raw = jsonDecode(response.body);
+      final data =
+          raw is Map && raw.containsKey('record') ? raw['record'] : raw;
 
-      final data = raw is Map && raw.containsKey('record')
-          ? raw['record']
-          : raw;
+      final latestVersion = data['version']?.toString() ?? currentVersion;
+      final releaseNotes = data['releaseNotes']?.toString() ?? '';
+      final downloadUrl = data['downloadUrl']?.toString() ?? '';
+      final mandatory = data['mandatory'] as bool? ?? false;
 
-      final latestVersion =
-          data['version']?.toString() ?? currentVersion;
-      final releaseNotes =
-          data['releaseNotes']?.toString() ?? '';
-      final downloadUrl =
-          data['downloadUrl']?.toString() ?? '';
-      final mandatory =
-          data['mandatory'] as bool? ?? false;
-
-      final isAvailable = _isNewerVersion(
-        latestVersion,
-        currentVersion,
-      );
+      final isAvailable = _isNewerVersion(latestVersion, currentVersion);
 
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        _lastCheckKey,
-        DateTime.now().toIso8601String(),
-      );
+      await prefs.setString(_lastCheckKey, DateTime.now().toIso8601String());
 
       return UpdateInfo(
         version: latestVersion,
@@ -124,21 +118,50 @@ class UpdateService {
     }
   }
 
-  // 🔥 DESCARGAR E INSTALAR APK
-  static Future<void> downloadAndInstall(UpdateInfo update) async {
+  // 🔥 DESCARGAR E INSTALAR con Dio — streaming, no carga en RAM
+  static Future<void> downloadAndInstall(
+    UpdateInfo update, {
+    void Function(double progress)? onProgress,
+  }) async {
     try {
       final dir = await getExternalStorageDirectory();
-      final filePath = "${dir!.path}/update.apk";
+      if (dir == null) throw Exception('No se pudo acceder al almacenamiento');
 
+      final filePath = '${dir.path}/three_skulls_update.apk';
       final file = File(filePath);
 
-      final request = await http.get(Uri.parse(update.downloadUrl));
-      await file.writeAsBytes(request.bodyBytes);
+      // Limpiar APK anterior
+      if (await file.exists()) await file.delete();
 
-      // 👉 Abre el APK para instalar
-      await OpenFile.open(filePath);
+      final dio = Dio();
+
+      // Descarga en streaming con progreso
+      await dio.download(
+        update.downloadUrl,
+        filePath,
+        options: Options(
+          receiveTimeout: const Duration(minutes: 10),
+          sendTimeout: const Duration(seconds: 30),
+        ),
+        onReceiveProgress: (received, total) {
+          if (total > 0) onProgress?.call(received / total);
+        },
+      );
+
+      // Verificar que el APK descargado es válido
+      final fileSize = await File(filePath).length();
+      if (fileSize < 1000) {
+        throw Exception('APK inválido (${fileSize} bytes)');
+      }
+
+      // Abrir para instalar
+      final result = await OpenFile.open(filePath);
+      if (result.type != ResultType.done) {
+        throw Exception('No se pudo abrir el APK: ${result.message}');
+      }
     } catch (e) {
-      print("Error instalando APK: $e");
+      print('Error instalando APK: $e');
+      rethrow;
     }
   }
 
@@ -148,17 +171,11 @@ class UpdateService {
       final prefs = await SharedPreferences.getInstance();
       final date = prefs.getString(_lastCheckKey);
       if (date == null) return 'Nunca';
-
       final parsed = DateTime.parse(date);
       final diff = DateTime.now().difference(parsed);
-
       if (diff.inMinutes < 1) return 'Hace un momento';
-      if (diff.inMinutes < 60) {
-        return 'Hace ${diff.inMinutes} min';
-      }
-      if (diff.inHours < 24) {
-        return 'Hace ${diff.inHours} horas';
-      }
+      if (diff.inMinutes < 60) return 'Hace ${diff.inMinutes} min';
+      if (diff.inHours < 24) return 'Hace ${diff.inHours} horas';
       return 'Hace ${diff.inDays} días';
     } catch (e) {
       return 'Nunca';
