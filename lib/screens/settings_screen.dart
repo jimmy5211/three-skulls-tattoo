@@ -641,6 +641,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
 // ─── Dialog Nueva Versión ─────────────────────────────────────
+}
+
 class _NewVersionDialogWidget extends StatefulWidget {
   final UpdateInfo updateInfo;
   final VoidCallback onUpdate;
@@ -803,4 +805,3 @@ class _NewVersionDialogWidgetState extends State<_NewVersionDialogWidget>
   }
 }
 
-}
