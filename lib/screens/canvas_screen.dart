@@ -2364,22 +2364,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
           // ── Resize handle de selección ────────────────────
           if (_isResizingHandle && _resizeStartBounds != null && _resizeHandleStart != null) {
-            final startBounds = _resizeStartBounds!;
-            final delta = cp - _resizeHandleStart!;
-            Rect newBounds;
-            switch (_activeResizeHandle) {
-              case 0: newBounds = Rect.fromLTRB(startBounds.left + delta.dx, startBounds.top + delta.dy, startBounds.right, startBounds.bottom); break;
-              case 1: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top + delta.dy, startBounds.right, startBounds.bottom); break; // TC
-              case 2: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top + delta.dy, startBounds.right + delta.dx, startBounds.bottom); break;
-              case 3: newBounds = Rect.fromLTRB(startBounds.left + delta.dx, startBounds.top, startBounds.right, startBounds.bottom); break; // ML
-              case 4: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top, startBounds.right + delta.dx, startBounds.bottom); break; // MR
-              case 5: newBounds = Rect.fromLTRB(startBounds.left + delta.dx, startBounds.top, startBounds.right, startBounds.bottom + delta.dy); break;
-              case 6: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top, startBounds.right, startBounds.bottom + delta.dy); break; // BC
-              default: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top, startBounds.right + delta.dx, startBounds.bottom + delta.dy); break;
-            }
-            // Handle 8 = rotación
+            // Handle 8 = rotación (va primero para evitar calcular bounds)
             if (_activeResizeHandle == 8) {
-              final center = startBounds.center;
+              final center = _resizeStartBounds!.center;
               final angle = (cp - center).direction;
               final delta = angle - _selectionStartRotation;
               _controller.rotateSelected(center, delta);
@@ -2387,10 +2374,41 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _selectionAngle += delta;
               return;
             }
+
+            final startBounds = _resizeStartBounds!;
+            final worldDelta = cp - _resizeHandleStart!;
+
+            // ⚠️ FIX: rotar el delta al espacio local de la selección
+            // Si la selección está rotada, el delta mundo no corresponde
+            // al eje de las bounds → strokes se encogen incorrectamente
+            final localDelta = _selectionAngle == 0.0
+                ? worldDelta
+                : Offset(
+                    worldDelta.dx * cos(-_selectionAngle) -
+                        worldDelta.dy * sin(-_selectionAngle),
+                    worldDelta.dx * sin(-_selectionAngle) +
+                        worldDelta.dy * cos(-_selectionAngle),
+                  );
+
+            Rect newBounds;
+            switch (_activeResizeHandle) {
+              case 0: newBounds = Rect.fromLTRB(startBounds.left + localDelta.dx, startBounds.top + localDelta.dy, startBounds.right, startBounds.bottom); break; // TL
+              case 1: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top + localDelta.dy, startBounds.right, startBounds.bottom); break; // TC
+              case 2: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top + localDelta.dy, startBounds.right + localDelta.dx, startBounds.bottom); break; // TR
+              case 3: newBounds = Rect.fromLTRB(startBounds.left + localDelta.dx, startBounds.top, startBounds.right, startBounds.bottom); break; // ML
+              case 4: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top, startBounds.right + localDelta.dx, startBounds.bottom); break; // MR
+              case 5: newBounds = Rect.fromLTRB(startBounds.left + localDelta.dx, startBounds.top, startBounds.right, startBounds.bottom + localDelta.dy); break; // BL
+              case 6: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top, startBounds.right, startBounds.bottom + localDelta.dy); break; // BC
+              default: newBounds = Rect.fromLTRB(startBounds.left, startBounds.top, startBounds.right + localDelta.dx, startBounds.bottom + localDelta.dy); break; // BR
+            }
+
             if (newBounds.width > 5 && newBounds.height > 5) {
               final scaleX = newBounds.width / startBounds.width;
               final scaleY = newBounds.height / startBounds.height;
-              _controller.scaleSelectedStrokes(startBounds.center, scaleX, scaleY);
+              // Escalar alrededor del centro rotado para no desplazar
+              final center = _rotatePointAround(
+                  startBounds.center, startBounds.center, _selectionAngle);
+              _controller.scaleSelectedStrokes(center, scaleX, scaleY);
               _resizeStartBounds = _controller.selectionBounds;
               _resizeHandleStart = cp;
             }
