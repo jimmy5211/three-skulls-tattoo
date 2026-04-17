@@ -105,26 +105,44 @@ jobs:
             -d "{\"version\": \"1.0.${{ github.run_number }}\", \"versionCode\": $((1000 + ${{ github.run_number }})), \"downloadUrl\": \"https://github.com/jimmy5211/three-skulls-tattoo/releases/download/v1.0.${{ github.run_number }}/app-release.apk\", \"mandatory\": false}"
 
       - name: Send FCM push notification
+        env:
+          FCM_SA_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           pip install google-auth requests --quiet
-
-          ACCESS_TOKEN=$(python3 - << 'PYEOF'
-import json
+          python3 -c "
+import json, os
 import google.auth.transport.requests
 from google.oauth2 import service_account
+import urllib.request
 
-sa_info = json.loads(r"""${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}""")
+sa_info = json.loads(os.environ['FCM_SA_JSON'])
 creds = service_account.Credentials.from_service_account_info(
     sa_info,
     scopes=['https://www.googleapis.com/auth/firebase.messaging']
 )
 creds.refresh(google.auth.transport.requests.Request())
-print(creds.token)
-PYEOF
-          )
 
-          curl -s -X POST \
-            "https://fcm.googleapis.com/v1/projects/three-skulls-tattoo-e4099/messages:send" \
-            -H "Authorization: Bearer $ACCESS_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"message\":{\"topic\":\"updates\",\"notification\":{\"title\":\"💀 Three Skulls v1.0.${{ github.run_number }} disponible\",\"body\":\"Nueva versión lista. Toca para actualizar.\"},\"android\":{\"priority\":\"HIGH\"}}}"
+version = '1.0.' + os.environ['RUN_NUMBER']
+body = json.dumps({
+    'message': {
+        'topic': 'updates',
+        'notification': {
+            'title': '💀 Three Skulls ' + version + ' disponible',
+            'body': 'Nueva versión lista. Toca para actualizar.'
+        },
+        'android': {'priority': 'HIGH'}
+    }
+}).encode('utf-8')
+
+req = urllib.request.Request(
+    'https://fcm.googleapis.com/v1/projects/three-skulls-tattoo-e4099/messages:send',
+    data=body,
+    headers={
+        'Authorization': 'Bearer ' + creds.token,
+        'Content-Type': 'application/json'
+    }
+)
+resp = urllib.request.urlopen(req)
+print('FCM sent:', resp.status)
+"
