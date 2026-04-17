@@ -97,12 +97,14 @@ jobs:
           prerelease: false
 
       - name: Update JSONBin version
+        continue-on-error: true  # No romper el build si falla
         env:
           JSONBIN_API_KEY: ${{ secrets.JSONBIN_API_KEY }}
           RUN_NUMBER: ${{ github.run_number }}
         run: python3 scripts/update_jsonbin.py
 
       - name: Send FCM push notification
+        continue-on-error: true  # No romper el build si falla
         env:
           FCM_SA_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
           RUN_NUMBER: ${{ github.run_number }}
