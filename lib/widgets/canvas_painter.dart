@@ -275,39 +275,15 @@ class CanvasPainter extends CustomPainter {
       _drawCanvasImage(canvas, img);
     }
 
-    // ── 2. TRAZOS: en su propio saveLayer aislado ────────────
-    // El borrador (dstOut) solo corta trazos, nunca imágenes importadas.
-    final needsDirectDraw = hasEraserStrokes || layer.id == activeLayerId;
-
-    canvas.saveLayer(rect, Paint()); // sub-capa solo para trazos
-
-    if (needsDirectDraw) {
-      // Dibujar directo: primero trazos normales, luego borrador
-      for (final stroke in layer.strokes) {
-        if (stroke.type != StrokeType.eraser) _drawStroke(canvas, stroke);
-      }
-      for (final stroke in layer.strokes) {
-        if (stroke.type == StrokeType.eraser) _drawStroke(canvas, stroke);
-      }
-      if (hasEraserStrokes) controller.invalidateLayerCache(layer.id);
-    } else {
-      // Sin borrador: usar caché para performance
-      final cached = controller.getLayerCache(layer.id);
-      if (cached != null) {
-        canvas.drawPicture(cached);
-      } else {
-        final recorder = ui.PictureRecorder();
-        final offscreenCanvas = Canvas(recorder);
-        for (final stroke in layer.strokes) {
-          _drawStroke(offscreenCanvas, stroke);
-        }
-        final picture = recorder.endRecording();
-        if (layer.strokes.isNotEmpty) {
-          controller.setLayerCache(layer.id, picture);
-        }
-        canvas.drawPicture(picture);
-      }
-    }
+    // ── 2. TRAZOS: renderizados en grupos por borrador ───────
+    // Cada borrador "cierra" un grupo → los trazos nuevos (después
+    // del borrador) no son afectados por borradores anteriores.
+    //
+    // Ejemplo: [A, B, borrador, C] →
+    //   Grupo 1: saveLayer(A, B, borrador) → restore  [A+B con huecos]
+    //   Grupo 2: C → dibujado directo encima           [C visible siempre]
+    _drawStrokesGrouped(canvas, rect, layer.strokes,
+        isActiveLayer: layer.id == activeLayerId);
 
     // Stroke activo en tiempo real
     if (layer.id == activeLayerId) {
@@ -316,8 +292,64 @@ class CanvasPainter extends CustomPainter {
         _drawStroke(canvas, currentMirrorStroke!);
     }
 
-    canvas.restore(); // fin sub-capa de trazos
     canvas.restore(); // fin capa exterior
+  }
+
+  /// Renderiza strokes en grupos separados por cada borrador.
+  /// Esto garantiza que trazos nuevos no sean afectados por borradores viejos.
+  void _drawStrokesGrouped(Canvas canvas, Rect rect,
+      List<StrokeModel> strokes, {required bool isActiveLayer}) {
+    if (strokes.isEmpty) return;
+
+    // Si no hay borrador, usar caché normal
+    final hasEraser = strokes.any((s) => s.type == StrokeType.eraser);
+    if (!hasEraser && !isActiveLayer) {
+      final cached = controller.getLayerCache(strokes.first.layerId);
+      if (cached != null) {
+        canvas.drawPicture(cached);
+        return;
+      }
+      final recorder = ui.PictureRecorder();
+      final offCanvas = Canvas(recorder);
+      for (final s in strokes) _drawStroke(offCanvas, s);
+      final picture = recorder.endRecording();
+      controller.setLayerCache(strokes.first.layerId, picture);
+      canvas.drawPicture(picture);
+      return;
+    }
+
+    // Con borrador: dividir en grupos
+    // Grupo = secuencia de trazos hasta (e incluyendo) el siguiente borrador
+    List<StrokeModel> group = [];
+    bool groupHasEraser = false;
+
+    void flushGroup() {
+      if (group.isEmpty) return;
+      if (groupHasEraser) {
+        // Aislar en saveLayer para que el borrador solo afecte este grupo
+        canvas.saveLayer(rect, Paint());
+        for (final s in group) {
+          if (s.type != StrokeType.eraser) _drawStroke(canvas, s);
+        }
+        for (final s in group) {
+          if (s.type == StrokeType.eraser) _drawStroke(canvas, s);
+        }
+        canvas.restore();
+      } else {
+        for (final s in group) _drawStroke(canvas, s);
+      }
+      group = [];
+      groupHasEraser = false;
+    }
+
+    for (final stroke in strokes) {
+      group.add(stroke);
+      if (stroke.type == StrokeType.eraser) {
+        groupHasEraser = true;
+        flushGroup(); // cerrar grupo al encontrar un borrador
+      }
+    }
+    flushGroup(); // último grupo (trazos después del último borrador)
   }
 
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
