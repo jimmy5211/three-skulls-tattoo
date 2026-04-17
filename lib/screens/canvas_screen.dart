@@ -3183,7 +3183,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
         showGrid: false,
         symmetryEnabled: false,
         showSymmetryLine: false,
-        symmetryType: _controller.symmetryType,
       );
       painter.paint(exportCanvas, Size(w.toDouble(), h.toDouble()));
 
