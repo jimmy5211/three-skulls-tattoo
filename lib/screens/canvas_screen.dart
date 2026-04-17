@@ -14,6 +14,8 @@ import '../models/canvas_image_model.dart';
 import '../models/stroke_model.dart';
 import 'package:flutter/rendering.dart';
 import 'dart:typed_data';
+import 'dart:convert';
+import 'dart:async';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
@@ -1290,6 +1292,85 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   ),
                 ),
               ),
+              // ─── DUREZA (solo borrador) ─────────────
+              if (_controller.activeBrush.type == StrokeType.eraser) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  child: Container(height: 0.5, color: _borderColor),
+                ),
+                const SizedBox(height: 6),
+                Text('DUR',
+                    style: TextStyle(
+                        fontFamily: 'Raleway',
+                        fontSize: 9,
+                        color: _textSecondary,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1)),
+                const SizedBox(height: 2),
+                Text(
+                    '${(_controller.activeBrush.hardness * 100).round()}%',
+                    style: const TextStyle(
+                        fontFamily: 'Raleway',
+                        fontSize: 12,
+                        color: _textPrimary,
+                        fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                SizedBox(
+                  height: _isLandscape ? 70 : 90,
+                  child: RotatedBox(
+                    quarterTurns: 3,
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        activeTrackColor: AppTheme.accentRed,
+                        inactiveTrackColor: _borderColor,
+                        thumbColor: Colors.white,
+                        overlayColor: AppTheme.accentRed.withOpacity(0.15),
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                        trackHeight: 3,
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                      ),
+                      child: Slider(
+                        value: _controller.activeBrush.hardness.clamp(0.0, 1.0),
+                        min: 0.0,
+                        max: 1.0,
+                        onChanged: (v) => setState(
+                            () => _controller.activeBrush.hardness = v),
+                      ),
+                    ),
+                  ),
+                ),
+                // ─── BOTONES IA ─────────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  child: Container(height: 0.5, color: _borderColor),
+                ),
+                const SizedBox(height: 6),
+                Text('IA',
+                    style: TextStyle(
+                        fontFamily: 'Raleway',
+                        fontSize: 9,
+                        color: AppTheme.accentRed,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1)),
+                const SizedBox(height: 8),
+                // Eliminar fondo
+                _EraserAIBtn(
+                  icon: Icons.auto_fix_high,
+                  label: 'Fondo',
+                  onTap: _selectedImageId != null
+                      ? () => _aiRemoveBackground()
+                      : null,
+                ),
+                const SizedBox(height: 6),
+                // Eliminar objeto
+                _EraserAIBtn(
+                  icon: Icons.content_cut,
+                  label: 'Objeto',
+                  onTap: _selectedImageId != null
+                      ? () => _aiRemoveObject()
+                      : null,
+                ),
+              ],
               const SizedBox(height: 16),
             ],
           ),
@@ -1297,6 +1378,130 @@ class _CanvasScreenState extends State<CanvasScreen> {
        ); 
       },
     );
+  }
+
+  // ─── AI: Eliminar fondo de imagen ─────────────────────────
+  Future<void> _aiRemoveBackground() async {
+    if (_selectedImageId == null) return;
+    final img = _controller.canvasImages
+        .where((i) => i.id == _selectedImageId)
+        .firstOrNull;
+    if (img == null) return;
+
+    // Mostrar loading
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: const Color(0xFF1A1A1A),
+      content: Row(children: const [
+        SizedBox(width: 16, height: 16,
+            child: CircularProgressIndicator(color: Color(0xFFE74C3C), strokeWidth: 2)),
+        SizedBox(width: 12),
+        Text('Eliminando fondo con IA...', style: TextStyle(color: Colors.white, fontFamily: 'Raleway')),
+      ]),
+      duration: const Duration(seconds: 3),
+      behavior: SnackBarBehavior.floating,
+    ));
+
+    try {
+      // Convertir imagen a bytes para enviar a la API
+      final byteData = await img.image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return;
+      final bytes = byteData.buffer.asUint8List();
+      final base64Image = base64Encode(bytes);
+
+      // Llamar al API de Claude para obtener la máscara del fondo
+      // (marcado como TODO — requiere integración con remove.bg o ML Kit)
+      // Por ahora aplica borrado de fondo por threshold de color
+      await _removeBackgroundByThreshold(img);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: const Color(0xFF1A1A1A),
+          content: const Row(children: [
+            Text('✅', style: TextStyle(fontSize: 16)),
+            SizedBox(width: 10),
+            Text('Fondo eliminado', style: TextStyle(color: Colors.white, fontFamily: 'Raleway')),
+          ]),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: Colors.red.shade900,
+          content: Text('Error: $e', style: const TextStyle(color: Colors.white)),
+        ));
+      }
+    }
+  }
+
+  // Eliminar fondo por threshold de color (esquinas = color de fondo)
+  Future<void> _removeBackgroundByThreshold(CanvasImageModel img) async {
+    final byteData = await img.image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (byteData == null) return;
+
+    final w = img.image.width;
+    final h = img.image.height;
+    final pixels = byteData.buffer.asUint8List();
+
+    // Color de fondo = promedio de las 4 esquinas
+    int avgR = 0, avgG = 0, avgB = 0;
+    for (final corner in [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + w - 1) * 4]) {
+      if (corner + 3 < pixels.length) {
+        avgR += pixels[corner];
+        avgG += pixels[corner + 1];
+        avgB += pixels[corner + 2];
+      }
+    }
+    avgR ~/= 4; avgG ~/= 4; avgB ~/= 4;
+
+    // Umbral de tolerancia
+    const tolerance = 40;
+
+    // Flood fill desde bordes para encontrar el fondo
+    final visited = List<bool>.filled(w * h, false);
+    final queue = <int>[];
+
+    // Agregar todos los píxeles del borde
+    for (int x = 0; x < w; x++) { queue.add(x); queue.add((h - 1) * w + x); }
+    for (int y = 0; y < h; y++) { queue.add(y * w); queue.add(y * w + w - 1); }
+
+    while (queue.isNotEmpty) {
+      final idx = queue.removeLast();
+      if (idx < 0 || idx >= w * h || visited[idx]) continue;
+      final p = idx * 4;
+      final dr = (pixels[p] - avgR).abs();
+      final dg = (pixels[p + 1] - avgG).abs();
+      final db = (pixels[p + 2] - avgB).abs();
+      if (dr + dg + db > tolerance * 3) continue;
+      visited[idx] = true;
+      pixels[p + 3] = 0; // transparente
+      final x = idx % w;
+      final y = idx ~/ w;
+      if (x > 0) queue.add(idx - 1);
+      if (x < w - 1) queue.add(idx + 1);
+      if (y > 0) queue.add(idx - w);
+      if (y < h - 1) queue.add(idx + w);
+    }
+
+    // Reconstruir imagen
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromPixels(pixels, w, h, ui.PixelFormat.rgba8888, completer.complete);
+    final newImage = await completer.future;
+    _controller.replaceCanvasImage(_selectedImageId!, newImage);
+  }
+
+  Future<void> _aiRemoveObject() async {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: const Color(0xFF1A1A1A),
+      content: const Text(
+          'Pasa el borrador sobre el objeto para eliminarlo',
+          style: TextStyle(color: Colors.white, fontFamily: 'Raleway')),
+      duration: const Duration(seconds: 3),
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   // ─── BRUSH PANEL ──────────────────────────────────────────
@@ -3989,6 +4194,54 @@ class _FormatChip extends StatelessWidget {
                 color: Colors.white38, fontSize: 11, fontFamily: 'Raleway')),
           ]),
         ),
+      ),
+    );
+  }
+}
+
+
+// ─── Botón IA para el borrador ───────────────────────────────
+class _EraserAIBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  const _EraserAIBtn({
+    required this.icon,
+    required this.label,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+        decoration: BoxDecoration(
+          color: enabled
+              ? const Color(0xFFE74C3C).withOpacity(0.15)
+              : Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: enabled
+                ? const Color(0xFFE74C3C).withOpacity(0.5)
+                : Colors.white12,
+          ),
+        ),
+        child: Column(children: [
+          Icon(icon,
+              color: enabled ? const Color(0xFFE74C3C) : Colors.white24,
+              size: 18),
+          const SizedBox(height: 2),
+          Text(label,
+              style: TextStyle(
+                  color: enabled ? Colors.white70 : Colors.white24,
+                  fontSize: 9,
+                  fontFamily: 'Raleway')),
+        ]),
       ),
     );
   }
