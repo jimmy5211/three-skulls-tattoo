@@ -2343,17 +2343,24 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
           // ── Resize de imagen ─────────────────────────────
           if (_isResizingImage && _lastResizeCanvas != null && _selectedImageId != null) {
-            final delta = cp - _lastResizeCanvas!;
+            final worldDelta = cp - _lastResizeCanvas!;
             _lastResizeCanvas = cp;
             final imgList = _controller.canvasImages.where((i) => i.id == _selectedImageId);
             if (imgList.isNotEmpty) {
-              final cur = imgList.first.rect;
+              final img = imgList.first;
+              // FIX: rotar delta al espacio local de la imagen (fix distorsion en rotadas)
+              final r = -img.rotation;
+              final localDelta = img.rotation == 0.0 ? worldDelta : Offset(
+                worldDelta.dx * cos(r) - worldDelta.dy * sin(r),
+                worldDelta.dx * sin(r) + worldDelta.dy * cos(r),
+              );
+              final cur = img.rect;
               Rect newRect;
               switch (_activeImageHandle) {
-                case 0: newRect = Rect.fromLTRB(cur.left + delta.dx, cur.top + delta.dy, cur.right, cur.bottom); break; // TL
-                case 1: newRect = Rect.fromLTRB(cur.left, cur.top + delta.dy, cur.right + delta.dx, cur.bottom); break; // TR
-                case 2: newRect = Rect.fromLTRB(cur.left + delta.dx, cur.top, cur.right, cur.bottom + delta.dy); break; // BL
-                default: newRect = Rect.fromLTRB(cur.left, cur.top, cur.right + delta.dx, cur.bottom + delta.dy); break; // BR
+                case 0: newRect = Rect.fromLTRB(cur.left + localDelta.dx, cur.top + localDelta.dy, cur.right, cur.bottom); break;
+                case 1: newRect = Rect.fromLTRB(cur.left, cur.top + localDelta.dy, cur.right + localDelta.dx, cur.bottom); break;
+                case 2: newRect = Rect.fromLTRB(cur.left + localDelta.dx, cur.top, cur.right, cur.bottom + localDelta.dy); break;
+                default: newRect = Rect.fromLTRB(cur.left, cur.top, cur.right + localDelta.dx, cur.bottom + localDelta.dy); break;
               }
               if (newRect.width > 20 && newRect.height > 20) {
                 _controller.setCanvasImageRect(_selectedImageId!, newRect);
