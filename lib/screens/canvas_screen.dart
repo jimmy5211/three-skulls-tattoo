@@ -16,6 +16,7 @@ import 'package:flutter/rendering.dart';
 import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:gal/gal.dart';
 
 enum BrushPanelTab { todos, descargados, creados, sellos }
 enum SelloTab { creados, descargados }
@@ -3135,9 +3136,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) => _ExportBottomSheet(
-        onExport: (format, transparent) async {
+        onExport: (format, transparent, targetApp) async {
           Navigator.pop(ctx);
-          await _exportCanvas(format: format, transparent: transparent);
+          await _exportCanvas(
+              format: format,
+              transparent: transparent,
+              targetApp: targetApp);
         },
       ),
     );
@@ -3146,6 +3150,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Future<void> _exportCanvas({
     required String format, // 'png' | 'jpg'
     required bool transparent,
+    String? targetApp, // 'gallery' | 'whatsapp' | 'instagram' | 'facebook' | 'share'
   }) async {
     // Mostrar loading
     _showExportLoading();
@@ -3222,11 +3227,41 @@ class _CanvasScreenState extends State<CanvasScreen> {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // cerrar loading
 
-      // Compartir / guardar
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: format == 'png' ? 'image/png' : 'image/jpeg')],
-        subject: 'Three Skulls Tattoo — $fileName',
-      );
+      if (targetApp == 'gallery') {
+        // Guardar directo en galería
+        await Gal.putImage(file.path);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            backgroundColor: const Color(0xFF1A1A1A),
+            content: const Row(children: [
+              Text('✅', style: TextStyle(fontSize: 18)),
+              SizedBox(width: 10),
+              Text('Guardado en galería',
+                  style: TextStyle(color: Colors.white, fontFamily: 'Raleway')),
+            ]),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ));
+        }
+      } else {
+        // Compartir via share sheet (muestra todas las apps)
+        // Para apps específicas, Android filtra automáticamente si están instaladas
+        final xFile = XFile(file.path,
+            mimeType: format == 'png' ? 'image/png' : 'image/jpeg');
+        
+        if (targetApp == 'whatsapp') {
+          await Share.shareXFiles([xFile],
+              subject: 'Three Skulls Tattoo',
+              sharePositionOrigin: const Rect.fromLTWH(0, 0, 100, 100));
+        } else if (targetApp == 'instagram') {
+          await Share.shareXFiles([xFile],
+              subject: 'Three Skulls Tattoo — diseño de tatuaje');
+        } else {
+          // Share general — muestra todas las apps
+          await Share.shareXFiles([xFile],
+              subject: 'Three Skulls Tattoo — $fileName');
+        }
+      }
 
     } catch (e) {
       if (!mounted) return;
@@ -3703,7 +3738,7 @@ class _SelectionOverlayPainter extends CustomPainter {
 
 // ─── Export Bottom Sheet ──────────────────────────────────────
 class _ExportBottomSheet extends StatefulWidget {
-  final void Function(String format, bool transparent) onExport;
+  final void Function(String format, bool transparent, String targetApp) onExport;
 
   const _ExportBottomSheet({required this.onExport});
 
@@ -3728,133 +3763,190 @@ class _ExportBottomSheetState extends State<_ExportBottomSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Handle
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
+          Center(child: Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.white24,
+                borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 20),
 
           // Título
           const Row(children: [
-            Icon(Icons.file_download_outlined,
-                color: Color(0xFFE74C3C), size: 22),
+            Icon(Icons.file_download_outlined, color: Color(0xFFE74C3C), size: 22),
             SizedBox(width: 10),
-            Text('EXPORTAR DISEÑO',
-                style: TextStyle(
-                    color: Colors.white, fontSize: 16,
-                    fontWeight: FontWeight.w900, letterSpacing: 2,
-                    fontFamily: 'BlackOpsOne')),
+            Text('EXPORTAR DISEÑO', style: TextStyle(
+                color: Colors.white, fontSize: 16,
+                fontWeight: FontWeight.w900, letterSpacing: 2,
+                fontFamily: 'BlackOpsOne')),
           ]),
           const SizedBox(height: 24),
 
           // Formato
-          const Text('FORMATO',
-              style: TextStyle(color: Color(0xFFE74C3C), fontSize: 10,
-                  fontWeight: FontWeight.bold, letterSpacing: 3)),
+          const Text('FORMATO', style: TextStyle(
+              color: Color(0xFFE74C3C), fontSize: 10,
+              fontWeight: FontWeight.bold, letterSpacing: 3)),
           const SizedBox(height: 10),
           Row(children: [
-            _FormatChip(
-              label: 'PNG',
-              subtitle: 'Mejor calidad',
-              icon: Icons.image_outlined,
-              selected: _format == 'png',
-              onTap: () => setState(() => _format = 'png'),
-            ),
+            _FormatChip(label: 'PNG', subtitle: 'Mejor calidad',
+                icon: Icons.image_outlined, selected: _format == 'png',
+                onTap: () => setState(() => _format = 'png')),
             const SizedBox(width: 12),
-            _FormatChip(
-              label: 'JPG',
-              subtitle: 'Menor tamaño',
-              icon: Icons.photo_outlined,
-              selected: _format == 'jpg',
-              onTap: () => setState(() {
-                _format = 'jpg';
-                _transparent = false; // JPG no soporta transparencia
-              }),
-            ),
+            _FormatChip(label: 'JPG', subtitle: 'Menor tamaño',
+                icon: Icons.photo_outlined, selected: _format == 'jpg',
+                onTap: () => setState(() {
+                  _format = 'jpg';
+                  _transparent = false;
+                })),
           ]),
 
-          const SizedBox(height: 20),
-
-          // Fondo transparente (solo PNG)
+          // Fondo transparente
           if (_format == 'png') ...[
+            const SizedBox(height: 16),
             GestureDetector(
               onTap: () => setState(() => _transparent = !_transparent),
               child: Container(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E1E1E),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: _transparent
-                        ? const Color(0xFFE74C3C)
-                        : Colors.white12,
-                  ),
+                  border: Border.all(color: _transparent
+                      ? const Color(0xFFE74C3C) : Colors.white12),
                 ),
                 child: Row(children: [
-                  Icon(
-                    _transparent
-                        ? Icons.check_box
-                        : Icons.check_box_outline_blank,
-                    color: _transparent
-                        ? const Color(0xFFE74C3C)
-                        : Colors.white38,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 12),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Fondo transparente',
-                          style: TextStyle(color: Colors.white,
-                              fontSize: 13, fontFamily: 'Raleway')),
-                      Text('Sin fondo blanco (PNG únicamente)',
-                          style: TextStyle(color: Colors.white38,
-                              fontSize: 11, fontFamily: 'Raleway')),
-                    ],
-                  ),
+                  Icon(_transparent ? Icons.check_box : Icons.check_box_outline_blank,
+                      color: _transparent ? const Color(0xFFE74C3C) : Colors.white38,
+                      size: 20),
+                  const SizedBox(width: 10),
+                  const Column(crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Fondo transparente', style: TextStyle(
+                            color: Colors.white, fontSize: 13, fontFamily: 'Raleway')),
+                        Text('Sin fondo blanco (solo PNG)', style: TextStyle(
+                            color: Colors.white38, fontSize: 11, fontFamily: 'Raleway')),
+                      ]),
                 ]),
               ),
             ),
-            const SizedBox(height: 20),
-          ] else
-            const SizedBox(height: 20),
+          ],
 
-          // Botón exportar
+          const SizedBox(height: 24),
+
+          // ── COMPARTIR EN REDES ──────────────────────────
+          const Text('COMPARTIR EN', style: TextStyle(
+              color: Color(0xFFE74C3C), fontSize: 10,
+              fontWeight: FontWeight.bold, letterSpacing: 3)),
+          const SizedBox(height: 12),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _SocialBtn(
+                label: 'Galería',
+                color: const Color(0xFF4CAF50),
+                icon: Icons.photo_library_outlined,
+                onTap: () => widget.onExport(_format, _transparent, 'gallery'),
+              ),
+              _SocialBtn(
+                label: 'WhatsApp',
+                color: const Color(0xFF25D366),
+                svgPath: 'whatsapp',
+                onTap: () => widget.onExport(_format, _transparent, 'whatsapp'),
+              ),
+              _SocialBtn(
+                label: 'Instagram',
+                color: const Color(0xFFE1306C),
+                svgPath: 'instagram',
+                onTap: () => widget.onExport(_format, _transparent, 'instagram'),
+              ),
+              _SocialBtn(
+                label: 'Facebook',
+                color: const Color(0xFF1877F2),
+                svgPath: 'facebook',
+                onTap: () => widget.onExport(_format, _transparent, 'share'),
+              ),
+              _SocialBtn(
+                label: 'Pinterest',
+                color: const Color(0xFFE60023),
+                svgPath: 'pinterest',
+                onTap: () => widget.onExport(_format, _transparent, 'share'),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // Botón compartir general
           SizedBox(
             width: double.infinity,
             child: GestureDetector(
-              onTap: () => widget.onExport(_format, _transparent),
+              onTap: () => widget.onExport(_format, _transparent, 'share'),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                padding: const EdgeInsets.symmetric(vertical: 15),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFFE74C3C), Color(0xFFFF6B35)],
-                  ),
+                      colors: [Color(0xFFE74C3C), Color(0xFFFF6B35)]),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.file_download, color: Colors.white, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      'EXPORTAR ${_format.toUpperCase()}',
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 14,
-                          fontWeight: FontWeight.bold, letterSpacing: 2),
-                    ),
-                  ],
-                ),
+                child: Row(mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                  const Icon(Icons.share, color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  Text('COMPARTIR ${_format.toUpperCase()}',
+                      style: const TextStyle(color: Colors.white,
+                          fontSize: 14, fontWeight: FontWeight.bold,
+                          letterSpacing: 2)),
+                ]),
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+// Botón de red social
+class _SocialBtn extends StatelessWidget {
+  final String label;
+  final Color color;
+  final IconData? icon;
+  final String? svgPath;
+  final VoidCallback onTap;
+
+  const _SocialBtn({
+    required this.label,
+    required this.color,
+    this.icon,
+    this.svgPath,
+    required this.onTap,
+  });
+
+  IconData get _socialIcon {
+    switch (svgPath) {
+      case 'whatsapp': return Icons.chat;
+      case 'instagram': return Icons.camera_alt_outlined;
+      case 'facebook': return Icons.facebook;
+      case 'pinterest': return Icons.push_pin_outlined;
+      default: return Icons.share;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(children: [
+        Container(
+          width: 52, height: 52,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.15),
+            shape: BoxShape.circle,
+            border: Border.all(color: color.withOpacity(0.5), width: 1.5),
+          ),
+          child: Icon(icon ?? _socialIcon, color: color, size: 24),
+        ),
+        const SizedBox(height: 5),
+        Text(label, style: const TextStyle(
+            color: Colors.white54, fontSize: 10, fontFamily: 'Raleway')),
+      ]),
     );
   }
 }
@@ -3866,13 +3958,8 @@ class _FormatChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const _FormatChip({
-    required this.label,
-    required this.subtitle,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
+  const _FormatChip({required this.label, required this.subtitle,
+      required this.icon, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -3882,37 +3969,25 @@ class _FormatChip extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
           decoration: BoxDecoration(
-            color: selected
-                ? const Color(0xFFE74C3C).withOpacity(0.15)
+            color: selected ? const Color(0xFFE74C3C).withOpacity(0.15)
                 : const Color(0xFF1E1E1E),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: selected
-                  ? const Color(0xFFE74C3C)
-                  : Colors.white12,
-              width: selected ? 2 : 1,
-            ),
+                color: selected ? const Color(0xFFE74C3C) : Colors.white12,
+                width: selected ? 2 : 1),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon,
-                  color: selected
-                      ? const Color(0xFFE74C3C)
-                      : Colors.white38,
-                  size: 22),
-              const SizedBox(height: 6),
-              Text(label,
-                  style: TextStyle(
-                      color: selected ? const Color(0xFFE74C3C) : Colors.white,
-                      fontSize: 16, fontWeight: FontWeight.bold,
-                      fontFamily: 'BlackOpsOne')),
-              Text(subtitle,
-                  style: const TextStyle(
-                      color: Colors.white38, fontSize: 11,
-                      fontFamily: 'Raleway')),
-            ],
-          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+            Icon(icon, color: selected ? const Color(0xFFE74C3C) : Colors.white38,
+                size: 22),
+            const SizedBox(height: 6),
+            Text(label, style: TextStyle(
+                color: selected ? const Color(0xFFE74C3C) : Colors.white,
+                fontSize: 16, fontWeight: FontWeight.bold,
+                fontFamily: 'BlackOpsOne')),
+            Text(subtitle, style: const TextStyle(
+                color: Colors.white38, fontSize: 11, fontFamily: 'Raleway')),
+          ]),
         ),
       ),
     );
