@@ -3424,17 +3424,18 @@ class _SelectionOverlayPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final strokePaint = Paint()
       ..color = const Color(0xFF4A90E2)
-      ..strokeWidth = 1.5
+      ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
     final fillPaint = Paint()
-      ..color = const Color(0x224A90E2)
+      ..color = const Color(0x334A90E2)
       ..style = PaintingStyle.fill;
 
+    // Puntos azules con borde blanco para mayor visibilidad
     final dashPaint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 1.5
+      ..color = const Color(0xFF4A90E2)
+      ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke;
 
     // Dibujar forma en progreso
@@ -3517,42 +3518,38 @@ class _SelectionOverlayPainter extends CustomPainter {
   }
 
   void _drawDashedRect(Canvas canvas, Rect rect, Paint paint) {
-    _drawDashedPath(
-      canvas,
-      Path()..addRect(rect),
-      paint,
-    );
+    _drawDottedPath(canvas, Path()..addRect(rect), paint);
   }
 
   void _drawDashedOval(Canvas canvas, Rect rect, Paint paint) {
-    _drawDashedPath(
-      canvas,
-      Path()..addOval(rect),
-      paint,
-    );
+    _drawDottedPath(canvas, Path()..addOval(rect), paint);
   }
 
-  void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
-    const dashLen = 8.0;
-    const gapLen = 5.0;
+  // Dibuja puntos equidistantes a lo largo de un path
+  void _drawDottedPath(Canvas canvas, Path path, Paint basePaint) {
+    const dotRadius = 3.0;
+    const spacing = 14.0; // espacio entre centros de puntos
+
+    final dotPaint = Paint()
+      ..color = basePaint.color
+      ..style = PaintingStyle.fill;
+
     final metrics = path.computeMetrics();
     for (final metric in metrics) {
       double dist = 0;
-      bool draw = true;
-      while (dist < metric.length) {
-        final len =
-            draw ? dashLen : gapLen;
-        if (draw) {
-          canvas.drawPath(
-            metric.extractPath(
-                dist, (dist + len).clamp(0, metric.length)),
-            paint,
-          );
+      while (dist <= metric.length) {
+        final tangent = metric.getTangentForOffset(dist);
+        if (tangent != null) {
+          canvas.drawCircle(tangent.position, dotRadius, dotPaint);
         }
-        dist += len;
-        draw = !draw;
+        dist += spacing;
       }
     }
+  }
+
+  // Mantener _drawDashedPath para compatibilidad
+  void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
+    _drawDottedPath(canvas, path, paint);
   }
 
   @override
