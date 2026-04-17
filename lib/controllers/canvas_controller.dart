@@ -212,107 +212,11 @@ class CanvasController extends ChangeNotifier {
           layers[layerIndex].copyWith(strokes: updatedStrokes);
       invalidateLayerCache(activeLayerId);
 
-      // Si el trazo era borrador, consolidar la capa para limpiar los huecos
-      if (simplifiedStroke.type == StrokeType.eraser) {
-        _consolidateEraserStrokes(layerIndex).then((_) => notifyListeners());
-      }
     }
 
     currentStroke = null;
     currentMirrorStroke = null;
     notifyListeners();
-  }
-
-  /// Consolida los strokes hasta e incluyendo el último borrador
-  /// en una imagen rasterizada permanente (CanvasImageModel con layerId).
-  /// Los strokes posteriores al borrador se conservan como vectores.
-  /// Resultado: los huecos del borrador son permanentes y no afectan
-  /// nada que se dibuje después.
-  Future<void> _consolidateEraserStrokes(int layerIndex) async {
-    if (layerIndex < 0) return;
-    final layer = layers[layerIndex];
-    final strokes = layer.strokes;
-    if (strokes.isEmpty) return;
-
-    // Encontrar el último borrador
-    final lastEraserIdx = strokes.lastIndexWhere(
-        (s) => s.type == StrokeType.eraser);
-    if (lastEraserIdx < 0) return;
-
-    // Strokes a consolidar (hasta e incluyendo el borrador)
-    final strokesToConsolidate = strokes.sublist(0, lastEraserIdx + 1);
-    // Strokes posteriores — se conservan como vectores
-    final strokesAfter = strokes.sublist(lastEraserIdx + 1);
-
-    // Rasterizar strokesToConsolidate a imagen transparente
-    final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder);
-    
-    // Fondo transparente
-    final rect = ui.Rect.fromLTWH(0, 0, canvasSize.width, canvasSize.height);
-    
-    // Dibujar en orden temporal (igual que el painter)
-    for (final stroke in strokesToConsolidate) {
-      _drawStrokeToCanvas(canvas, stroke);
-    }
-    
-    final picture = recorder.endRecording();
-    final image = await picture.toImage(
-      canvasSize.width.toInt(),
-      canvasSize.height.toInt(),
-    );
-
-    // Agregar como imagen de la capa (no se verá borde ni handles)
-    final consolidated = CanvasImageModel(
-      id: 'consolidated_${layer.id}_${DateTime.now().millisecondsSinceEpoch}',
-      image: image,
-      position: ui.Offset.zero,
-      size: canvasSize,
-      layerId: layer.id,
-      opacity: 1.0,
-    );
-    canvasImages.add(consolidated);
-
-    // Reemplazar strokes con solo los posteriores al borrador
-    layers[layerIndex] = layer.copyWith(strokes: strokesAfter);
-    invalidateLayerCache(layer.id);
-    _imagesChanged = true;
-  }
-
-  /// Dibuja un stroke en un canvas de rasterización
-  void _drawStrokeToCanvas(ui.Canvas canvas, StrokeModel stroke) {
-    if (stroke.points.isEmpty) return;
-    
-    final paint = ui.Paint()
-      ..strokeCap = ui.StrokeCap.round
-      ..strokeJoin = ui.StrokeJoin.round
-      ..style = ui.PaintingStyle.stroke
-      ..strokeWidth = stroke.strokeWidth * 2;
-
-    if (stroke.type == StrokeType.eraser) {
-      paint.blendMode = ui.BlendMode.dstOut;
-      paint.color = const ui.Color(0xFFFFFFFF);
-    } else {
-      paint.color = stroke.color.withOpacity(stroke.opacity);
-    }
-
-    if (stroke.points.length == 1) {
-      canvas.drawCircle(stroke.points.first, stroke.strokeWidth, paint);
-      return;
-    }
-
-    final path = ui.Path();
-    path.moveTo(stroke.points.first.dx, stroke.points.first.dy);
-    for (int i = 1; i < stroke.points.length - 1; i++) {
-      final mid = ui.Offset(
-        (stroke.points[i].dx + stroke.points[i + 1].dx) / 2,
-        (stroke.points[i].dy + stroke.points[i + 1].dy) / 2,
-      );
-      path.quadraticBezierTo(
-          stroke.points[i].dx, stroke.points[i].dy, mid.dx, mid.dy);
-    }
-    path.lineTo(stroke.points.last.dx, stroke.points.last.dy);
-    canvas.drawPath(path, paint);
   }
 
   Offset _getMirroredPoint(Offset point) {
@@ -564,12 +468,19 @@ class CanvasController extends ChangeNotifier {
       (canvasSize.width - scaledW) / 2,
       (canvasSize.height - scaledH) / 2,
     );
+    // insertionIndex = total de strokes actuales en la capa activa
+    // La imagen se renderizará DESPUÉS de todos los strokes existentes
+    final activeLayer = layers.firstWhere(
+      (l) => l.id == activeLayerId, orElse: () => layers.first);
+    final insertIdx = activeLayer.strokes.length;
+
     canvasImages.add(CanvasImageModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       image: image,
       position: pos,
       size: Size(scaledW, scaledH),
-      layerId: activeLayerId, // asociar a la capa activa
+      layerId: activeLayerId,
+      insertionIndex: insertIdx,
     ));
     _imagesChanged = true;
     notifyListeners();
