@@ -7,6 +7,7 @@ class StrokeModel {
   final double opacity;
   final StrokeType type;
   final int layerId;
+  final double hardness; // 0.0=suave, 1.0=duro
 
   StrokeModel({
     required this.points,
@@ -15,6 +16,7 @@ class StrokeModel {
     required this.opacity,
     required this.type,
     required this.layerId,
+    this.hardness = 1.0,
   });
 
   StrokeModel copyWith({
@@ -24,6 +26,7 @@ class StrokeModel {
     double? opacity,
     StrokeType? type,
     int? layerId,
+    double? hardness,
   }) {
     return StrokeModel(
       points: points ?? this.points,
@@ -32,6 +35,7 @@ class StrokeModel {
       opacity: opacity ?? this.opacity,
       type: type ?? this.type,
       layerId: layerId ?? this.layerId,
+      hardness: hardness ?? this.hardness,
     );
   }
 }
