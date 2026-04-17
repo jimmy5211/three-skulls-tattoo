@@ -2371,16 +2371,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
           // ── Resize handle de selección ────────────────────
           if (_isResizingHandle && _resizeStartBounds != null && _resizeHandleStart != null) {
-            // Handle 8 = rotación visual (no destructiva)
-            // Solo actualizamos _selectionAngle para la vista.
-            // Los puntos se rotan geométricamente al soltar (onScaleEnd).
+            // Handle 8 = rotación
+            // Aplicamos AMBAS: incremental geométrica (mueve puntos) + visual (OBB)
+            // Así strokes y bounding box giran simultáneamente.
             if (_activeResizeHandle == 8) {
               final center = _resizeStartBounds!.center;
               final angle = (cp - center).direction;
               final delta = angle - _selectionStartRotation;
               _selectionStartRotation = angle;
               _selectionAngle += delta;
-              setState(() {});
+              // Rotar puntos incrementalmente cada frame
+              _controller.rotateSelected(center, delta);
               return;
             }
 
@@ -2464,22 +2465,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
           if (_isResizingHandle) {
-            // Handle 8 = rotación: al soltar, aplicar la rotación total a los puntos
-            if (_activeResizeHandle == 8 &&
-                _resizeStartBounds != null &&
-                _selectionAngle != 0.0) {
-              _controller.saveSelectionMoveToHistory();
-              _controller.rotateSelected(
-                _resizeStartBounds!.center,
-                _selectionAngle,
-              );
-              _selectionAngle = 0.0; // reset visual tras aplicar
-            }
+            // Reset selectionAngle: los puntos ya fueron rotados incrementalmente
             setState(() {
               _isResizingHandle = false;
               _activeResizeHandle = -1;
               _resizeStartBounds = null;
               _resizeHandleStart = null;
+              _selectionAngle = 0.0;
             });
             return;
           }
@@ -2540,6 +2532,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                             _controller.selectedStrokeIndices,
                         finalizedMode: _finalizedMode,
                         selectionAngle: _selectionAngle,
+                        // OBB: bounds fijos capturados al inicio de la rotación
+                        // evitan que el bbox se expanda durante el giro
+                        obbBounds: _activeResizeHandle == 8
+                            ? _resizeStartBounds
+                            : null,
                       ),
                       size: Size(
                         _controller.canvasSize.width,
@@ -3421,6 +3418,10 @@ class _SelectionOverlayPainter extends CustomPainter {
   final List<int> selectedIndices;
   final SelectionMode finalizedMode;
   final double selectionAngle;
+  /// Bounds fijos capturados al inicio de la rotación (OBB).
+  /// Si no es null, se usa en lugar de selectedBounds para evitar
+  /// que el bounding box se expanda durante el giro.
+  final Rect? obbBounds;
 
   _SelectionOverlayPainter({
     required this.mode,
@@ -3431,6 +3432,7 @@ class _SelectionOverlayPainter extends CustomPainter {
     required this.selectedIndices,
     required this.finalizedMode,
     this.selectionAngle = 0.0,
+    this.obbBounds,
   });
 
   @override
@@ -3480,8 +3482,11 @@ class _SelectionOverlayPainter extends CustomPainter {
     }
 
     // Dibujar bounding box de selección finalizada (ROTADO)
-    if (selectedBounds != null && selectedIndices.isNotEmpty) {
-      final bounds = selectedBounds!.inflate(10);
+    // Si hay obbBounds (durante rotación): usar el OBB fijo para
+    // que el bbox mantenga tamaño y solo gire, sin expandirse.
+    final displayBounds = obbBounds ?? selectedBounds;
+    if (displayBounds != null && selectedIndices.isNotEmpty) {
+      final bounds = displayBounds.inflate(10);
       final cx = bounds.center.dx;
       final cy = bounds.center.dy;
 
@@ -3573,5 +3578,6 @@ class _SelectionOverlayPainter extends CustomPainter {
       old.selectedBounds != selectedBounds ||
       old.selectedIndices != selectedIndices ||
       old.finalizedMode != finalizedMode ||
-      old.selectionAngle != selectionAngle;
+      old.selectionAngle != selectionAngle ||
+      old.obbBounds != obbBounds;
 }
