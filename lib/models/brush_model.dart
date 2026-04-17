@@ -10,6 +10,7 @@ class BrushModel {
   double opacity;
   double spacing;
   bool isPressureSensitive;
+  double hardness; // 0.0=suave, 1.0=duro
 
   BrushModel({
     required this.id,
@@ -21,6 +22,7 @@ class BrushModel {
     this.opacity = 1.0,
     this.spacing = 1.0,
     this.isPressureSensitive = true,
+    this.hardness = 1.0,
   });
 
   BrushModel copyWith({
@@ -33,6 +35,7 @@ class BrushModel {
     double? opacity,
     double? spacing,
     bool? isPressureSensitive,
+    double? hardness,
   }) {
     return BrushModel(
       id: id ?? this.id,
@@ -44,6 +47,7 @@ class BrushModel {
       opacity: opacity ?? this.opacity,
       spacing: spacing ?? this.spacing,
       isPressureSensitive: isPressureSensitive ?? this.isPressureSensitive,
+      hardness: hardness ?? this.hardness,
     );
   }
 
@@ -61,7 +65,7 @@ class BrushModel {
       BrushModel(id: 'relleno', name: 'Relleno', emoji: '🎨',
           type: StrokeType.fill, category: BrushCategory.todos, size: 20.0, opacity: 0.8),
       BrushModel(id: 'borrador', name: 'Borrador', emoji: '🧹',
-          type: StrokeType.eraser, category: BrushCategory.todos, size: 10.0, opacity: 1.0),
+          type: StrokeType.eraser, category: BrushCategory.todos, size: 10.0, opacity: 1.0, hardness: 1.0),
 
       // ─── CALIGRAFÍA ───────────────────────────────────────
       BrushModel(id: 'cal_01', name: 'Pluma Clásica', emoji: '✒️',
