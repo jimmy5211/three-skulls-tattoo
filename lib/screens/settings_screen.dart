@@ -463,13 +463,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: AppTheme.textGrey,
                     fontSize: 11)),
             const SizedBox(height: 4),
-            Text(updateInfo.releaseNotes,
-                style: const TextStyle(
-                    fontFamily: 'Raleway',
-                    color: AppTheme.textWhite,
-                    fontSize: 12),
-                maxLines: 6,
-                overflow: TextOverflow.ellipsis),
+            ...updateInfo.releaseNotes.take(6).map((note) => Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('• ',
+                      style: TextStyle(
+                          color: AppTheme.accentRed,
+                          fontSize: 12)),
+                  Expanded(
+                    child: Text(note,
+                        style: const TextStyle(
+                            fontFamily: 'Raleway',
+                            color: AppTheme.textWhite,
+                            fontSize: 12)),
+                  ),
+                ],
+              ),
+            )),
           ],
         ),
         actions: [
