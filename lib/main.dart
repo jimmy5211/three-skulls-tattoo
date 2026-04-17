@@ -145,10 +145,10 @@ void main() async {
   });
 
   // App background → usuario tocó notificación FCM
-  FirebaseMessaging.onMessageOpenedApp.listen((msg) {
+  FirebaseMessaging.onMessageOpenedApp.listen((msg) async {
     final data = msg.data;
     if (data['version'] != null && data['downloadUrl'] != null) {
-      pendingUpdateNotifier.value = UpdateInfo(
+      final update = UpdateInfo(
         version: data['version']!,
         downloadUrl: data['downloadUrl']!,
         releaseNotes: (data['notes'] as String?)
@@ -157,6 +157,10 @@ void main() async {
                 .toList() ?? [],
         isAvailable: true,
       );
+      // Guardar en prefs por si el widget aún no está listo
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pending_update', update.toJson());
+      pendingUpdateNotifier.value = update;
     }
   });
 
@@ -165,7 +169,7 @@ void main() async {
   if (initialMessage != null) {
     final data = initialMessage.data;
     if (data['version'] != null && data['downloadUrl'] != null) {
-      pendingUpdateNotifier.value = UpdateInfo(
+      final update = UpdateInfo(
         version: data['version']!,
         downloadUrl: data['downloadUrl']!,
         releaseNotes: (data['notes'] as String?)
@@ -174,6 +178,9 @@ void main() async {
                 .toList() ?? [],
         isAvailable: true,
       );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pending_update', update.toJson());
+      pendingUpdateNotifier.value = update;
     }
   }
 
@@ -233,9 +240,24 @@ class _UpdateListenerState extends State<_UpdateListener> {
   void initState() {
     super.initState();
     pendingUpdateNotifier.addListener(_onUpdate);
-    // ✅ Fix: verificar si ya hay un update pendiente al iniciar
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (pendingUpdateNotifier.value != null) _onUpdate();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Verificar notifier en memoria
+      if (pendingUpdateNotifier.value != null) {
+        _onUpdate();
+        return;
+      }
+      // Verificar update guardado en prefs (cuando app se abrió por notificación)
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final json = prefs.getString('pending_update');
+        if (json != null && json.isNotEmpty) {
+          await prefs.remove('pending_update');
+          final update = UpdateInfo.fromJson(json);
+          pendingUpdateNotifier.value = update;
+        }
+      } catch (e) {
+        debugPrint('pending_update check: $e');
+      }
     });
   }
 
