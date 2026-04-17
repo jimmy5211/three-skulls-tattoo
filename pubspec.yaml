@@ -48,6 +48,10 @@ dependencies:
   # 🔄 BACKGROUND TASKS
   workmanager: ^0.5.2
 
+  # 🔥 FIREBASE
+  firebase_core: ^2.24.2
+  firebase_messaging: ^14.7.10
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
