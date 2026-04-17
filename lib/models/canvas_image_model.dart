@@ -8,7 +8,6 @@ class EraseStroke {
 
   EraseStroke({required this.points, required this.radius});
 
-  // Mantener copyWithPoint por compatibilidad pero ya no se usa en hot path
   EraseStroke copyWithPoint(Offset point) => EraseStroke(
         points: [...points, point],
         radius: radius,
@@ -52,9 +51,8 @@ class CanvasImageModel {
         size.height,
       );
 
-  /// Centro de la imagen
   Offset get center => rect.center;
-}
 
   bool get hasErases =>
       eraseStrokes.isNotEmpty || currentEraseStroke != null;
+}
