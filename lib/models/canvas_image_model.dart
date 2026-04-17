@@ -25,6 +25,10 @@ class CanvasImageModel {
   bool flipY;
   double rotation; // radianes
   int layerId;
+  /// Índice de inserción — determina posición en el orden temporal de renderizado.
+  /// Imágenes con insertionIndex > N se renderizan DESPUÉS del stroke N.
+  /// Esto garantiza que el borrador del stroke N no afecte imágenes insertadas después.
+  int insertionIndex;
 
   List<EraseStroke> eraseStrokes;
   EraseStroke? currentEraseStroke;
@@ -35,6 +39,7 @@ class CanvasImageModel {
     required this.position,
     required this.size,
     required this.layerId,
+    this.insertionIndex = 0,
     this.opacity = 1.0,
     this.isSelected = false,
     this.flipX = false,
