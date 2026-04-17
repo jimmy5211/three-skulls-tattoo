@@ -7,6 +7,7 @@ import 'package:open_file/open_file.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../theme/app_theme.dart';
 import '../services/update_service.dart';
+import '../update_download_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -440,65 +441,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showUpdateDialog(UpdateInfo updateInfo) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.cardColor,
-        title: const Text('🎉 Nueva Versión',
-            style: TextStyle(
-                fontFamily: 'BlackOpsOne',
-                color: AppTheme.textWhite,
-                fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Versión ${updateInfo.version} disponible',
-                style: const TextStyle(
-                    fontFamily: 'BlackOpsOne',
-                    color: AppTheme.accentRed,
-                    fontSize: 14)),
-            const SizedBox(height: 12),
-            const Text('NOVEDADES:',
-                style: TextStyle(
-                    fontFamily: 'Raleway',
-                    color: AppTheme.textGrey,
-                    fontSize: 11)),
-            const SizedBox(height: 4),
-            ...updateInfo.releaseNotes.take(6).map((note) => Padding(
-              padding: const EdgeInsets.only(bottom: 3),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('• ',
-                      style: TextStyle(
-                          color: AppTheme.accentRed,
-                          fontSize: 12)),
-                  Expanded(
-                    child: Text(note,
-                        style: const TextStyle(
-                            fontFamily: 'Raleway',
-                            color: AppTheme.textWhite,
-                            fontSize: 12)),
-                  ),
-                ],
-              ),
-            )),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Después',
-                style: TextStyle(color: AppTheme.textGrey)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _downloadAndInstall(updateInfo.downloadUrl);
-            },
-            child: const Text('⬇️ Actualizar',
-                style: TextStyle(color: AppTheme.accentRed)),
-          ),
-        ],
+      barrierDismissible: !updateInfo.mandatory,
+      builder: (ctx) => _NewVersionDialogWidget(
+        updateInfo: updateInfo,
+        onUpdate: () {
+          Navigator.pop(ctx);
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => UpdateDownloadScreen(updateInfo: updateInfo),
+          ));
+        },
+        onDismiss: () => Navigator.pop(ctx),
       ),
     );
   }
@@ -687,4 +639,168 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
+
+// ─── Dialog Nueva Versión ─────────────────────────────────────
+class _NewVersionDialogWidget extends StatefulWidget {
+  final UpdateInfo updateInfo;
+  final VoidCallback onUpdate;
+  final VoidCallback onDismiss;
+
+  const _NewVersionDialogWidget({
+    required this.updateInfo,
+    required this.onUpdate,
+    required this.onDismiss,
+  });
+
+  @override
+  State<_NewVersionDialogWidget> createState() => _NewVersionDialogWidgetState();
+}
+
+class _NewVersionDialogWidgetState extends State<_NewVersionDialogWidget>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _pulse;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900))
+      ..repeat(reverse: true);
+    _anim = Tween<double>(begin: 0.5, end: 1.0).animate(_pulse);
+  }
+
+  @override
+  void dispose() { _pulse.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: const Color(0xFF141414),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTheme.accentRed.withOpacity(0.3)),
+          boxShadow: [
+            BoxShadow(color: AppTheme.accentRed.withOpacity(0.15),
+                blurRadius: 30, spreadRadius: 2),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(children: [
+              AnimatedBuilder(
+                animation: _anim,
+                builder: (_, __) => Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppTheme.accentRed.withOpacity(0.2 * _anim.value),
+                    border: Border.all(
+                        color: AppTheme.accentRed.withOpacity(_anim.value),
+                        width: 2),
+                  ),
+                  child: const Icon(Icons.system_update,
+                      color: AppTheme.accentRed, size: 18),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text('NUEVA VERSIÓN',
+                  style: TextStyle(
+                      color: Colors.white, fontSize: 15,
+                      fontWeight: FontWeight.w900, letterSpacing: 2,
+                      fontFamily: 'BlackOpsOne')),
+            ]),
+            const SizedBox(height: 10),
+            // Badge versión
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                    colors: [Color(0xFFE74C3C), Color(0xFFFF6B35)]),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text('v${widget.updateInfo.version} DISPONIBLE',
+                  style: const TextStyle(color: Colors.white, fontSize: 11,
+                      fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+            ),
+            const SizedBox(height: 18),
+            // Separador punteado
+            Row(children: List.generate(30, (i) => Expanded(
+              child: Container(height: 1,
+                  color: i % 2 == 0
+                      ? AppTheme.accentRed.withOpacity(0.4)
+                      : Colors.transparent),
+            ))),
+            const SizedBox(height: 14),
+            const Text('NOVEDADES',
+                style: TextStyle(color: AppTheme.accentRed, fontSize: 10,
+                    fontWeight: FontWeight.bold, letterSpacing: 3)),
+            const SizedBox(height: 10),
+            // Lista notas
+            ...widget.updateInfo.releaseNotes.take(6).map((note) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 5, right: 8),
+                    child: SizedBox(width: 6, height: 6,
+                        child: DecoratedBox(decoration: BoxDecoration(
+                            color: AppTheme.accentRed,
+                            shape: BoxShape.circle))),
+                  ),
+                  Expanded(child: Text(note,
+                      style: const TextStyle(
+                          color: Color(0xFFCCCCCC), fontSize: 13,
+                          height: 1.4, fontFamily: 'Raleway'))),
+                ],
+              ),
+            )),
+            const SizedBox(height: 20),
+            // Botones
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              if (!widget.updateInfo.mandatory)
+                GestureDetector(
+                  onTap: widget.onDismiss,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 18, vertical: 10),
+                    decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.white24)),
+                    child: const Text('DESPUÉS',
+                        style: TextStyle(color: Colors.white54, fontSize: 11,
+                            fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                  ),
+                ),
+              const SizedBox(width: 10),
+              GestureDetector(
+                onTap: widget.onUpdate,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 18, vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                        colors: [Color(0xFFE74C3C), Color(0xFFFF6B35)]),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text('↓  ACTUALIZAR',
+                      style: TextStyle(color: Colors.white, fontSize: 11,
+                          fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                ),
+              ),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 }
