@@ -10,6 +10,7 @@ import '../widgets/canvas_painter.dart';
 import '../widgets/layer_panel.dart';
 import '../widgets/color_picker.dart';
 import '../models/brush_model.dart';
+import '../models/canvas_image_model.dart';
 import '../models/stroke_model.dart';
 import 'package:flutter/rendering.dart';
 
@@ -75,12 +76,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // ─── IMAGEN EN CANVAS ────────────────────────────────────
   String? _selectedImageId;
   bool _isDraggingImage = false;
-  Offset? _lastDragCanvas;   // último punto canvas durante el drag (delta acumulativo)
+  Offset? _lastDragCanvas;
 
-  // ─── RESIZE DE IMAGEN ────────────────────────────────────
+  // ─── RESIZE / ROTATE DE IMAGEN ───────────────────────────
   bool _isResizingImage = false;
-  int _activeImageHandle = -1;     // 0=TL 1=TR 2=BL 3=BR
-  Offset? _lastResizeCanvas;       // último punto canvas durante resize (delta acumulativo)
+  bool _isRotatingImage = false;
+  int _activeImageHandle = -1;     // 0=TL 1=TR 2=BL 3=BR 4=ROT
+  Offset? _lastResizeCanvas;
+  double _imageRotationStartAngle = 0.0;
+  Offset? _imageRotationCenter;
 
   // ─── RESIZE DE SELECCIÓN ─────────────────────────────────
   bool _isResizingHandle = false;
@@ -88,6 +92,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Rect? _resizeStartBounds;
   Offset? _resizeHandleStart;
   double _selectionStartRotation = 0.0;
+  double _selectionAngle = 0.0;  // ángulo acumulado de la selección
 
   // ─── BORRADOR EN IMAGEN ──────────────────────────────────
   String? _erasingImageId;
@@ -2045,6 +2050,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     _selectionPoints = [];
     _selectionDragStart = null;
     _selectionDragCurrent = null;
+    _selectionAngle = 0.0;
   }
 
   Widget _buildCanvas() {
@@ -2105,17 +2111,30 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 .where((i) => i.id == _selectedImageId)
                 .firstOrNull;
             if (selImg != null) {
-              final handles = _imageHandlePositions(selImg.rect);
-              final hitRadius = 30.0 / _scale; // más generoso para móvil
+              // Usar posiciones de handles en mundo rotado (desde el painter)
+              // Hit area GRANDE (invisible) para fácil toque con el dedo
+              final handles = _imageHandlesWorld(selImg);
+              final hitRadius = 36.0 / _scale; // hit area grande, visual sigue siendo 10px
               for (int i = 0; i < handles.length; i++) {
                 if ((handles[i] - cp).distance < hitRadius) {
-                  _isResizingImage = true;
-                  _activeImageHandle = i;
-                  _lastResizeCanvas = cp;
+                  if (i == 4) {
+                    // Handle de ROTACIÓN
+                    _isRotatingImage = true;
+                    _imageRotationCenter = selImg.center;
+                    _imageRotationStartAngle =
+                        (cp - selImg.center).direction - selImg.rotation;
+                    _activeImageHandle = 4;
+                  } else {
+                    _isResizingImage = true;
+                    _activeImageHandle = i;
+                    _lastResizeCanvas = cp;
+                  }
                   return;
                 }
               }
-              if (selImg.rect.inflate(10 / _scale).contains(cp)) {
+              // Hit area de drag: dentro de la imagen (con rotación)
+              final relCp = _rotatePointAround(cp, selImg.center, -selImg.rotation);
+              if (selImg.rect.inflate(10 / _scale).contains(relCp)) {
                 _isDraggingImage = true;
                 _lastDragCanvas = cp;
                 return;
@@ -2138,34 +2157,45 @@ class _CanvasScreenState extends State<CanvasScreen> {
             }
           }
 
-          // ── Handles de selección ─────────────────────────
+          // ── Handles de selección (con rotación) ──────────
           if (_selectionMode != SelectionMode.ninguno &&
               _controller.hasSelection) {
-            final bounds = _controller.selectionBounds?.inflate(10);
-            if (bounds != null) {
+            final rawBounds = _controller.selectionBounds;
+            final bounds = rawBounds?.inflate(10);
+            if (bounds != null && rawBounds != null) {
+              final bCenter = bounds.center;
+              // Rotar el punto de toque inversamente para comparar en espacio local
+              final cpLocal = _rotatePointAround(cp, bCenter, -_selectionAngle);
+
+              // Handle de rotación (rojo)
               final rotHandle = bounds.topCenter - const Offset(0, 36);
-              if ((rotHandle - cp).distance < 14 / _scale) {
+              if ((rotHandle - cpLocal).distance < 20.0 / _scale) {
                 _controller.saveSelectionMoveToHistory();
                 _isResizingHandle = true;
                 _activeResizeHandle = 8;
-                _resizeStartBounds = _controller.selectionBounds;
+                _resizeStartBounds = rawBounds;
                 _resizeHandleStart = cp;
-                _selectionStartRotation = 0;
+                _selectionStartRotation = (cp - bCenter).direction;
                 return;
               }
+              // 8 handles de resize — hit area 20px en espacio local
               final handles = [
-                bounds.topLeft, bounds.topCenter, bounds.topRight,
+                bounds.topLeft,
+                bounds.topCenter,
+                bounds.topRight,
                 Offset(bounds.left, bounds.center.dy),
                 Offset(bounds.right, bounds.center.dy),
-                bounds.bottomLeft, bounds.bottomCenter, bounds.bottomRight,
+                bounds.bottomLeft,
+                bounds.bottomCenter,
+                bounds.bottomRight,
               ];
-              final hitRadius = 14.0 / _scale;
+              final hitRadius = 20.0 / _scale;
               for (int i = 0; i < handles.length; i++) {
-                if ((handles[i] - cp).distance < hitRadius) {
+                if ((handles[i] - cpLocal).distance < hitRadius) {
                   _controller.saveSelectionMoveToHistory();
                   _isResizingHandle = true;
                   _activeResizeHandle = i;
-                  _resizeStartBounds = _controller.selectionBounds;
+                  _resizeStartBounds = rawBounds;
                   _resizeHandleStart = cp;
                   return;
                 }
@@ -2177,7 +2207,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
           if (_selectionMode != SelectionMode.ninguno) {
             final bounds = _controller.selectionBounds;
             if (bounds != null && _controller.hasSelection) {
-              if (bounds.inflate(40 / _scale).contains(cp)) {
+              // Rotar punto inversamente para detectar si está dentro
+              final cpLocal = _rotatePointAround(cp, bounds.center, -_selectionAngle);
+              if (bounds.inflate(40 / _scale).contains(cpLocal)) {
                 _controller.saveSelectionMoveToHistory();
                 _isDraggingSelection = true;
                 _selectionMoveStart = cp;
@@ -2216,6 +2248,36 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _canvasFocalPoint = _screenToCanvasWithTransform(
                 _startFocalPoint, _startOffset, _startRotation, _startScale);
               return;
+            }
+
+            // ── 2 dedos sobre imagen seleccionada: rotar imagen ──
+            if (_selectedImageId != null && !_isScaling) {
+              // Si acaba de empezar el gesto de 2 dedos sobre imagen → rotar imagen
+              final imgList = _controller.canvasImages
+                  .where((i) => i.id == _selectedImageId);
+              if (imgList.isNotEmpty) {
+                final img = imgList.first;
+                final relFocal = _screenToCanvasWithTransform(
+                    _startFocalPoint, _startOffset, _startRotation, _startScale);
+                if (img.rect.inflate(20 / _startScale).contains(
+                    _rotatePointAround(relFocal, img.center, -img.rotation))) {
+                  // Rotar imagen con 2 dedos en lugar de pan/zoom del canvas
+                  final newImgRot = img.rotation + details.rotation;
+                  _controller.setCanvasImageRotation(_selectedImageId!, newImgRot);
+                  // También escalar imagen con pinch
+                  if (details.scale != 1.0) {
+                    final newW = (img.size.width * details.scale).clamp(20.0, _controller.canvasSize.width);
+                    final newH = (img.size.height * details.scale).clamp(20.0, _controller.canvasSize.height);
+                    final newPos = Offset(
+                      img.center.dx - newW / 2,
+                      img.center.dy - newH / 2,
+                    );
+                    _controller.setCanvasImageRect(_selectedImageId!,
+                        Rect.fromLTWH(newPos.dx, newPos.dy, newW, newH));
+                  }
+                  return;
+                }
+              }
             }
 
             // ── Fórmula correcta pan/zoom CON ROTACIÓN ──────
@@ -2258,9 +2320,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
           final cp = _screenToCanvas(details.localFocalPoint);
 
-          // ── Mover imagen (delta acumulativo en canvas) ───
+          // ── Rotar imagen ──────────────────────────────────
+          if (_isRotatingImage && _imageRotationCenter != null && _selectedImageId != null) {
+            final angle = (cp - _imageRotationCenter!).direction;
+            final newRotation = angle - _imageRotationStartAngle;
+            _controller.setCanvasImageRotation(_selectedImageId!, newRotation);
+            return;
+          }
+
+          // ── Mover imagen ──────────────────────────────────
           if (_isDraggingImage && _lastDragCanvas != null && _selectedImageId != null) {
-            // cp ya está en coordenadas canvas con rotación correcta
             final delta = cp - _lastDragCanvas!;
             _lastDragCanvas = cp;
             final img = _controller.canvasImages
@@ -2311,9 +2380,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
             // Handle 8 = rotación
             if (_activeResizeHandle == 8) {
               final center = startBounds.center;
-              final angle = (cp - center).direction - (startBounds.topCenter - center).direction;
-              _controller.rotateSelected(center, angle - _selectionStartRotation);
+              final angle = (cp - center).direction;
+              final delta = angle - _selectionStartRotation;
+              _controller.rotateSelected(center, delta);
               _selectionStartRotation = angle;
+              _selectionAngle += delta;
               return;
             }
             if (newBounds.width > 5 && newBounds.height > 5) {
@@ -2351,6 +2422,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
           if (_isDraggingImage) {
             _isDraggingImage = false;
             _lastDragCanvas = null;
+            return;
+          }
+          if (_isRotatingImage) {
+            _isRotatingImage = false;
+            _imageRotationCenter = null;
+            _activeImageHandle = -1;
             return;
           }
           if (_isResizingImage) {
@@ -2424,6 +2501,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         selectedIndices:
                             _controller.selectedStrokeIndices,
                         finalizedMode: _finalizedMode,
+                        selectionAngle: _selectionAngle,
                       ),
                       size: Size(
                         _controller.canvasSize.width,
@@ -2969,7 +3047,41 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
-  /// Retorna las 4 esquinas de la imagen para handles de resize
+  /// Handles de imagen en coordenadas mundo (respeta rotación)
+  List<Offset> _imageHandlesWorld(CanvasImageModel img) {
+    final cx = img.center.dx;
+    final cy = img.center.dy;
+    final cosR = cos(img.rotation);
+    final sinR = sin(img.rotation);
+
+    Offset rot(Offset p) {
+      final dx = p.dx - cx;
+      final dy = p.dy - cy;
+      return Offset(cx + dx * cosR - dy * sinR, cy + dx * sinR + dy * cosR);
+    }
+
+    return [
+      rot(img.rect.topLeft),      // 0 TL
+      rot(img.rect.topRight),     // 1 TR
+      rot(img.rect.bottomLeft),   // 2 BL
+      rot(img.rect.bottomRight),  // 3 BR
+      rot(img.rect.topCenter - const Offset(0, 36)), // 4 ROT
+    ];
+  }
+
+  /// Rota un punto alrededor de un centro
+  Offset _rotatePointAround(Offset point, Offset center, double angle) {
+    final cosA = cos(angle);
+    final sinA = sin(angle);
+    final dx = point.dx - center.dx;
+    final dy = point.dy - center.dy;
+    return Offset(
+      center.dx + dx * cosA - dy * sinA,
+      center.dy + dx * sinA + dy * cosA,
+    );
+  }
+
+  /// Retorna las 4 esquinas + handle rotación de la imagen en coords mundo
   List<Offset> _imageHandlePositions(Rect rect) => [
     rect.topLeft, rect.topRight, rect.bottomLeft, rect.bottomRight,
   ];
@@ -3270,6 +3382,7 @@ class _SelectionOverlayPainter extends CustomPainter {
   final Rect? selectedBounds;
   final List<int> selectedIndices;
   final SelectionMode finalizedMode;
+  final double selectionAngle;
 
   _SelectionOverlayPainter({
     required this.mode,
@@ -3279,6 +3392,7 @@ class _SelectionOverlayPainter extends CustomPainter {
     required this.selectedBounds,
     required this.selectedIndices,
     required this.finalizedMode,
+    this.selectionAngle = 0.0,
   });
 
   @override
@@ -3326,9 +3440,18 @@ class _SelectionOverlayPainter extends CustomPainter {
       }
     }
 
-    // Dibujar bounding box de selección finalizada
+    // Dibujar bounding box de selección finalizada (ROTADO)
     if (selectedBounds != null && selectedIndices.isNotEmpty) {
       final bounds = selectedBounds!.inflate(10);
+      final cx = bounds.center.dx;
+      final cy = bounds.center.dy;
+
+      // Aplicar rotación del bounding box
+      canvas.save();
+      canvas.translate(cx, cy);
+      canvas.rotate(selectionAngle);
+      canvas.translate(-cx, -cy);
+
       _drawDashedRect(canvas, bounds, dashPaint);
 
       final handlePaint = Paint()
@@ -3339,6 +3462,7 @@ class _SelectionOverlayPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.0;
 
+      // 8 handles — visual 8px, hit area manejado en screen (36px)
       const hr = 8.0;
       final handles = [
         bounds.topLeft,
@@ -3355,13 +3479,15 @@ class _SelectionOverlayPainter extends CustomPainter {
         canvas.drawCircle(h, hr, handleBorder);
       }
 
-      // Handle de rotación
+      // Handle de rotación (rojo, arriba del centro)
       final rotHandle = bounds.topCenter - const Offset(0, 36);
       canvas.drawLine(bounds.topCenter, rotHandle,
           Paint()..color = Colors.white..strokeWidth = 1.5);
       canvas.drawCircle(rotHandle, 10,
           Paint()..color = const Color(0xFFE74C3C)..style = PaintingStyle.fill);
       canvas.drawCircle(rotHandle, 10, handleBorder);
+
+      canvas.restore();
     }
   }
 
@@ -3411,5 +3537,6 @@ class _SelectionOverlayPainter extends CustomPainter {
       old.dragCurrent != dragCurrent ||
       old.selectedBounds != selectedBounds ||
       old.selectedIndices != selectedIndices ||
-      old.finalizedMode != finalizedMode;
+      old.finalizedMode != finalizedMode ||
+      old.selectionAngle != selectionAngle;
 }
