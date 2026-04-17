@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'theme/app_theme.dart';
 import 'app_router.dart';
@@ -11,7 +13,6 @@ import 'services/update_service.dart';
 final FlutterLocalNotificationsPlugin notificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
-// ─── CANAL DE NOTIFICACIÓN ───────────────────────────────────
 const _channel = AndroidNotificationChannel(
   'update_channel',
   'Actualizaciones',
@@ -19,105 +20,99 @@ const _channel = AndroidNotificationChannel(
   importance: Importance.high,
 );
 
-// ─── BACKGROUND CALLBACK ─────────────────────────────────────
+// Handler FCM cuando app está cerrada (debe ser top-level)
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+}
+
+// Workmanager fallback
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
-    // OBLIGATORIO en Flutter 3.x: inicializar bindings y plugins
     WidgetsFlutterBinding.ensureInitialized();
     final notifs = FlutterLocalNotificationsPlugin();
-    const init = InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'));
-    await notifs.initialize(init);
-
-    // Crear canal (idempotente)
+    await notifs.initialize(const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher')));
     await notifs
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_channel);
-
     await _checkAndNotify(notifs);
     return true;
   });
 }
 
-// ─── VERIFICAR Y NOTIFICAR ───────────────────────────────────
 Future<void> _checkAndNotify(FlutterLocalNotificationsPlugin notifs) async {
   try {
     final update = await UpdateService.checkForUpdates();
     if (!update.isAvailable) return;
-
     final prefs = await SharedPreferences.getInstance();
     if (update.version == (prefs.getString('last_notified') ?? '')) return;
-
-    await notifs.show(
-      0,
-      '💀 Three Skulls v${update.version} disponible',
-      'Toca para actualizar',
-      NotificationDetails(
-        android: AndroidNotificationDetails(
+    await notifs.show(0, '💀 Three Skulls v${update.version} disponible',
+        'Toca para actualizar',
+        NotificationDetails(android: AndroidNotificationDetails(
           _channel.id, _channel.name,
-          importance: Importance.high,
-          priority: Priority.high,
-          icon: '@mipmap/ic_launcher',
-        ),
-      ),
-    );
-
+          importance: Importance.high, priority: Priority.high,
+          icon: '@mipmap/ic_launcher')));
     await prefs.setString('last_notified', update.version);
-  } catch (e) {
-    debugPrint('Background check error: $e');
-  }
+  } catch (e) { debugPrint('Update check: $e'); }
 }
 
-// ─── MAIN ────────────────────────────────────────────────────
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Inicializar notificaciones
+  await Firebase.initializeApp();
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
   await notificationsPlugin.initialize(
     const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher')),
-    onDidReceiveNotificationResponse: (response) async {
-      try {
-        final update = await UpdateService.checkForUpdates();
-        if (update.isAvailable) {
-          await UpdateService.downloadAndInstall(update);
-        }
-      } catch (e) {
-        debugPrint('Install error: $e');
-      }
+    onDidReceiveNotificationResponse: (r) async {
+      final update = await UpdateService.checkForUpdates();
+      if (update.isAvailable) await UpdateService.downloadAndInstall(update);
     },
   );
 
-  // Crear canal de notificación
   final android = notificationsPlugin
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
   await android?.createNotificationChannel(_channel);
-  // Solicitar permiso (Android 13+)
   await android?.requestNotificationsPermission();
 
-  // Workmanager
-  await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
-  await Workmanager().registerPeriodicTask(
-    'ts_update_check',
-    'checkUpdate',
-    frequency: const Duration(hours: 6),
-    constraints: Constraints(networkType: NetworkType.connected),
-    existingWorkPolicy: ExistingWorkPolicy.keep,
-  );
+  // FCM setup
+  final fcm = FirebaseMessaging.instance;
+  await fcm.requestPermission(alert: true, badge: true, sound: true);
+  await fcm.subscribeToTopic('updates'); // recibir notificaciones del workflow
 
-  // Verificar al abrir la app
+  // App en primer plano: mostrar notificación local
+  FirebaseMessaging.onMessage.listen((msg) {
+    final n = msg.notification;
+    if (n == null) return;
+    notificationsPlugin.show(n.hashCode, n.title, n.body,
+        NotificationDetails(android: AndroidNotificationDetails(
+          _channel.id, _channel.name,
+          importance: Importance.high, priority: Priority.high,
+          icon: '@mipmap/ic_launcher')));
+  });
+
+  // Toque en notificación (background/cerrada) → instalar
+  FirebaseMessaging.onMessageOpenedApp.listen((_) async {
+    final update = await UpdateService.checkForUpdates();
+    if (update.isAvailable) await UpdateService.downloadAndInstall(update);
+  });
+
+  // Workmanager como fallback
+  await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
+  await Workmanager().registerPeriodicTask('ts_update', 'checkUpdate',
+      frequency: const Duration(hours: 6),
+      constraints: Constraints(networkType: NetworkType.connected),
+      existingWorkPolicy: ExistingWorkPolicy.keep);
+
   _checkAndNotify(notificationsPlugin);
 
   await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
+    DeviceOrientation.portraitUp, DeviceOrientation.portraitDown,
+    DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight,
   ]);
-
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
@@ -130,7 +125,6 @@ void main() async {
 
 class ThreeSkullsApp extends StatelessWidget {
   const ThreeSkullsApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
