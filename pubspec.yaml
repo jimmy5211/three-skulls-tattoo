@@ -38,6 +38,7 @@ dependencies:
 
   # 📤 EXPORTAR / COMPARTIR
   share_plus: ^10.0.0
+  gal: ^1.1.0  # Guardar en galería
 
   # 🔥 NUEVO (UPDATE SYSTEM)
   dio: ^5.4.0
