@@ -2371,14 +2371,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
           // ── Resize handle de selección ────────────────────
           if (_isResizingHandle && _resizeStartBounds != null && _resizeHandleStart != null) {
-            // Handle 8 = rotación (va primero para evitar calcular bounds)
+            // Handle 8 = rotación visual (no destructiva)
+            // Solo actualizamos _selectionAngle para la vista.
+            // Los puntos se rotan geométricamente al soltar (onScaleEnd).
             if (_activeResizeHandle == 8) {
               final center = _resizeStartBounds!.center;
               final angle = (cp - center).direction;
               final delta = angle - _selectionStartRotation;
-              _controller.rotateSelected(center, delta);
               _selectionStartRotation = angle;
               _selectionAngle += delta;
+              setState(() {});
               return;
             }
 
@@ -2462,6 +2464,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
           if (_isResizingHandle) {
+            // Handle 8 = rotación: al soltar, aplicar la rotación total a los puntos
+            if (_activeResizeHandle == 8 &&
+                _resizeStartBounds != null &&
+                _selectionAngle != 0.0) {
+              _controller.saveSelectionMoveToHistory();
+              _controller.rotateSelected(
+                _resizeStartBounds!.center,
+                _selectionAngle,
+              );
+              _selectionAngle = 0.0; // reset visual tras aplicar
+            }
             setState(() {
               _isResizingHandle = false;
               _activeResizeHandle = -1;
