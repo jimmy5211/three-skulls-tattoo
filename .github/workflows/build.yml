@@ -98,11 +98,20 @@ jobs:
 
       - name: Update JSONBin version
         run: |
+          # Leer las notas de la versión del archivo RELEASE_NOTES.md
+          NOTES=$(python3 -c "
+import json, re
+with open('RELEASE_NOTES.md', 'r') as f:
+    content = f.read()
+# Extraer líneas con guión como lista
+lines = [l.strip().lstrip('- ').strip() for l in content.split('\n') if l.strip().startswith('-')]
+print(json.dumps(lines))
+")
           curl -X PUT \
             https://api.jsonbin.io/v3/b/69b8b65eaa77b81da9ef4f41 \
             -H 'Content-Type: application/json' \
             -H 'X-Master-Key: ${{ secrets.JSONBIN_API_KEY }}' \
-            -d "{\"version\": \"1.0.${{ github.run_number }}\", \"versionCode\": $((1000 + ${{ github.run_number }})), \"downloadUrl\": \"https://github.com/jimmy5211/three-skulls-tattoo/releases/download/v1.0.${{ github.run_number }}/app-release.apk\", \"mandatory\": false}"
+            -d "{\"version\": \"1.0.${{ github.run_number }}\", \"versionCode\": $((1000 + ${{ github.run_number }})), \"downloadUrl\": \"https://github.com/jimmy5211/three-skulls-tattoo/releases/download/v1.0.${{ github.run_number }}/app-release.apk\", \"mandatory\": false, \"releaseNotes\": $NOTES}"
 
       - name: Send FCM push notification
         env:
