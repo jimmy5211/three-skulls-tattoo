@@ -254,20 +254,10 @@ class CanvasPainter extends CustomPainter {
         .where((img) => img.layerId == layer.id)
         .toList();
 
-    // ⚠️ CRÍTICO: BlendMode.clear SOLO funciona correctamente cuando se
-    // dibuja directamente en el canvas del saveLayer.
-    // PictureRecorder NO soporta BlendMode.clear en todos los GPUs Android —
-    // en algunos devuelve blanco en vez de transparente.
-    // Solución: si la capa tiene trazos borradores, dibujar todo directo.
     final hasEraserStrokes =
         layer.strokes.any((s) => s.type == StrokeType.eraser);
-    final drawDirect =
-        hasEraserStrokes || layer.id == activeLayerId || layerImages.isNotEmpty;
 
-    // FIX BORRADOR: saveLayer con Paint() limpio garantiza que
-    // BlendMode.clear funcione en todos los GPUs Android.
-    // Paint()..color = white interfería con el clear.
-    // Opacity se aplica via colorFilter si es necesario.
+    // Capa exterior — opacidad de la capa
     final layerPaint = layer.opacity < 1.0
         ? (Paint()
           ..colorFilter = ColorFilter.mode(
@@ -277,24 +267,31 @@ class CanvasPainter extends CustomPainter {
         : Paint();
     canvas.saveLayer(rect, layerPaint);
 
-    // 1. Imágenes de esta capa (siempre debajo de strokes)
+    // ── 1. IMÁGENES: se dibujan en la capa exterior ──────────
+    // FUERA del saveLayer de trazos, para que el borrador
+    // de trazos NO las afecte. Las imágenes tienen su propio
+    // sistema de borrado (EraseStroke en CanvasImageModel).
     for (final img in layerImages) {
       _drawCanvasImage(canvas, img);
     }
 
-    if (drawDirect) {
-      // 2a. Dibujo directo — borrador funciona con BlendMode.clear
-      // Primero strokes normales, luego borrador (para que corte todo)
+    // ── 2. TRAZOS: en su propio saveLayer aislado ────────────
+    // El borrador (dstOut) solo corta trazos, nunca imágenes importadas.
+    final needsDirectDraw = hasEraserStrokes || layer.id == activeLayerId;
+
+    canvas.saveLayer(rect, Paint()); // sub-capa solo para trazos
+
+    if (needsDirectDraw) {
+      // Dibujar directo: primero trazos normales, luego borrador
       for (final stroke in layer.strokes) {
         if (stroke.type != StrokeType.eraser) _drawStroke(canvas, stroke);
       }
       for (final stroke in layer.strokes) {
         if (stroke.type == StrokeType.eraser) _drawStroke(canvas, stroke);
       }
-      // Invalidar cache si tiene borrador (no se puede cachear correctamente)
       if (hasEraserStrokes) controller.invalidateLayerCache(layer.id);
     } else {
-      // 2b. Sin borrador: usar caché para performance
+      // Sin borrador: usar caché para performance
       final cached = controller.getLayerCache(layer.id);
       if (cached != null) {
         canvas.drawPicture(cached);
@@ -312,14 +309,15 @@ class CanvasPainter extends CustomPainter {
       }
     }
 
-    // 3. Stroke activo en tiempo real (siempre directo)
+    // Stroke activo en tiempo real
     if (layer.id == activeLayerId) {
       if (currentStroke != null) _drawStroke(canvas, currentStroke!);
       if (currentMirrorStroke != null)
         _drawStroke(canvas, currentMirrorStroke!);
     }
 
-    canvas.restore();
+    canvas.restore(); // fin sub-capa de trazos
+    canvas.restore(); // fin capa exterior
   }
 
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
