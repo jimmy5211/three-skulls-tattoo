@@ -18,6 +18,9 @@ download_url = (
     f'v{version}/app-release.apk'
 )
 
+# Strip por si el secret tiene espacios/newlines
+api_key = os.environ['JSONBIN_API_KEY'].strip()
+
 payload = json.dumps({
     'version': version,
     'versionCode': version_code,
@@ -32,7 +35,7 @@ req = urllib.request.Request(
     method='PUT',
     headers={
         'Content-Type': 'application/json',
-        'X-Master-Key': os.environ['JSONBIN_API_KEY'],
+        'X-Master-Key': api_key,
     }
 )
 resp = urllib.request.urlopen(req)
