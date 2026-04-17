@@ -8,101 +8,141 @@ import 'theme/app_theme.dart';
 import 'app_router.dart';
 import 'services/update_service.dart';
 
-// 🔔 Notificaciones
-final FlutterLocalNotificationsPlugin notificationsPlugin =
-    FlutterLocalNotificationsPlugin();
-
-// 🔄 BACKGROUND (fuera de la clase, requerido por Workmanager)
+// ─── BACKGROUND ISOLATE ──────────────────────────────────────
+// @pragma es obligatorio en release builds — sin esto Workmanager
+// no encuentra la función en el árbol de símbolos
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
-    await _checkForUpdateBackground();
+    // CRÍTICO: el callback corre en un isolate separado.
+    // Flutter y todos los plugins deben reinicializarse aquí.
+    WidgetsFlutterBinding.ensureInitialized();
+
+    // Reinicializar el plugin de notificaciones en este isolate
+    final notifs = FlutterLocalNotificationsPlugin();
+    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    await notifs.initialize(
+        const InitializationSettings(android: androidInit));
+
+    // Crear el canal (requerido Android 8+, idempotente si ya existe)
+    final androidPlugin = notifs
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    await androidPlugin?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'update_channel',
+        'Actualizaciones',
+        description: 'Notificaciones de nuevas versiones de Three Skulls',
+        importance: Importance.high,
+      ),
+    );
+
+    // Verificar y notificar si hay update
+    await _checkAndNotify(notifs);
     return Future.value(true);
   });
 }
 
-// 🔍 Verificar update en background
-Future<void> _checkForUpdateBackground() async {
+// ─── LÓGICA DE VERIFICACIÓN ──────────────────────────────────
+Future<void> _checkAndNotify(FlutterLocalNotificationsPlugin notifs) async {
   try {
     final update = await UpdateService.checkForUpdates();
+    if (!update.isAvailable) return;
+
     final prefs = await SharedPreferences.getInstance();
     final lastNotified = prefs.getString('last_notified_version') ?? '';
 
-    if (update.isAvailable && update.version != lastNotified) {
-      await _showUpdateNotification(update);
-      await prefs.setString('last_notified_version', update.version);
-    }
+    // Solo notificar si es una versión nueva que no hemos notificado antes
+    if (update.version == lastNotified) return;
+
+    await notifs.show(
+      0,
+      '💀 Three Skulls v${update.version} disponible',
+      'Toca para actualizar la app',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'update_channel',
+          'Actualizaciones',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+      ),
+    );
+
+    await prefs.setString('last_notified_version', update.version);
   } catch (e) {
-    print('Error verificando actualización en background: $e');
+    // Silencioso en background — no hay UI para mostrar errores
+    debugPrint('Background update check error: $e');
   }
 }
 
-// 🔔 Mostrar notificación de update
-Future<void> _showUpdateNotification(UpdateInfo update) async {
-  const androidDetails = AndroidNotificationDetails(
-    'update_channel',
-    'Actualizaciones',
-    channelDescription: 'Notificaciones de nuevas versiones',
-    importance: Importance.high,
-    priority: Priority.high,
-    icon: '@mipmap/ic_launcher',
-  );
+// ─── NOTIFICACIONES (instancia global para el main isolate) ──
+final FlutterLocalNotificationsPlugin notificationsPlugin =
+    FlutterLocalNotificationsPlugin();
 
-  const details = NotificationDetails(android: androidDetails);
-
-  await notificationsPlugin.show(
-    0,
-    '💀 Nueva versión ${update.version} disponible',
-    'Toca para actualizar Three Skulls Tattoo',
-    details,
-  );
-}
-
+// ─── MAIN ────────────────────────────────────────────────────
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 🔔 Inicializar notificaciones
+  // 1. Inicializar notificaciones en el main isolate
   const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-  const initSettings = InitializationSettings(android: androidInit);
-
   await notificationsPlugin.initialize(
-    initSettings,
+    const InitializationSettings(android: androidInit),
     onDidReceiveNotificationResponse: (response) async {
-      // El usuario tocó la notificación → verificar y descargar
+      // Usuario tocó la notificación → descargar e instalar
       try {
         final update = await UpdateService.checkForUpdates();
         if (update.isAvailable) {
           await UpdateService.downloadAndInstall(update);
         }
       } catch (e) {
-        print('Error al instalar desde notificación: $e');
+        debugPrint('Install from notification error: $e');
       }
     },
   );
 
-  // Solicitar permiso de notificaciones en Android 13+
-  await notificationsPlugin
+  // 2. Crear canal de notificación (Android 8+)
+  final androidPlugin = notificationsPlugin
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.requestNotificationsPermission();
+          AndroidFlutterLocalNotificationsPlugin>();
 
-  // ⚙️ Workmanager — verificar updates en background cada 6 horas
-  await Workmanager().initialize(
-    callbackDispatcher,
-    isInDebugMode: false,
+  await androidPlugin?.createNotificationChannel(
+    const AndroidNotificationChannel(
+      'update_channel',
+      'Actualizaciones',
+      description: 'Notificaciones de nuevas versiones de Three Skulls',
+      importance: Importance.high,
+    ),
   );
 
+  // 3. Solicitar permiso de notificaciones (Android 13+)
+  await androidPlugin?.requestNotificationsPermission();
+
+  // 4. Inicializar Workmanager
+  await Workmanager().initialize(
+    callbackDispatcher,
+    isInDebugMode: false, // cambiar a true para ver logs en Logcat
+  );
+
+  // 5. Registrar tarea periódica (mínimo real en Android: 15 min)
   await Workmanager().registerPeriodicTask(
-    'updateTask',
+    'three_skulls_update_check',
     'checkUpdate',
     frequency: const Duration(hours: 6),
     constraints: Constraints(
-      networkType: NetworkType.connected, // solo con internet
+      networkType: NetworkType.connected,
     ),
     existingWorkPolicy: ExistingWorkPolicy.keep,
+    backoffPolicy: BackoffPolicy.linear,
+    backoffPolicyDelay: const Duration(minutes: 15),
   );
 
-  // 🔒 Orientación y UI
+  // 6. Verificar update inmediatamente al abrir la app
+  // (no esperar al background task para la primera vez)
+  _checkOnLaunch();
+
+  // 7. Orientación y sistema UI
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -122,6 +162,38 @@ void main() async {
   runApp(const ThreeSkullsApp());
 }
 
+// Verificación silenciosa al arrancar la app
+Future<void> _checkOnLaunch() async {
+  try {
+    final update = await UpdateService.checkForUpdates();
+    if (!update.isAvailable) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final lastNotified = prefs.getString('last_notified_version') ?? '';
+    if (update.version == lastNotified) return;
+
+    await notificationsPlugin.show(
+      0,
+      '💀 Three Skulls v${update.version} disponible',
+      'Toca para actualizar la app',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'update_channel',
+          'Actualizaciones',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+      ),
+    );
+
+    await prefs.setString('last_notified_version', update.version);
+  } catch (e) {
+    debugPrint('Launch update check error: $e');
+  }
+}
+
+// ─── APP ─────────────────────────────────────────────────────
 class ThreeSkullsApp extends StatelessWidget {
   const ThreeSkullsApp({super.key});
 
