@@ -262,10 +262,18 @@ class CanvasPainter extends CustomPainter {
     final drawDirect =
         hasEraserStrokes || layer.id == activeLayerId || layerImages.isNotEmpty;
 
-    canvas.saveLayer(
-      rect,
-      Paint()..color = Colors.white.withOpacity(layer.opacity),
-    );
+    // FIX BORRADOR: saveLayer con Paint() limpio garantiza que
+    // BlendMode.clear funcione en todos los GPUs Android.
+    // Paint()..color = white interfería con el clear.
+    // Opacity se aplica via colorFilter si es necesario.
+    final layerPaint = layer.opacity < 1.0
+        ? (Paint()
+          ..colorFilter = ColorFilter.mode(
+            Colors.white.withOpacity(layer.opacity),
+            BlendMode.dstIn,
+          ))
+        : Paint();
+    canvas.saveLayer(rect, layerPaint);
 
     // 1. Imágenes de esta capa (siempre debajo de strokes)
     for (final img in layerImages) {
