@@ -516,6 +516,14 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setCanvasImageRotation(String id, double rotation) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    canvasImages[idx].rotation = rotation;
+    _imagesChanged = true;
+    notifyListeners();
+  }
+
   void rotateSelected(Offset center, double angle) {
     if (selectedStrokeIndices.isEmpty) return;
     final idx = layers.indexWhere((l) => l.id == activeLayerId);
