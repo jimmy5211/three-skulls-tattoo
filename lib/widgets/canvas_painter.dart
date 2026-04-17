@@ -106,20 +106,24 @@ class CanvasPainter extends CustomPainter {
     final src = Rect.fromLTWH(
       0, 0, img.image.width.toDouble(), img.image.height.toDouble(),
     );
+    final cx = img.center.dx;
+    final cy = img.center.dy;
 
     canvas.save();
+
+    // Aplicar rotación alrededor del centro
+    if (img.rotation != 0.0) {
+      canvas.translate(cx, cy);
+      canvas.rotate(img.rotation);
+      canvas.translate(-cx, -cy);
+    }
+
     canvas.clipRect(img.rect);
 
     // Aplicar flip si es necesario
     if (img.flipX || img.flipY) {
-      // Flip alrededor del centro de la imagen
-      final cx = img.rect.center.dx;
-      final cy = img.rect.center.dy;
-      // 1. Mover origen al centro de la imagen
       canvas.translate(cx, cy);
-      // 2. Aplicar escala de flip
       canvas.scale(img.flipX ? -1.0 : 1.0, img.flipY ? -1.0 : 1.0);
-      // 3. Restaurar origen
       canvas.translate(-cx, -cy);
     }
 
@@ -141,21 +145,43 @@ class CanvasPainter extends CustomPainter {
       canvas.restore();
     }
 
-    canvas.restore(); // restore clipRect + flip
+    canvas.restore(); // restore rotación + clip + flip
 
+    // Handles FUERA del clip pero CON rotación
     if (img.isSelected) {
+      canvas.save();
+      // Aplicar misma rotación para los handles
+      canvas.translate(cx, cy);
+      canvas.rotate(img.rotation);
+      canvas.translate(-cx, -cy);
+
+      // Borde
       canvas.drawRect(img.rect,
           Paint()..color = const Color(0xFF4A90E2)..strokeWidth = 2.5..style = PaintingStyle.stroke);
+
       final hp = Paint()..color = const Color(0xFF4A90E2)..style = PaintingStyle.fill;
       final hb = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 2.0;
-      // Handles más grandes para mejor usabilidad
+
+      // 4 handles de esquina (visual 10px, hit area manejado en screen)
       for (final c in [img.rect.topLeft, img.rect.topRight,
                        img.rect.bottomLeft, img.rect.bottomRight]) {
         canvas.drawCircle(c, 10.0, hp);
         canvas.drawCircle(c, 10.0, hb);
       }
+
+      // Handle de rotación (rojo, arriba del centro)
+      final rotHandleLocal = img.rect.topCenter - const Offset(0, 36);
+      canvas.drawLine(img.rect.topCenter, rotHandleLocal,
+          Paint()..color = Colors.white..strokeWidth = 1.5);
+      canvas.drawCircle(rotHandleLocal, 12.0,
+          Paint()..color = const Color(0xFFE74C3C)..style = PaintingStyle.fill);
+      canvas.drawCircle(rotHandleLocal, 12.0, hb);
+
+      canvas.restore();
     }
   }
+
+
 
   void _drawEraseStroke(Canvas canvas, EraseStroke erase) {
     if (erase.points.isEmpty) return;
