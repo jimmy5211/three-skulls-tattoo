@@ -1334,7 +1334,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         min: 0.0,
                         max: 1.0,
                         onChanged: (v) => setState(
-                            () => _controller.activeBrush.hardness = v),
+                            () => _controller.setBrushHardness(v)),
                       ),
                     ),
                   ),
