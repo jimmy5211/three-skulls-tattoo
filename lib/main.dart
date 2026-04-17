@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:workmanager/workmanager.dart';
@@ -14,7 +15,6 @@ import 'confirm_update_dialog.dart';
 final FlutterLocalNotificationsPlugin notificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
-// Notifier global: cuando se activa, muestra ConfirmUpdateDialog
 final ValueNotifier<UpdateInfo?> pendingUpdateNotifier =
     ValueNotifier<UpdateInfo?>(null);
 
@@ -46,42 +46,36 @@ void callbackDispatcher() {
   });
 }
 
+/// Verificar update y mostrar notificación local con payload de datos
 Future<void> _checkAndNotify(FlutterLocalNotificationsPlugin notifs) async {
   try {
     final update = await UpdateService.checkForUpdates();
     if (!update.isAvailable) return;
+
     final prefs = await SharedPreferences.getInstance();
     if (update.version == (prefs.getString('last_notified') ?? '')) return;
-    await notifs.show(0,
-        '💀 Three Skulls v${update.version} disponible',
-        'Toca para descargar la actualización',
-        NotificationDetails(android: AndroidNotificationDetails(
+
+    // Guardar datos en el payload — así al tocar la notificación
+    // no necesitamos consultar nada, ya tenemos todo
+    await notifs.show(
+      0,
+      '💀 Three Skulls v${update.version} disponible',
+      'Toca para actualizar',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
           _channel.id, _channel.name,
-          importance: Importance.high, priority: Priority.high,
-          icon: '@mipmap/ic_launcher')));
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+      ),
+      payload: update.toJson(), // ← datos serializados
+    );
+
     await prefs.setString('last_notified', update.version);
   } catch (e) {
     debugPrint('Background check: $e');
   }
-}
-
-/// Crea un UpdateInfo desde los datos del mensaje FCM
-UpdateInfo? _updateInfoFromFCM(RemoteMessage message) {
-  final data = message.data;
-  final version = data['version'];
-  final downloadUrl = data['downloadUrl'];
-  if (version == null || downloadUrl == null) return null;
-  final notes = (data['notes'] as String?)
-      ?.split(' • ')
-      .where((s) => s.isNotEmpty)
-      .toList() ?? [];
-  return UpdateInfo(
-    version: version,
-    downloadUrl: downloadUrl,
-    releaseNotes: notes,
-    isAvailable: true,
-    mandatory: data['mandatory'] == 'true',
-  );
 }
 
 void main() async {
@@ -93,12 +87,16 @@ void main() async {
   await notificationsPlugin.initialize(
     const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher')),
-    onDidReceiveNotificationResponse: (r) async {
-      // Toque en notificación local → buscar update y mostrar confirmación
+    onDidReceiveNotificationResponse: (response) async {
+      // ✅ Usar payload directo — no necesita red
       try {
-        final update = await UpdateService.checkForUpdates();
-        if (update.isAvailable) {
+        if (response.payload != null && response.payload!.isNotEmpty) {
+          final update = UpdateInfo.fromJson(response.payload!);
           pendingUpdateNotifier.value = update;
+        } else {
+          // Fallback: consultar GitHub
+          final update = await UpdateService.checkForUpdates();
+          if (update.isAvailable) pendingUpdateNotifier.value = update;
         }
       } catch (e) {
         debugPrint('Notification tap: $e');
@@ -112,47 +110,81 @@ void main() async {
   await android?.createNotificationChannel(_channel);
   await android?.requestNotificationsPermission();
 
-  // FCM setup
+  // FCM
   final fcm = FirebaseMessaging.instance;
   await fcm.requestPermission(alert: true, badge: true, sound: true);
   await fcm.subscribeToTopic('updates');
 
-  // App en primer plano: mostrar notificación local
-  FirebaseMessaging.onMessage.listen((msg) {
+  // App en primer plano → mostrar notificación local con payload
+  FirebaseMessaging.onMessage.listen((msg) async {
     final n = msg.notification;
     if (n == null) return;
-    notificationsPlugin.show(0, n.title, n.body,
-        NotificationDetails(android: AndroidNotificationDetails(
-          _channel.id, _channel.name,
-          importance: Importance.high, priority: Priority.high,
-          icon: '@mipmap/ic_launcher')));
+    // Intentar construir UpdateInfo desde datos FCM
+    final data = msg.data;
+    UpdateInfo? update;
+    if (data['version'] != null && data['downloadUrl'] != null) {
+      update = UpdateInfo(
+        version: data['version']!,
+        downloadUrl: data['downloadUrl']!,
+        releaseNotes: (data['notes'] as String?)
+                ?.split(' • ')
+                .where((s) => s.isNotEmpty)
+                .toList() ?? [],
+        isAvailable: true,
+      );
+    }
+    await notificationsPlugin.show(
+      0, n.title, n.body,
+      NotificationDetails(android: AndroidNotificationDetails(
+        _channel.id, _channel.name,
+        importance: Importance.high, priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      )),
+      payload: update?.toJson(),
+    );
   });
 
-  // Toque en notificación FCM (app en background)
+  // App background → usuario tocó notificación FCM
   FirebaseMessaging.onMessageOpenedApp.listen((msg) {
-    final update = _updateInfoFromFCM(msg);
-    if (update != null) {
-      pendingUpdateNotifier.value = update;
+    final data = msg.data;
+    if (data['version'] != null && data['downloadUrl'] != null) {
+      pendingUpdateNotifier.value = UpdateInfo(
+        version: data['version']!,
+        downloadUrl: data['downloadUrl']!,
+        releaseNotes: (data['notes'] as String?)
+                ?.split(' • ')
+                .where((s) => s.isNotEmpty)
+                .toList() ?? [],
+        isAvailable: true,
+      );
     }
   });
 
-  // App abierta desde cero por notificación FCM
+  // App cerrada → abierta por notificación FCM
   final initialMessage = await fcm.getInitialMessage();
   if (initialMessage != null) {
-    final update = _updateInfoFromFCM(initialMessage);
-    if (update != null) {
-      pendingUpdateNotifier.value = update;
+    final data = initialMessage.data;
+    if (data['version'] != null && data['downloadUrl'] != null) {
+      pendingUpdateNotifier.value = UpdateInfo(
+        version: data['version']!,
+        downloadUrl: data['downloadUrl']!,
+        releaseNotes: (data['notes'] as String?)
+                ?.split(' • ')
+                .where((s) => s.isNotEmpty)
+                .toList() ?? [],
+        isAvailable: true,
+      );
     }
   }
 
-  // Workmanager fallback
+  // Workmanager
   await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
   await Workmanager().registerPeriodicTask('ts_update', 'checkUpdate',
       frequency: const Duration(hours: 6),
       constraints: Constraints(networkType: NetworkType.connected),
       existingWorkPolicy: ExistingWorkPolicy.keep);
 
-  // Verificar al abrir la app
+  // Verificar al abrir
   _checkAndNotify(notificationsPlugin);
 
   await SystemChrome.setPreferredOrientations([
@@ -186,7 +218,6 @@ class ThreeSkullsApp extends StatelessWidget {
   }
 }
 
-/// Escucha pendingUpdateNotifier y muestra ConfirmUpdateDialog
 class _UpdateListener extends StatefulWidget {
   final Widget child;
   const _UpdateListener({required this.child});
@@ -202,6 +233,10 @@ class _UpdateListenerState extends State<_UpdateListener> {
   void initState() {
     super.initState();
     pendingUpdateNotifier.addListener(_onUpdate);
+    // ✅ Fix: verificar si ya hay un update pendiente al iniciar
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (pendingUpdateNotifier.value != null) _onUpdate();
+    });
   }
 
   @override
@@ -216,10 +251,7 @@ class _UpdateListenerState extends State<_UpdateListener> {
     _showing = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ConfirmUpdateDialog.show(
-        Navigator.of(context, rootNavigator: true).context,
-        update,
-      ).then((_) {
+      ConfirmUpdateDialog.show(context, update).then((_) {
         _showing = false;
         pendingUpdateNotifier.value = null;
       });
