@@ -12,14 +12,39 @@ creds = service_account.Credentials.from_service_account_info(
 creds.refresh(google.auth.transport.requests.Request())
 
 version = '1.0.' + os.environ['RUN_NUMBER']
+download_url = (
+    'https://github.com/jimmy5211/three-skulls-tattoo/releases/download/'
+    f'v{version}/app-release.apk'
+)
+
+# Leer notas de versión
+try:
+    with open('RELEASE_NOTES.md', 'r') as f:
+        lines = [l.strip().lstrip('- ').strip()
+                 for l in f.read().split('\n')
+                 if l.strip().startswith('-')]
+    notes = ' • '.join(lines[:4]) if lines else 'Mejoras y bug fixes'
+except:
+    notes = 'Mejoras y bug fixes'
+
 body = json.dumps({
     'message': {
         'topic': 'updates',
         'notification': {
-            'title': '💀 Three Skulls ' + version + ' disponible',
-            'body': 'Nueva versión lista. Toca para actualizar.'
+            'title': f'💀 Three Skulls {version} disponible',
+            'body': notes[:100],
         },
-        'android': {'priority': 'HIGH'}
+        # data: disponible aunque la app esté cerrada
+        'data': {
+            'version': version,
+            'downloadUrl': download_url,
+            'notes': notes,
+            'type': 'update',
+        },
+        'android': {
+            'priority': 'HIGH',
+            'notification': {'click_action': 'FLUTTER_NOTIFICATION_CLICK'},
+        }
     }
 }).encode('utf-8')
 
@@ -28,8 +53,8 @@ req = urllib.request.Request(
     data=body,
     headers={
         'Authorization': 'Bearer ' + creds.token,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
     }
 )
 resp = urllib.request.urlopen(req)
-print('FCM enviado:', resp.status)
+print(f'FCM sent: {resp.status} | version: {version}')
