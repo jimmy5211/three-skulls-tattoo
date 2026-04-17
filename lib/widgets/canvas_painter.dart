@@ -316,39 +316,50 @@ class CanvasPainter extends CustomPainter {
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
-      // Técnica correcta para soft eraser con hardness en Flutter:
-      //
-      // NO se aplica dstOut en el Paint del círculo — eso dibuja negro.
-      // En cambio se usa saveLayer(dstOut) + gradiente BLANCO adentro:
-      //
-      // 1. saveLayer(rect, Paint()..blendMode = dstOut)
-      //    → crea capa temporal, composición será: outer × (1 - src.alpha)
-      // 2. Adentro: dibujar círculo con gradiente blanco (alpha 1→0 según hardness)
-      //    → blanco opaco = alpha 1 → borra totalmente (outer × 0 = 0)
-      //    → blanco transparente = alpha 0 → no borra (outer × 1 = outer)
-      // 3. restore() → aplica el dstOut al componer la capa temporal
-      //
-      // hardness=1.0 → fade empieza en el borde → borrado uniforme (duro)
-      // hardness=0.5 → fade empieza en la mitad → suave
-      // hardness=0.0 → fade desde el centro → muy difuso
       final hardness = stroke.hardness.clamp(0.0, 1.0);
       final radius = stroke.strokeWidth.toDouble();
 
-      for (final point in stroke.points) {
-        final rect = Rect.fromCircle(center: point, radius: radius);
-        // saveLayer con dstOut: al hacer restore(), todo lo dibujado adentro
-        // "recorta" el layer exterior según su alpha
-        canvas.saveLayer(rect, Paint()..blendMode = BlendMode.dstOut);
-        final gradientPaint = Paint()
-          ..shader = RadialGradient(
-            colors: [
-              Colors.white,                   // centro: alpha=1 → borra 100%
-              Colors.white.withOpacity(0.0),  // borde: alpha=0 → no borra
-            ],
-            stops: [hardness, 1.0],
-          ).createShader(rect);
-        canvas.drawCircle(point, radius, gradientPaint);
-        canvas.restore(); // aplica dstOut al componer
+      if (hardness >= 0.99) {
+        // ── Borrador DURO (hardness ~100%) ─────────────────
+        // Path continuo con dstOut — rápido y preciso
+        final paint = Paint()
+          ..blendMode = BlendMode.dstOut
+          ..color = Colors.white
+          ..strokeWidth = radius * 2
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke;
+        _drawSmoothStroke(canvas, stroke, paint);
+      } else {
+        // ── Borrador SUAVE (hardness < 100%) ───────────────
+        // UN solo saveLayer para TODOS los círculos del trazo.
+        // (No uno por punto — eso sería O(n) saveLayer = muy lento)
+        //
+        // El saveLayer se compone con dstOut al hacer restore():
+        //   outer_new = outer_old × (1 - src.alpha)
+        // Donde src (contenido del inner layer) es el gradiente blanco:
+        //   alpha=1 en centro → borra 100%
+        //   alpha=0 en borde  → no borra
+        final bounds = Rect.fromLTWH(
+          0, 0,
+          controller.canvasSize.width,
+          controller.canvasSize.height,
+        );
+        canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
+
+        for (final point in stroke.points) {
+          final rect = Rect.fromCircle(center: point, radius: radius);
+          final gradientPaint = Paint()
+            ..shader = RadialGradient(
+              colors: [
+                Colors.white,                   // centro: alpha=1 → borra 100%
+                Colors.white.withOpacity(0.0),  // borde: alpha=0 → no borra
+              ],
+              stops: [hardness, 1.0],
+            ).createShader(rect);
+          canvas.drawCircle(point, radius, gradientPaint);
+        }
+
+        canvas.restore(); // compone el inner layer sobre outer con dstOut
       }
       return;
     }
