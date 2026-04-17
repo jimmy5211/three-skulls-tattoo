@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../theme/app_theme.dart';
 import '../services/update_service.dart';
 import '../update_download_screen.dart';
+import '../confirm_update_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -439,20 +440,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showUpdateDialog(UpdateInfo updateInfo) {
-    showDialog(
-      context: context,
-      barrierDismissible: !updateInfo.mandatory,
-      builder: (ctx) => _NewVersionDialogWidget(
-        updateInfo: updateInfo,
-        onUpdate: () {
-          Navigator.pop(ctx);
-          Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => UpdateDownloadScreen(updateInfo: updateInfo),
-          ));
-        },
-        onDismiss: () => Navigator.pop(ctx),
-      ),
-    );
+    ConfirmUpdateDialog.show(context, updateInfo);
   }
 
   Future<void> _downloadAndInstall(String url) async {
