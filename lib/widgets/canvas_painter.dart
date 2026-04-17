@@ -186,7 +186,8 @@ class CanvasPainter extends CustomPainter {
   void _drawEraseStroke(Canvas canvas, EraseStroke erase) {
     if (erase.points.isEmpty) return;
     final erasePaint = Paint()
-      ..blendMode = BlendMode.clear
+      ..blendMode = BlendMode.dstOut
+      ..color = Colors.white
       ..strokeWidth = erase.radius * 2
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
@@ -197,7 +198,8 @@ class CanvasPainter extends CustomPainter {
         erase.points.first,
         erase.radius,
         Paint()
-          ..blendMode = BlendMode.clear
+          ..blendMode = BlendMode.dstOut
+          ..color = Colors.white
           ..style = PaintingStyle.fill,
       );
       return;
@@ -323,8 +325,12 @@ class CanvasPainter extends CustomPainter {
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
+      // BlendMode.dstOut: resultado = dst * (1 - src.alpha)
+      // Con color blanco (alpha=1): resultado = 0 = transparente
+      // Más compatible que BlendMode.clear en GPUs Android
       final paint = Paint()
-        ..blendMode = BlendMode.clear
+        ..blendMode = BlendMode.dstOut
+        ..color = Colors.white
         ..strokeWidth = stroke.strokeWidth * 2
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
