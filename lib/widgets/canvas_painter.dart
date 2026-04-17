@@ -316,30 +316,39 @@ class CanvasPainter extends CustomPainter {
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
-      // Borrador suave con RadialGradient + BlendMode.dstOut
-      // hardness=1.0 → círculo sólido (borra 100% en todo el radio)
-      // hardness=0.0 → difuminado desde el centro
-      // hardness=0.5 → borra al 100% hasta la mitad del radio, luego se desvanece
+      // Técnica correcta para soft eraser con hardness en Flutter:
       //
-      // Técnica: dibujar un círculo por cada punto del trazo.
-      // El gradiente controla la opacidad del borrado según la distancia al centro.
-      // dstOut: resultado = dst × (1 - src.alpha) → donde src.alpha=1 borra totalmente
+      // NO se aplica dstOut en el Paint del círculo — eso dibuja negro.
+      // En cambio se usa saveLayer(dstOut) + gradiente BLANCO adentro:
+      //
+      // 1. saveLayer(rect, Paint()..blendMode = dstOut)
+      //    → crea capa temporal, composición será: outer × (1 - src.alpha)
+      // 2. Adentro: dibujar círculo con gradiente blanco (alpha 1→0 según hardness)
+      //    → blanco opaco = alpha 1 → borra totalmente (outer × 0 = 0)
+      //    → blanco transparente = alpha 0 → no borra (outer × 1 = outer)
+      // 3. restore() → aplica el dstOut al componer la capa temporal
+      //
+      // hardness=1.0 → fade empieza en el borde → borrado uniforme (duro)
+      // hardness=0.5 → fade empieza en la mitad → suave
+      // hardness=0.0 → fade desde el centro → muy difuso
       final hardness = stroke.hardness.clamp(0.0, 1.0);
       final radius = stroke.strokeWidth.toDouble();
 
       for (final point in stroke.points) {
-        final paint = Paint()
-          ..blendMode = BlendMode.dstOut
+        final rect = Rect.fromCircle(center: point, radius: radius);
+        // saveLayer con dstOut: al hacer restore(), todo lo dibujado adentro
+        // "recorta" el layer exterior según su alpha
+        canvas.saveLayer(rect, Paint()..blendMode = BlendMode.dstOut);
+        final gradientPaint = Paint()
           ..shader = RadialGradient(
             colors: [
-              Colors.black,                    // centro: borra al 100%
-              Colors.black.withOpacity(0.0),   // borde: no borra nada
+              Colors.white,                   // centro: alpha=1 → borra 100%
+              Colors.white.withOpacity(0.0),  // borde: alpha=0 → no borra
             ],
-            stops: [hardness, 1.0],            // hardness define dónde empieza el fade
-          ).createShader(
-            Rect.fromCircle(center: point, radius: radius),
-          );
-        canvas.drawCircle(point, radius, paint);
+            stops: [hardness, 1.0],
+          ).createShader(rect);
+        canvas.drawCircle(point, radius, gradientPaint);
+        canvas.restore(); // aplica dstOut al componer
       }
       return;
     }
