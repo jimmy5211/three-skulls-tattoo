@@ -211,20 +211,15 @@ class CanvasController extends ChangeNotifier {
       layers[layerIndex] =
           layers[layerIndex].copyWith(strokes: updatedStrokes);
       invalidateLayerCache(activeLayerId);
+
+      // Si el trazo era borrador, consolidar la capa para limpiar los huecos
+      if (simplifiedStroke.type == StrokeType.eraser) {
+        _consolidateEraserStrokes(layerIndex).then((_) => notifyListeners());
+      }
     }
 
     currentStroke = null;
     currentMirrorStroke = null;
-
-    // Si el trazo que terminó era un borrador, consolidar la capa.
-    // Esto "aplana" los huecos del borrador en la imagen permanentemente.
-    // Los trazos anteriores al borrador se fusionan con el resultado del borrado.
-    // Resultado: lienzo limpio sin huecos "fantasma" que afecten trazos futuros.
-    if (simplifiedStroke.type == StrokeType.eraser) {
-      // Consolidar async — no bloquea UI
-      _consolidateEraserStrokes(layerIndex).then((_) => notifyListeners());
-    }
-
     notifyListeners();
   }
 
