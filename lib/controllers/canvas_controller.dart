@@ -104,6 +104,7 @@ class CanvasController extends ChangeNotifier {
           : activeBrush.opacity,
       type: activeBrush.type,
       layerId: activeLayerId,
+      hardness: activeBrush.hardness,
     );
 
     if (symmetryEnabled) {
@@ -528,6 +529,27 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].rotation = rotation;
+    _imagesChanged = true;
+    notifyListeners();
+  }
+
+  /// Reemplaza la imagen de un CanvasImageModel (usado por IA background removal)
+  void replaceCanvasImage(String id, ui.Image newImage) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    final old = canvasImages[idx];
+    canvasImages[idx] = CanvasImageModel(
+      id: old.id,
+      image: newImage,
+      position: old.position,
+      size: old.size,
+      layerId: old.layerId,
+      opacity: old.opacity,
+      rotation: old.rotation,
+      flipX: old.flipX,
+      flipY: old.flipY,
+      insertionIndex: old.insertionIndex,
+    );
     _imagesChanged = true;
     notifyListeners();
   }
