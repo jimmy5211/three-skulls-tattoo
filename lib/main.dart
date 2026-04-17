@@ -9,9 +9,12 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'theme/app_theme.dart';
 import 'app_router.dart';
 import 'services/update_service.dart';
+import 'update_download_screen.dart';
 
 final FlutterLocalNotificationsPlugin notificationsPlugin =
     FlutterLocalNotificationsPlugin();
+final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+UpdateInfo? _pendingUpdate;
 
 const _channel = AndroidNotificationChannel(
   'update_channel',
@@ -69,7 +72,9 @@ void main() async {
         android: AndroidInitializationSettings('@mipmap/ic_launcher')),
     onDidReceiveNotificationResponse: (r) async {
       final update = await UpdateService.checkForUpdates();
-      if (update.isAvailable) await UpdateService.downloadAndInstall(update);
+      if (update.isAvailable) {
+        _pendingUpdate = update;
+      }
     },
   );
 
