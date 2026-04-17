@@ -14,8 +14,7 @@ import 'update_download_screen.dart';
 final FlutterLocalNotificationsPlugin notificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
-// ValueNotifier global — cuando hay update pendiente, la app lo detecta
-// y muestra la pantalla de descarga automáticamente
+// Notifier global — cualquier parte de la app puede disparar la pantalla
 final ValueNotifier<UpdateInfo?> pendingUpdateNotifier =
     ValueNotifier<UpdateInfo?>(null);
 
@@ -53,13 +52,17 @@ Future<void> _checkAndNotify(FlutterLocalNotificationsPlugin notifs) async {
     if (!update.isAvailable) return;
     final prefs = await SharedPreferences.getInstance();
     if (update.version == (prefs.getString('last_notified') ?? '')) return;
-    await notifs.show(0,
-        '💀 Three Skulls v${update.version} disponible',
-        'Toca para actualizar',
-        NotificationDetails(android: AndroidNotificationDetails(
-          _channel.id, _channel.name,
-          importance: Importance.high, priority: Priority.high,
-          icon: '@mipmap/ic_launcher')));
+    await notifs.show(
+      0,
+      '💀 Three Skulls v${update.version} disponible',
+      'Toca para actualizar',
+      NotificationDetails(android: AndroidNotificationDetails(
+        _channel.id, _channel.name,
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      )),
+    );
     await prefs.setString('last_notified', update.version);
   } catch (e) {
     debugPrint('Background check: $e');
@@ -76,14 +79,13 @@ void main() async {
     const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher')),
     onDidReceiveNotificationResponse: (r) async {
-      // Usuario tocó la notificación → buscar update y activar pantalla
       try {
         final update = await UpdateService.checkForUpdates();
         if (update.isAvailable) {
           pendingUpdateNotifier.value = update;
         }
       } catch (e) {
-        debugPrint('Notification tap error: $e');
+        debugPrint('Notification tap: $e');
       }
     },
   );
@@ -94,7 +96,7 @@ void main() async {
   await android?.createNotificationChannel(_channel);
   await android?.requestNotificationsPermission();
 
-  // FCM setup
+  // FCM
   final fcm = FirebaseMessaging.instance;
   await fcm.requestPermission(alert: true, badge: true, sound: true);
   await fcm.subscribeToTopic('updates');
@@ -109,7 +111,6 @@ void main() async {
           icon: '@mipmap/ic_launcher')));
   });
 
-  // App abierta desde notificación FCM
   FirebaseMessaging.onMessageOpenedApp.listen((_) async {
     try {
       final update = await UpdateService.checkForUpdates();
@@ -117,7 +118,6 @@ void main() async {
     } catch (e) { debugPrint('FCM open: $e'); }
   });
 
-  // App cerrada → abierta por notificación FCM
   final initialMessage = await fcm.getInitialMessage();
   if (initialMessage != null) {
     try {
@@ -126,14 +126,12 @@ void main() async {
     } catch (e) { debugPrint('FCM initial: $e'); }
   }
 
-  // Workmanager fallback
   await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
   await Workmanager().registerPeriodicTask('ts_update', 'checkUpdate',
       frequency: const Duration(hours: 6),
       constraints: Constraints(networkType: NetworkType.connected),
       existingWorkPolicy: ExistingWorkPolicy.keep);
 
-  // Verificar al abrir la app (silencioso)
   _checkAndNotify(notificationsPlugin);
 
   await SystemChrome.setPreferredOrientations([
@@ -161,31 +159,57 @@ class ThreeSkullsApp extends StatelessWidget {
       theme: AppTheme.darkTheme,
       routerConfig: AppRouter.router,
       backButtonDispatcher: RootBackButtonDispatcher(),
-      builder: (context, child) {
-        // ValueListenableBuilder detecta cuando hay update pendiente
-        // y muestra la pantalla de descarga encima de todo
-        return ValueListenableBuilder<UpdateInfo?>(
-          valueListenable: pendingUpdateNotifier,
-          builder: (context, update, _) {
-            if (update != null) {
-              // Mostrar pantalla de descarga como overlay
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (Navigator.of(context).canPop()) return;
-                showGeneralDialog(
-                  context: context,
-                  barrierColor: Colors.black87,
-                  pageBuilder: (ctx, _, __) => UpdateDownloadScreen(
-                    updateInfo: update,
-                  ),
-                ).then((_) {
-                  pendingUpdateNotifier.value = null;
-                });
-              });
-            }
-            return child ?? const SizedBox();
-          },
-        );
-      },
+      // _UpdateListener envuelve el contenido y escucha el notifier
+      builder: (context, child) => _UpdateListener(child: child ?? const SizedBox()),
     );
   }
+}
+
+/// Escucha pendingUpdateNotifier y muestra UpdateDownloadScreen
+/// cuando hay una actualización pendiente.
+class _UpdateListener extends StatefulWidget {
+  final Widget child;
+  const _UpdateListener({required this.child});
+
+  @override
+  State<_UpdateListener> createState() => _UpdateListenerState();
+}
+
+class _UpdateListenerState extends State<_UpdateListener> {
+  bool _showing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    pendingUpdateNotifier.addListener(_onUpdatePending);
+  }
+
+  @override
+  void dispose() {
+    pendingUpdateNotifier.removeListener(_onUpdatePending);
+    super.dispose();
+  }
+
+  void _onUpdatePending() {
+    final update = pendingUpdateNotifier.value;
+    if (update == null || _showing || !mounted) return;
+    _showing = true;
+    // addPostFrameCallback garantiza que el context ya tiene Navigator
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).push(
+        PageRouteBuilder(
+          opaque: false,
+          barrierColor: Colors.black87,
+          pageBuilder: (_, __, ___) => UpdateDownloadScreen(updateInfo: update),
+        ),
+      ).then((_) {
+        _showing = false;
+        pendingUpdateNotifier.value = null;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
