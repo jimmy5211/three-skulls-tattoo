@@ -295,16 +295,26 @@ class CanvasPainter extends CustomPainter {
     canvas.restore(); // fin capa exterior
   }
 
-  /// Renderiza strokes en grupos separados por cada borrador.
-  /// Esto garantiza que trazos nuevos no sean afectados por borradores viejos.
+  /// Renderiza strokes en ORDEN TEMPORAL dentro del saveLayer del canvas.
+  ///
+  /// La clave: dibujar en orden cronológico garantiza el comportamiento correcto:
+  ///   [B1, E1, B2, E2] →
+  ///     1. B1 dibujado
+  ///     2. E1 (dstOut) borra parte de B1
+  ///     3. B2 dibujado encima (incluso sobre zona borrada por E1)
+  ///     4. E2 (dstOut) borra de todo lo que hay en ese momento (B1 restante + B2)
+  ///
+  /// Resultado: B2 no es afectado por E1. E2 borra permanentemente sin "restaurar".
   void _drawStrokesGrouped(Canvas canvas, Rect rect,
       List<StrokeModel> strokes, {required bool isActiveLayer}) {
     if (strokes.isEmpty) return;
 
-    // Si no hay borrador, usar caché normal
     final hasEraser = strokes.any((s) => s.type == StrokeType.eraser);
+
     if (!hasEraser && !isActiveLayer) {
-      final cached = controller.getLayerCache(strokes.first.layerId);
+      // Sin borrador: usar caché para performance
+      final layerId = strokes.first.layerId;
+      final cached = controller.getLayerCache(layerId);
       if (cached != null) {
         canvas.drawPicture(cached);
         return;
@@ -313,43 +323,17 @@ class CanvasPainter extends CustomPainter {
       final offCanvas = Canvas(recorder);
       for (final s in strokes) _drawStroke(offCanvas, s);
       final picture = recorder.endRecording();
-      controller.setLayerCache(strokes.first.layerId, picture);
+      controller.setLayerCache(layerId, picture);
       canvas.drawPicture(picture);
       return;
     }
 
-    // Con borrador: dividir en grupos
-    // Grupo = secuencia de trazos hasta (e incluyendo) el siguiente borrador
-    List<StrokeModel> group = [];
-    bool groupHasEraser = false;
-
-    void flushGroup() {
-      if (group.isEmpty) return;
-      if (groupHasEraser) {
-        // Aislar en saveLayer para que el borrador solo afecte este grupo
-        canvas.saveLayer(rect, Paint());
-        for (final s in group) {
-          if (s.type != StrokeType.eraser) _drawStroke(canvas, s);
-        }
-        for (final s in group) {
-          if (s.type == StrokeType.eraser) _drawStroke(canvas, s);
-        }
-        canvas.restore();
-      } else {
-        for (final s in group) _drawStroke(canvas, s);
-      }
-      group = [];
-      groupHasEraser = false;
-    }
-
+    // Con borrador: renderizar EN ORDEN TEMPORAL directamente en el canvas.
+    // El canvas (saveLayer) empieza transparente.
+    // dstOut en orden correcto borra permanentemente sin restaurar nada.
     for (final stroke in strokes) {
-      group.add(stroke);
-      if (stroke.type == StrokeType.eraser) {
-        groupHasEraser = true;
-        flushGroup(); // cerrar grupo al encontrar un borrador
-      }
+      _drawStroke(canvas, stroke);
     }
-    flushGroup(); // último grupo (trazos después del último borrador)
   }
 
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
