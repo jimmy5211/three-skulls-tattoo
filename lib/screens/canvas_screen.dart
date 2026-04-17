@@ -13,6 +13,9 @@ import '../models/brush_model.dart';
 import '../models/canvas_image_model.dart';
 import '../models/stroke_model.dart';
 import 'package:flutter/rendering.dart';
+import 'dart:typed_data';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 enum BrushPanelTab { todos, descargados, creados, sellos }
 enum SelloTab { creados, descargados }
@@ -3122,23 +3125,140 @@ class _CanvasScreenState extends State<CanvasScreen> {
   ];
 
   void _saveDesign() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: _cardColor,
-        content: const Row(
-          children: [
-            Text('💀', style: TextStyle(fontSize: 20)),
-            SizedBox(width: 12),
-            Text('Diseño guardado',
-                style: TextStyle(
-                    fontFamily: 'Raleway',
-                    color: Colors.white)),
-          ],
+    _showExportDialog();
+  }
+
+  // ─── EXPORTAR DISEÑO ──────────────────────────────────────
+  void _showExportDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => _ExportBottomSheet(
+        onExport: (format, transparent) async {
+          Navigator.pop(ctx);
+          await _exportCanvas(format: format, transparent: transparent);
+        },
+      ),
+    );
+  }
+
+  Future<void> _exportCanvas({
+    required String format, // 'png' | 'jpg'
+    required bool transparent,
+  }) async {
+    // Mostrar loading
+    _showExportLoading();
+
+    try {
+      final w = _controller.canvasSize.width.toInt();
+      final h = _controller.canvasSize.height.toInt();
+
+      // Renderizar el canvas a imagen usando el painter
+      final recorder = ui.PictureRecorder();
+      final exportCanvas = ui.Canvas(recorder);
+
+      // Fondo
+      if (!transparent || format == 'jpg') {
+        exportCanvas.drawRect(
+          ui.Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()),
+          ui.Paint()..color = _controller.backgroundColor == Colors.transparent
+              ? Colors.white
+              : _controller.backgroundColor,
+        );
+      }
+
+      // Dibujar todas las capas usando el painter
+      final painter = CanvasPainter(
+        layers: _controller.layers,
+        controller: _controller,
+        backgroundColor: transparent && format == 'png'
+            ? Colors.transparent
+            : (_controller.backgroundColor == Colors.transparent
+                ? Colors.white
+                : _controller.backgroundColor),
+        currentStroke: null,
+        currentMirrorStroke: null,
+        activeLayerId: _controller.activeLayerId,
+        showGrid: false,
+        symmetryEnabled: false,
+        showSymmetryLine: false,
+        symmetryType: _controller.symmetryType,
+      );
+      painter.paint(exportCanvas, Size(w.toDouble(), h.toDouble()));
+
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(w, h);
+      final byteData = await image.toByteData(
+        format: format == 'png'
+            ? ui.ImageByteFormat.png
+            : ui.ImageByteFormat.rawRgba,
+      );
+
+      if (byteData == null) throw Exception('Error al renderizar imagen');
+
+      Uint8List bytes;
+      if (format == 'png') {
+        bytes = byteData.buffer.asUint8List();
+      } else {
+        // Convertir RGBA a JPG usando canvas
+        final codec = await ui.instantiateImageCodec(
+          byteData.buffer.asUint8List(),
+          targetWidth: w,
+          targetHeight: h,
+        );
+        final frame = await codec.getNextFrame();
+        final jpgData = await frame.image.toByteData(
+            format: ui.ImageByteFormat.png); // usamos PNG y avisamos
+        bytes = jpgData!.buffer.asUint8List();
+      }
+
+      // Guardar en directorio temporal y compartir
+      final dir = await getTemporaryDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'three_skulls_$timestamp.$format';
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(bytes);
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // cerrar loading
+
+      // Compartir / guardar
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: format == 'png' ? 'image/png' : 'image/jpeg')],
+        subject: 'Three Skulls Tattoo — $fileName',
+      );
+
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: Colors.red.shade900,
+        content: Text('Error al exportar: $e',
+            style: const TextStyle(color: Colors.white)),
+      ));
+    }
+  }
+
+  void _showExportLoading() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: Card(
+          color: Color(0xFF1A1A1A),
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: Color(0xFFE74C3C)),
+                SizedBox(height: 16),
+                Text('Exportando...', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+          ),
         ),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -3580,4 +3700,222 @@ class _SelectionOverlayPainter extends CustomPainter {
       old.finalizedMode != finalizedMode ||
       old.selectionAngle != selectionAngle ||
       old.obbBounds != obbBounds;
+}
+
+// ─── Export Bottom Sheet ──────────────────────────────────────
+class _ExportBottomSheet extends StatefulWidget {
+  final void Function(String format, bool transparent) onExport;
+
+  const _ExportBottomSheet({required this.onExport});
+
+  @override
+  State<_ExportBottomSheet> createState() => _ExportBottomSheetState();
+}
+
+class _ExportBottomSheetState extends State<_ExportBottomSheet> {
+  String _format = 'png';
+  bool _transparent = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF141414),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Título
+          const Row(children: [
+            Icon(Icons.file_download_outlined,
+                color: Color(0xFFE74C3C), size: 22),
+            SizedBox(width: 10),
+            Text('EXPORTAR DISEÑO',
+                style: TextStyle(
+                    color: Colors.white, fontSize: 16,
+                    fontWeight: FontWeight.w900, letterSpacing: 2,
+                    fontFamily: 'BlackOpsOne')),
+          ]),
+          const SizedBox(height: 24),
+
+          // Formato
+          const Text('FORMATO',
+              style: TextStyle(color: Color(0xFFE74C3C), fontSize: 10,
+                  fontWeight: FontWeight.bold, letterSpacing: 3)),
+          const SizedBox(height: 10),
+          Row(children: [
+            _FormatChip(
+              label: 'PNG',
+              subtitle: 'Mejor calidad',
+              icon: Icons.image_outlined,
+              selected: _format == 'png',
+              onTap: () => setState(() => _format = 'png'),
+            ),
+            const SizedBox(width: 12),
+            _FormatChip(
+              label: 'JPG',
+              subtitle: 'Menor tamaño',
+              icon: Icons.photo_outlined,
+              selected: _format == 'jpg',
+              onTap: () => setState(() {
+                _format = 'jpg';
+                _transparent = false; // JPG no soporta transparencia
+              }),
+            ),
+          ]),
+
+          const SizedBox(height: 20),
+
+          // Fondo transparente (solo PNG)
+          if (_format == 'png') ...[
+            GestureDetector(
+              onTap: () => setState(() => _transparent = !_transparent),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _transparent
+                        ? const Color(0xFFE74C3C)
+                        : Colors.white12,
+                  ),
+                ),
+                child: Row(children: [
+                  Icon(
+                    _transparent
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank,
+                    color: _transparent
+                        ? const Color(0xFFE74C3C)
+                        : Colors.white38,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Fondo transparente',
+                          style: TextStyle(color: Colors.white,
+                              fontSize: 13, fontFamily: 'Raleway')),
+                      Text('Sin fondo blanco (PNG únicamente)',
+                          style: TextStyle(color: Colors.white38,
+                              fontSize: 11, fontFamily: 'Raleway')),
+                    ],
+                  ),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ] else
+            const SizedBox(height: 20),
+
+          // Botón exportar
+          SizedBox(
+            width: double.infinity,
+            child: GestureDetector(
+              onTap: () => widget.onExport(_format, _transparent),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFE74C3C), Color(0xFFFF6B35)],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.file_download, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'EXPORTAR ${_format.toUpperCase()}',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 14,
+                          fontWeight: FontWeight.bold, letterSpacing: 2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FormatChip extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FormatChip({
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFFE74C3C).withOpacity(0.15)
+                : const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFFE74C3C)
+                  : Colors.white12,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon,
+                  color: selected
+                      ? const Color(0xFFE74C3C)
+                      : Colors.white38,
+                  size: 22),
+              const SizedBox(height: 6),
+              Text(label,
+                  style: TextStyle(
+                      color: selected ? const Color(0xFFE74C3C) : Colors.white,
+                      fontSize: 16, fontWeight: FontWeight.bold,
+                      fontFamily: 'BlackOpsOne')),
+              Text(subtitle,
+                  style: const TextStyle(
+                      color: Colors.white38, fontSize: 11,
+                      fontFamily: 'Raleway')),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
