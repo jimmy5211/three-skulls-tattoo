@@ -248,44 +248,61 @@ class CanvasPainter extends CustomPainter {
     final rect = Rect.fromLTWH(
         0, 0, controller.canvasSize.width, controller.canvasSize.height);
 
-    // Imágenes de esta capa
     final layerImages = controller.canvasImages
         .where((img) => img.layerId == layer.id)
         .toList();
+
+    // ⚠️ CRÍTICO: BlendMode.clear SOLO funciona correctamente cuando se
+    // dibuja directamente en el canvas del saveLayer.
+    // PictureRecorder NO soporta BlendMode.clear en todos los GPUs Android —
+    // en algunos devuelve blanco en vez de transparente.
+    // Solución: si la capa tiene trazos borradores, dibujar todo directo.
+    final hasEraserStrokes =
+        layer.strokes.any((s) => s.type == StrokeType.eraser);
+    final drawDirect =
+        hasEraserStrokes || layer.id == activeLayerId || layerImages.isNotEmpty;
 
     canvas.saveLayer(
       rect,
       Paint()..color = Colors.white.withOpacity(layer.opacity),
     );
 
-    // 1. Primero renderizar imágenes de esta capa (debajo de los strokes)
+    // 1. Imágenes de esta capa (siempre debajo de strokes)
     for (final img in layerImages) {
       _drawCanvasImage(canvas, img);
     }
 
-    // 2. Luego los strokes (encima de las imágenes)
-    // El borrador (BlendMode.clear) borrará AMBOS — imagen y strokes
-    final cached = controller.getLayerCache(layer.id);
-    if (cached != null && layer.id != activeLayerId && layerImages.isEmpty) {
-      canvas.drawPicture(cached);
+    if (drawDirect) {
+      // 2a. Dibujo directo — borrador funciona con BlendMode.clear
+      // Primero strokes normales, luego borrador (para que corte todo)
+      for (final stroke in layer.strokes) {
+        if (stroke.type != StrokeType.eraser) _drawStroke(canvas, stroke);
+      }
+      for (final stroke in layer.strokes) {
+        if (stroke.type == StrokeType.eraser) _drawStroke(canvas, stroke);
+      }
+      // Invalidar cache si tiene borrador (no se puede cachear correctamente)
+      if (hasEraserStrokes) controller.invalidateLayerCache(layer.id);
     } else {
-      final recorder = ui.PictureRecorder();
-      final offscreenCanvas = Canvas(recorder);
-
-      if (layer.strokes.isNotEmpty) {
+      // 2b. Sin borrador: usar caché para performance
+      final cached = controller.getLayerCache(layer.id);
+      if (cached != null) {
+        canvas.drawPicture(cached);
+      } else {
+        final recorder = ui.PictureRecorder();
+        final offscreenCanvas = Canvas(recorder);
         for (final stroke in layer.strokes) {
           _drawStroke(offscreenCanvas, stroke);
         }
+        final picture = recorder.endRecording();
+        if (layer.strokes.isNotEmpty) {
+          controller.setLayerCache(layer.id, picture);
+        }
+        canvas.drawPicture(picture);
       }
-
-      final picture = recorder.endRecording();
-      // Solo cachear si no hay imágenes (las imágenes son dinámicas)
-      if (layer.id != activeLayerId && layer.strokes.isNotEmpty && layerImages.isEmpty) {
-        controller.setLayerCache(layer.id, picture);
-      }
-      canvas.drawPicture(picture);
     }
 
+    // 3. Stroke activo en tiempo real (siempre directo)
     if (layer.id == activeLayerId) {
       if (currentStroke != null) _drawStroke(canvas, currentStroke!);
       if (currentMirrorStroke != null)
