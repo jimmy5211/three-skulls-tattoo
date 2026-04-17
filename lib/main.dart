@@ -25,10 +25,6 @@ void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     // OBLIGATORIO en Flutter 3.x: inicializar bindings y plugins
     WidgetsFlutterBinding.ensureInitialized();
-    // DartPluginRegistrant registra todos los plugins nativos
-    // en el isolate de background — sin esto los plugins fallan silenciosamente
-    DartPluginRegistrant.ensureInitialized();
-
     final notifs = FlutterLocalNotificationsPlugin();
     const init = InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'));
