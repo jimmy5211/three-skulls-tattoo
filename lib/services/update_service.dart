@@ -11,7 +11,7 @@ import 'package:open_file/open_file.dart';
 class UpdateInfo {
   final String version;
   final String downloadUrl;
-  final String releaseNotes;
+  final List<String> releaseNotes; // lista de cambios
   final bool isAvailable;
   final bool mandatory;
 
@@ -62,7 +62,18 @@ class UpdateService {
           raw is Map && raw.containsKey('record') ? raw['record'] : raw;
 
       final latestVersion = data['version']?.toString() ?? currentVersion;
-      final releaseNotes = data['releaseNotes']?.toString() ?? '';
+      // releaseNotes puede ser lista o string
+      final rawNotes = data['releaseNotes'];
+      final List<String> releaseNotes;
+      if (rawNotes is List) {
+        releaseNotes = rawNotes.map((e) => e.toString()).toList();
+      } else if (rawNotes is String && rawNotes.isNotEmpty) {
+        releaseNotes = rawNotes.split('\n')
+            .where((l) => l.trim().isNotEmpty)
+            .toList();
+      } else {
+        releaseNotes = ['Bug fixes y mejoras de rendimiento'];
+      }
       final downloadUrl = data['downloadUrl']?.toString() ?? '';
       final mandatory = data['mandatory'] as bool? ?? false;
 
@@ -82,7 +93,7 @@ class UpdateService {
       return UpdateInfo(
         version: currentVersion,
         downloadUrl: '',
-        releaseNotes: '',
+        releaseNotes: const [],
         isAvailable: false,
       );
     }
