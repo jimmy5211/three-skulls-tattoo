@@ -316,20 +316,31 @@ class CanvasPainter extends CustomPainter {
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
-      // Borrador con hardness variable:
-      // hardness=1.0 → borde nítido (sin blur)
-      // hardness=0.0 → borde muy suave (blur = strokeWidth/2)
+      // Borrador suave con RadialGradient + BlendMode.dstOut
+      // hardness=1.0 → círculo sólido (borra 100% en todo el radio)
+      // hardness=0.0 → difuminado desde el centro
+      // hardness=0.5 → borra al 100% hasta la mitad del radio, luego se desvanece
+      //
+      // Técnica: dibujar un círculo por cada punto del trazo.
+      // El gradiente controla la opacidad del borrado según la distancia al centro.
+      // dstOut: resultado = dst × (1 - src.alpha) → donde src.alpha=1 borra totalmente
       final hardness = stroke.hardness.clamp(0.0, 1.0);
-      final blurSigma = stroke.strokeWidth * (1.0 - hardness) * 0.6;
-      final paint = Paint()
-        ..blendMode = BlendMode.clear
-        ..strokeWidth = stroke.strokeWidth * 2
-        ..strokeCap = StrokeCap.round
-        ..style = PaintingStyle.stroke;
-      if (blurSigma > 0.5) {
-        paint.maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma);
+      final radius = stroke.strokeWidth.toDouble();
+
+      for (final point in stroke.points) {
+        final paint = Paint()
+          ..blendMode = BlendMode.dstOut
+          ..shader = RadialGradient(
+            colors: [
+              Colors.black,                    // centro: borra al 100%
+              Colors.black.withOpacity(0.0),   // borde: no borra nada
+            ],
+            stops: [hardness, 1.0],            // hardness define dónde empieza el fade
+          ).createShader(
+            Rect.fromCircle(center: point, radius: radius),
+          );
+        canvas.drawCircle(point, radius, paint);
       }
-      _drawSmoothStroke(canvas, stroke, paint);
       return;
     }
     final baseColor = stroke.color.withOpacity(stroke.opacity);
