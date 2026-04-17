@@ -316,14 +316,19 @@ class CanvasPainter extends CustomPainter {
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
-      // BlendMode.clear: borra píxeles a transparente real.
-      // Funciona correctamente porque estamos dentro de un saveLayer(rect, Paint())
-      // (sin color ni filtro en el Paint del saveLayer).
+      // Borrador con hardness variable:
+      // hardness=1.0 → borde nítido (sin blur)
+      // hardness=0.0 → borde muy suave (blur = strokeWidth/2)
+      final hardness = stroke.hardness.clamp(0.0, 1.0);
+      final blurSigma = stroke.strokeWidth * (1.0 - hardness) * 0.6;
       final paint = Paint()
         ..blendMode = BlendMode.clear
         ..strokeWidth = stroke.strokeWidth * 2
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
+      if (blurSigma > 0.5) {
+        paint.maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma);
+      }
       _drawSmoothStroke(canvas, stroke, paint);
       return;
     }
