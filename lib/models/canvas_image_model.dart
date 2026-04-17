@@ -24,9 +24,9 @@ class CanvasImageModel {
   bool isSelected;
   bool flipX;
   bool flipY;
-  int layerId; // capa a la que pertenece esta imagen
+  double rotation; // radianes
+  int layerId;
 
-  /// Trazos del borrador ya confirmados
   List<EraseStroke> eraseStrokes;
   EraseStroke? currentEraseStroke;
 
@@ -40,6 +40,7 @@ class CanvasImageModel {
     this.isSelected = false,
     this.flipX = false,
     this.flipY = false,
+    this.rotation = 0.0,
     List<EraseStroke>? eraseStrokes,
     this.currentEraseStroke,
   }) : eraseStrokes = eraseStrokes ?? [];
@@ -51,6 +52,9 @@ class CanvasImageModel {
         size.height,
       );
 
+  /// Centro de la imagen
+  Offset get center => rect.center;
+}
+
   bool get hasErases =>
       eraseStrokes.isNotEmpty || currentEraseStroke != null;
-}
