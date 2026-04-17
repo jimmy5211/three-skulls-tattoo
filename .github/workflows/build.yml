@@ -97,11 +97,14 @@ jobs:
           prerelease: false
 
       - name: Update JSONBin version
-        continue-on-error: true  # No romper el build si falla
-        env:
-          JSONBIN_API_KEY: ${{ secrets.JSONBIN_API_KEY }}
-          RUN_NUMBER: ${{ github.run_number }}
-        run: python3 scripts/update_jsonbin.py
+        continue-on-error: true
+        run: |
+          NOTES=$(python3 scripts/read_notes.py)
+          curl -s -X PUT \
+            https://api.jsonbin.io/v3/b/69b8b65eaa77b81da9ef4f41 \
+            -H 'Content-Type: application/json' \
+            -H 'X-Master-Key: ${{ secrets.JSONBIN_API_KEY }}' \
+            -d "{"version": "1.0.${{ github.run_number }}", "versionCode": $((1000 + ${{ github.run_number }})), "downloadUrl": "https://github.com/jimmy5211/three-skulls-tattoo/releases/download/v1.0.${{ github.run_number }}/app-release.apk", "mandatory": false, "releaseNotes": $NOTES}"
 
       - name: Send FCM push notification
         continue-on-error: true  # No romper el build si falla
