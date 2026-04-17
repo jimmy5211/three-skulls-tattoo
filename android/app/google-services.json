@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "562187687019",
+    "project_id": "three-skulls-tattoo-e4099",
+    "storage_bucket": "three-skulls-tattoo-e4099.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:562187687019:android:04be55434fe4e5d4970d2e",
+        "android_client_info": {
+          "package_name": "com.threeskullstattoo.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAgRKRGrbzdTiels2hJ595lSHcnni6KMw8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
