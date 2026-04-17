@@ -392,6 +392,11 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setBrushHardness(double hardness) {
+    activeBrush = activeBrush.copyWith(hardness: hardness.clamp(0.0, 1.0));
+    notifyListeners();
+  }
+
   void toggleSymmetry() {
     symmetryEnabled = !symmetryEnabled;
     currentMirrorStroke = null;
