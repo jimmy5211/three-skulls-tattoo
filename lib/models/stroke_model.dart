@@ -8,6 +8,7 @@ class StrokeModel {
   final StrokeType type;
   final int layerId;
   final double hardness; // 0.0=suave, 1.0=duro
+  final String? brushId; // ID del pincel para cargar brush tip PNG
 
   StrokeModel({
     required this.points,
@@ -17,6 +18,7 @@ class StrokeModel {
     required this.type,
     required this.layerId,
     this.hardness = 1.0,
+    this.brushId,
   });
 
   StrokeModel copyWith({
@@ -27,6 +29,7 @@ class StrokeModel {
     StrokeType? type,
     int? layerId,
     double? hardness,
+    String? brushId,
   }) {
     return StrokeModel(
       points: points ?? this.points,
@@ -36,6 +39,7 @@ class StrokeModel {
       type: type ?? this.type,
       layerId: layerId ?? this.layerId,
       hardness: hardness ?? this.hardness,
+      brushId: brushId ?? this.brushId,
     );
   }
 }
