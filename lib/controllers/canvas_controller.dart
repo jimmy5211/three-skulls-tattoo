@@ -147,6 +147,7 @@ class CanvasController extends ChangeNotifier {
       opacity: currentStroke!.opacity,
       type: currentStroke!.type,
       layerId: activeLayerId,
+      hardness: currentStroke!.hardness, // ← preservar hardness en cada punto
     );
 
     if (symmetryEnabled && currentMirrorStroke != null) {
@@ -188,6 +189,7 @@ class CanvasController extends ChangeNotifier {
         opacity: currentStroke!.opacity,
         type: currentStroke!.type,
         layerId: currentStroke!.layerId,
+        hardness: currentStroke!.hardness,
       );
 
       final updatedStrokes =
