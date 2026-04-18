@@ -319,48 +319,17 @@ class CanvasPainter extends CustomPainter {
       final hardness = stroke.hardness.clamp(0.0, 1.0);
       final radius = stroke.strokeWidth.toDouble();
 
-      if (hardness >= 0.99) {
-        // ── Borrador DURO (hardness ~100%) ─────────────────
-        // Path continuo con dstOut — rápido y preciso
-        final paint = Paint()
-          ..blendMode = BlendMode.dstOut
-          ..color = Colors.white
-          ..strokeWidth = radius * 2
-          ..strokeCap = StrokeCap.round
-          ..style = PaintingStyle.stroke;
-        _drawSmoothStroke(canvas, stroke, paint);
-      } else {
-        // ── Borrador SUAVE (hardness < 100%) ───────────────
-        // UN solo saveLayer para TODOS los círculos del trazo.
-        // (No uno por punto — eso sería O(n) saveLayer = muy lento)
-        //
-        // El saveLayer se compone con dstOut al hacer restore():
-        //   outer_new = outer_old × (1 - src.alpha)
-        // Donde src (contenido del inner layer) es el gradiente blanco:
-        //   alpha=1 en centro → borra 100%
-        //   alpha=0 en borde  → no borra
-        final bounds = Rect.fromLTWH(
-          0, 0,
-          controller.canvasSize.width,
-          controller.canvasSize.height,
-        );
-        canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
+      double sigma = (1.0 - hardness) * radius;
 
-        for (final point in stroke.points) {
-          final rect = Rect.fromCircle(center: point, radius: radius);
-          final gradientPaint = Paint()
-            ..shader = RadialGradient(
-              colors: [
-                Colors.white,                   // centro: alpha=1 → borra 100%
-                Colors.white.withOpacity(0.0),  // borde: alpha=0 → no borra
-              ],
-              stops: [hardness, 1.0],
-            ).createShader(rect);
-          canvas.drawCircle(point, radius, gradientPaint);
-        }
+      final paint = Paint()
+        ..blendMode = BlendMode.clear
+        ..strokeWidth = radius * 2
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke
+        ..maskFilter = sigma > 0 ? MaskFilter.blur(BlurStyle.normal, sigma) : null;
 
-        canvas.restore(); // compone el inner layer sobre outer con dstOut
-      }
+      _drawSmoothStroke(canvas, stroke, paint);
       return;
     }
     final baseColor = stroke.color.withOpacity(stroke.opacity);
