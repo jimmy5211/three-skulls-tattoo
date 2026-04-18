@@ -454,7 +454,7 @@ class TextureStrokes {
     );
   }
 
-  static void drawLiner(Canvas canvas, StrokeModel stroke, Color color) {
+  static void drawLiner(Canvas canvas, StrokeModel stroke, Color color, {double hardness = 1.0}) {
     TextureBrushPainter.drawTextureStroke(
       canvas, stroke, color, 'liner',
       stampSpacing: 0.1,
@@ -524,7 +524,7 @@ class TextureStrokes {
     );
   }
 
-  static void drawShader(Canvas canvas, StrokeModel stroke, Color color) {
+  static void drawShader(Canvas canvas, StrokeModel stroke, Color color, {double hardness = 1.0}) {
     TextureBrushPainter.drawTextureStroke(
       canvas, stroke, color, 'aerografo',
       stampSpacing: 0.15,
