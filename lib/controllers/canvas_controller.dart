@@ -498,6 +498,24 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void placeStampAtPosition(ui.Image image, Offset canvasPoint, double stampSize) {
+    final half = stampSize / 2;
+    final pos = Offset(canvasPoint.dx - half, canvasPoint.dy - half);
+    final activeLayer = layers.firstWhere(
+      (l) => l.id == activeLayerId, orElse: () => layers.first);
+    final insertIdx = activeLayer.strokes.length;
+    canvasImages.add(CanvasImageModel(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      image: image,
+      position: pos,
+      size: Size(stampSize, stampSize),
+      layerId: activeLayerId,
+      insertionIndex: insertIdx,
+    ));
+    _imagesChanged = true;
+    notifyListeners();
+  }
+
   void removeCanvasImage(String id) {
     canvasImages.removeWhere((img) => img.id == id);
     notifyListeners();
