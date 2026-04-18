@@ -318,52 +318,60 @@ class CanvasPainter extends CustomPainter {
     if (stroke.type == StrokeType.eraser) {
       // ── BORRADOR CON DUREZA VARIABLE ─────────────────────
       //
-      // Técnica final que funciona en TODOS los GPUs Android:
+      // Técnica: múltiples pasadas dstOut con alpha parcial y radio creciente.
       //
-      // 1. saveLayer(dstOut): capa exterior que aplica el borrado
-      // 2. saveLayer(ImageFilter.blur): capa interior con blur pixel-level
-      //    - Dibuja el trazo como shape sólido blanco (nítido)
-      //    - El ImageFilter aplica gaussian blur al RASTER resultante
-      //    - Blur en pixels = bordes suaves garantizados en cualquier GPU
-      // 3. restore() x2: compone blur→dstOut
+      // BlendMode.dstOut respeta el alpha del paint:
+      //   result = dst × (1 - src.alpha)
+      //   alpha=1.0 → borra 100%   alpha=0.5 → borra 50%   alpha=0.1 → borra 10%
       //
-      // ImageFilter.blur opera sobre los PIXELS del layer rasterizado,
-      // no sobre el pipeline de renderizado. Funciona siempre.
+      // Pasadas:
+      //   1. Core nítido (radio base, alpha=1.0): borra 100% en el centro
+      //   2. Halo 1 (radio×1.4, alpha=0.5): borra 50% en zona exterior
+      //   3. Halo 2 (radio×2.0, alpha=0.2): borra 20% en zona más exterior
+      //
+      // Para hardness=100%: solo pasada 1 → borrado duro
+      // Para hardness=0%:   las 3 pasadas → bordes muy suaves
       final hardness = stroke.hardness.clamp(0.0, 1.0);
+      final softness = 1.0 - hardness; // 0=duro, 1=suave
       final radius = stroke.strokeWidth.toDouble();
-      final sigma = (1.0 - hardness) * radius * 0.8;
       final bounds = Rect.fromLTWH(
           0, 0, controller.canvasSize.width, controller.canvasSize.height);
 
-      // Capa exterior: aplica el borrado con dstOut
+      // Pasada 1: core (siempre presente)
       canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
-
-      if (sigma > 0.5) {
-        // Capa interior: blur pixel-level sobre el trazo sólido
-        canvas.saveLayer(
-          bounds,
-          Paint()..imageFilter = ui.ImageFilter.blur(
-            sigmaX: sigma,
-            sigmaY: sigma,
-            tileMode: TileMode.decal,
-          ),
-        );
-      }
-
-      // Dibujar trazo SÓLIDO blanco (forma del borrador)
-      final maskPaint = Paint()
+      _drawSmoothStroke(canvas, stroke, Paint()
         ..color = Colors.white
         ..strokeWidth = radius * 2
         ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke;
-      _drawSmoothStroke(canvas, stroke, maskPaint);
+        ..style = PaintingStyle.stroke);
+      canvas.restore();
 
-      if (sigma > 0.5) {
-        canvas.restore(); // Aplica blur al trazo → bordes difuminados
+      // Pasada 2: halo interior (solo si softness > 0)
+      if (softness > 0.05) {
+        final halo1Alpha = softness * 0.5;
+        final halo1Radius = radius * (1.0 + softness * 0.5);
+        canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
+        _drawSmoothStroke(canvas, stroke, Paint()
+          ..color = Colors.white.withOpacity(halo1Alpha)
+          ..strokeWidth = halo1Radius * 2
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke);
+        canvas.restore();
       }
 
-      canvas.restore(); // Aplica dstOut → borra con bordes suaves
+      // Pasada 3: halo exterior (solo si muy suave)
+      if (softness > 0.3) {
+        final halo2Alpha = softness * 0.2;
+        final halo2Radius = radius * (1.0 + softness * 1.2);
+        canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
+        _drawSmoothStroke(canvas, stroke, Paint()
+          ..color = Colors.white.withOpacity(halo2Alpha)
+          ..strokeWidth = halo2Radius * 2
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke);
+        canvas.restore();
+      }
+
       return;
     }
     final baseColor = stroke.color.withOpacity(stroke.opacity);
