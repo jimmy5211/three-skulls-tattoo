@@ -318,47 +318,51 @@ class CanvasPainter extends CustomPainter {
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
+      // ── BORRADOR CON DUREZA VARIABLE ─────────────────────
+      // Técnica: UN saveLayer(dstOut) + 2 drawPath máximo.
+      // Rápido porque usa _drawSmoothStroke (path completo, no por segmento).
+      //
+      // Dentro del saveLayer(dstOut):
+      //   1. Trazo blurred amplio  → bordes suaves (si hardness < 1)
+      //   2. Trazo sólido core     → centro siempre borra 100%
+      // Al restore(): dstOut usa el alpha acumulado para borrar con bordes suaves.
       final hardness = stroke.hardness.clamp(0.0, 1.0);
+      final softness = 1.0 - hardness;
       final radius = stroke.strokeWidth.toDouble();
+      final bounds = Rect.fromLTWH(
+          0, 0, controller.canvasSize.width, controller.canvasSize.height);
 
-      if (stroke.points.length < 2) return;
+      // Construir paints ANTES del saveLayer
+      final corePaint = Paint()
+        ..color = Colors.white
+        ..strokeWidth = radius * 2 * hardness.clamp(0.3, 1.0)
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke;
 
-      for (int i = 0; i < stroke.points.length - 1; i++) {
-        final current = stroke.points[i];
-        final next = stroke.points[i + 1];
-
-        final path = Path()
-          ..moveTo(current.dx, current.dy)
-          ..lineTo(next.dx, next.dy);
-
-        // Borrado principal
-        final mainPaint = Paint()
-          ..blendMode = BlendMode.dstOut
-          ..color = Colors.white.withOpacity(hardness)
-          ..strokeWidth = radius * 2
+      Paint? blurPaint;
+      if (softness > 0.02) {
+        blurPaint = Paint()
+          ..color = Colors.white
+          ..strokeWidth = radius * 2 * (1.0 + softness * 0.6)
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
-          ..style = PaintingStyle.stroke;
-        canvas.drawPath(path, mainPaint);
-
-        // Difuminado de borde (solo si no es dureza máxima)
-        if (hardness < 1.0) {
-          const blurSteps = 4;
-          for (int step = 1; step <= blurSteps; step++) {
-            final factor = step / blurSteps;
-            final blurPaint = Paint()
-              ..blendMode = BlendMode.dstOut
-              ..color = Colors.white.withOpacity(
-                  (1 - hardness) * 0.5 * (1 - factor))
-              ..strokeWidth = radius * 2 * (1 + factor)
-              ..maskFilter = MaskFilter.blur(
-                  BlurStyle.normal, radius * 0.4 * factor)
-              ..strokeCap = StrokeCap.round
-              ..style = PaintingStyle.stroke;
-            canvas.drawPath(path, blurPaint);
-          }
-        }
+          ..style = PaintingStyle.stroke
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * softness * 0.8);
       }
+
+      // Un solo saveLayer(dstOut) — máximo 2 drawPath totales
+      canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
+
+      // 1. Halo blur (path completo con Bezier via _drawSmoothStroke)
+      if (blurPaint != null) {
+        _drawSmoothStroke(canvas, stroke, blurPaint);
+      }
+
+      // 2. Core sólido: siempre borra 100% en el centro
+      _drawSmoothStroke(canvas, stroke, corePaint);
+
+      canvas.restore();
       return;
     }
     final baseColor = stroke.color.withOpacity(stroke.opacity);
@@ -659,7 +663,11 @@ class CanvasPainter extends CustomPainter {
     if (oldDelegate.symmetryEnabled != symmetryEnabled) return true;
     if (oldDelegate.showSymmetryLine != showSymmetryLine) return true;
     if (oldDelegate.activeLayerId != activeLayerId) return true;
+    // Comparar contenido de capas (strokes totales + imágenes), no solo length
     if (oldDelegate.layers.length != layers.length) return true;
+    for (int i = 0; i < layers.length; i++) {
+      if (oldDelegate.layers[i].strokes.length != layers[i].strokes.length) return true;
+    }
     if (oldDelegate.backgroundColor != backgroundColor) return true;
     // Detectar cambios en imágenes (posición, resize, flip, borrador)
     if (controller.imagesChanged) {
