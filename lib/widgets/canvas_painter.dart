@@ -318,59 +318,65 @@ class CanvasPainter extends CustomPainter {
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
-      // ── BORRADOR CON DUREZA VARIABLE ─────────────────────
-      // Técnica: múltiples pasadas dstOut con alpha parcial.
+      // ── BORRADOR RADIAL CON DUREZA REAL ──────────────────
+      // Técnica: círculos con RadialGradient estampados a lo largo del trazo,
+      // dentro de UN saveLayer(dstOut).
       //
-      // MaskFilter.blur NO funciona con dstOut en Android.
-      // La única técnica confiable: drawPath con dstOut + withOpacity().
+      // saveLayer(dstOut): todo lo dibujado adentro con srcOver acumula alpha.
+      // Al restore(), ese alpha acumulado corta el contenido exterior:
+      //   resultado = exterior × (1 - alpha_acumulado)
       //
-      // dstOut formula: resultado = dst × (1 - src.alpha)
-      //   alpha=1.0 → borra 100%
-      //   alpha=0.5 → borra 50%
-      //   alpha=0.0 → no borra
+      // RadialGradient por círculo:
+      //   stops: [0.0, hardness, 1.0]
+      //   colors: [white, white×hardness, transparent]
       //
-      // Pasadas (cada una opera sobre lo que queda de la anterior):
-      //   1. Core (width=R×2,    alpha=1.0)       → borra 100% en centro
-      //   2. Halo1 (width=R×2.6, alpha=softness×0.6) → borra parcial en borde
-      //   3. Halo2 (width=R×3.4, alpha=softness×0.25) → borra poco en borde exterior
+      //   hardness=1.0 → gradiente casi sólido hasta el borde → corte duro
+      //   hardness=0.0 → gradiente desde blanco hasta transparente → borde suave
       //
-      // Resultado: zona central borrada 100%, bordes con degradado visible.
+      // La interpolación entre puntos evita huecos ("puntillado") en el trazo.
       final hardness = stroke.hardness.clamp(0.0, 1.0);
-      final softness = 1.0 - hardness;
       final radius = stroke.strokeWidth.toDouble();
-      final basePaint = Paint()
-        ..blendMode = BlendMode.dstOut
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke;
+      final bounds = Rect.fromLTWH(
+          0, 0, controller.canvasSize.width, controller.canvasSize.height);
 
-      // Pasada 1: core — siempre borra 100% en el centro
-      _drawSmoothStroke(canvas, stroke, basePaint
-        ..color = Colors.white
-        ..strokeWidth = radius * 2);
+      // Un solo saveLayer para todo el trazo — evita acumulación por stroke
+      canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
 
-      // Pasada 2: halo interior
-      if (softness > 0.05) {
-        _drawSmoothStroke(canvas, stroke, Paint()
-          ..blendMode = BlendMode.dstOut
-          ..color = Colors.white.withOpacity(softness * 0.6)
-          ..strokeWidth = radius * 2.6
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..style = PaintingStyle.stroke);
+      void stampCircle(Offset point) {
+        final rect = Rect.fromCircle(center: point, radius: radius);
+        final paint = Paint()
+          ..shader = RadialGradient(
+            colors: [
+              Colors.white,
+              Colors.white.withOpacity(hardness),
+              Colors.transparent,
+            ],
+            stops: [0.0, hardness.clamp(0.01, 0.99), 1.0],
+          ).createShader(rect)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(point, radius, paint);
       }
 
-      // Pasada 3: halo exterior
-      if (softness > 0.3) {
-        _drawSmoothStroke(canvas, stroke, Paint()
-          ..blendMode = BlendMode.dstOut
-          ..color = Colors.white.withOpacity(softness * 0.25)
-          ..strokeWidth = radius * 3.4
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..style = PaintingStyle.stroke);
+      if (stroke.points.length == 1) {
+        stampCircle(stroke.points.first);
+      } else {
+        for (int i = 0; i < stroke.points.length - 1; i++) {
+          final p1 = stroke.points[i];
+          final p2 = stroke.points[i + 1];
+          final dist = (p2 - p1).distance;
+          // Paso = 30% del radio → trazo continuo sin huecos
+          final steps = (dist / (radius * 0.3)).ceil().clamp(1, 30);
+          for (int s = 0; s <= steps; s++) {
+            final t = s / steps;
+            stampCircle(Offset(
+              p1.dx + (p2.dx - p1.dx) * t,
+              p1.dy + (p2.dy - p1.dy) * t,
+            ));
+          }
+        }
       }
 
+      canvas.restore(); // aplica dstOut con el alpha acumulado del gradiente
       return;
     }
     final baseColor = stroke.color.withOpacity(stroke.opacity);
