@@ -316,52 +316,59 @@ class CanvasPainter extends CustomPainter {
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
-      // Borrador con dureza variable usando RadialGradient + dstOut.
-      // 
-      // Funciona en TODOS los GPUs Android sin depender de MaskFilter.
+      // ── BORRADOR CON DUREZA VARIABLE ─────────────────────
       //
-      // Técnica:
-      // - saveLayer(dstOut): al restore(), outer = outer × (1 - src.alpha)
-      // - Círculos con gradiente blanco→transparente según hardness
-      //   · hardness=1.0 → parada del gradiente en el borde → borrado duro
-      //   · hardness=0.0 → gradiente desde el centro → borrado muy suave
-      // - dstOut usa el alpha del gradiente para borrar parcialmente
+      // Problema de acumulación: si dibujamos N círculos con dstOut
+      // cada uno borra del resultado anterior → efecto acumulativo → borra 100%.
+      //
+      // Solución correcta: dos capas anidadas
+      //   1. Capa MÁSCARA (interna, srcOver): acumula todos los círculos
+      //      con su gradiente. La acumulación srcOver funciona correctamente
+      //      aquí porque solo estamos construyendo la forma de la máscara.
+      //   2. Capa BORRADOR (externa, dstOut): aplica la máscara de una sola vez.
+      //      Solo se aplica el dstOut una vez al final → no hay acumulación.
+      //
+      // hardness=0% → gradiente desde el centro → bordes muy difusos
+      // hardness=50% → core sólido hasta la mitad + fade suave
+      // hardness=100% → círculo sólido → bordes nítidos
       final hardness = stroke.hardness.clamp(0.0, 1.0);
       final radius = stroke.strokeWidth.toDouble();
       final bounds = Rect.fromLTWH(
           0, 0, controller.canvasSize.width, controller.canvasSize.height);
 
+      // Capa BORRADOR: dstOut se aplica una sola vez al hacer restore()
       canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
 
-      for (final point in stroke.points) {
-        final rect = Rect.fromCircle(center: point, radius: radius);
-        final Paint circlePaint;
+        // Capa MÁSCARA: acumula los círculos con srcOver (normal)
+        // Usamos saveLayer con Paint() limpio para aislar la acumulación
+        canvas.saveLayer(bounds, Paint());
 
-        if (hardness >= 0.99) {
-          // Duro: círculo blanco sólido
-          circlePaint = Paint()
-            ..color = Colors.white
-            ..style = PaintingStyle.fill;
-        } else {
-          // Suave: gradiente radial blanco→transparente
-          // El hardness define dónde empieza el fade:
-          //   hardness=0 → fade desde el centro mismo
-          //   hardness=0.5 → core sólido hasta la mitad, luego fade
-          circlePaint = Paint()
-            ..shader = RadialGradient(
-              colors: [
-                Colors.white,                  // centro: borra 100%
-                Colors.white.withOpacity(0.0), // borde: no borra
-              ],
-              stops: [hardness, 1.0],
-            ).createShader(rect)
-            ..style = PaintingStyle.fill;
-        }
+          for (final point in stroke.points) {
+            final rect = Rect.fromCircle(center: point, radius: radius);
+            final Paint circlePaint;
 
-        canvas.drawCircle(point, radius, circlePaint);
-      }
+            if (hardness >= 0.99) {
+              circlePaint = Paint()
+                ..color = Colors.white
+                ..style = PaintingStyle.fill;
+            } else {
+              circlePaint = Paint()
+                ..shader = RadialGradient(
+                  colors: [
+                    Colors.white,
+                    Colors.white.withOpacity(0.0),
+                  ],
+                  stops: [hardness, 1.0],
+                ).createShader(rect)
+                ..style = PaintingStyle.fill;
+            }
 
-      canvas.restore();
+            canvas.drawCircle(point, radius, circlePaint);
+          }
+
+        canvas.restore(); // Capa MÁSCARA → produce la forma acumulada
+
+      canvas.restore(); // Capa BORRADOR → aplica dstOut UNA SOLA VEZ
       return;
     }
     final baseColor = stroke.color.withOpacity(stroke.opacity);
