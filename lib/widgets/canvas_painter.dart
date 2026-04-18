@@ -319,50 +319,58 @@ class CanvasPainter extends CustomPainter {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
       // ── BORRADOR CON DUREZA VARIABLE ─────────────────────
-      // Técnica: UN saveLayer(dstOut) + 2 drawPath máximo.
-      // Rápido porque usa _drawSmoothStroke (path completo, no por segmento).
+      // Técnica: múltiples pasadas dstOut con alpha parcial.
       //
-      // Dentro del saveLayer(dstOut):
-      //   1. Trazo blurred amplio  → bordes suaves (si hardness < 1)
-      //   2. Trazo sólido core     → centro siempre borra 100%
-      // Al restore(): dstOut usa el alpha acumulado para borrar con bordes suaves.
+      // MaskFilter.blur NO funciona con dstOut en Android.
+      // La única técnica confiable: drawPath con dstOut + withOpacity().
+      //
+      // dstOut formula: resultado = dst × (1 - src.alpha)
+      //   alpha=1.0 → borra 100%
+      //   alpha=0.5 → borra 50%
+      //   alpha=0.0 → no borra
+      //
+      // Pasadas (cada una opera sobre lo que queda de la anterior):
+      //   1. Core (width=R×2,    alpha=1.0)       → borra 100% en centro
+      //   2. Halo1 (width=R×2.6, alpha=softness×0.6) → borra parcial en borde
+      //   3. Halo2 (width=R×3.4, alpha=softness×0.25) → borra poco en borde exterior
+      //
+      // Resultado: zona central borrada 100%, bordes con degradado visible.
       final hardness = stroke.hardness.clamp(0.0, 1.0);
       final softness = 1.0 - hardness;
       final radius = stroke.strokeWidth.toDouble();
-      final bounds = Rect.fromLTWH(
-          0, 0, controller.canvasSize.width, controller.canvasSize.height);
-
-      // Construir paints ANTES del saveLayer
-      final corePaint = Paint()
-        ..color = Colors.white
-        ..strokeWidth = radius * 2 * hardness.clamp(0.3, 1.0)
+      final basePaint = Paint()
+        ..blendMode = BlendMode.dstOut
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
         ..style = PaintingStyle.stroke;
 
-      Paint? blurPaint;
-      if (softness > 0.02) {
-        blurPaint = Paint()
-          ..color = Colors.white
-          ..strokeWidth = radius * 2 * (1.0 + softness * 0.6)
+      // Pasada 1: core — siempre borra 100% en el centro
+      _drawSmoothStroke(canvas, stroke, basePaint
+        ..color = Colors.white
+        ..strokeWidth = radius * 2);
+
+      // Pasada 2: halo interior
+      if (softness > 0.05) {
+        _drawSmoothStroke(canvas, stroke, Paint()
+          ..blendMode = BlendMode.dstOut
+          ..color = Colors.white.withOpacity(softness * 0.6)
+          ..strokeWidth = radius * 2.6
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
-          ..style = PaintingStyle.stroke
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * softness * 0.8);
+          ..style = PaintingStyle.stroke);
       }
 
-      // Un solo saveLayer(dstOut) — máximo 2 drawPath totales
-      canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
-
-      // 1. Halo blur (path completo con Bezier via _drawSmoothStroke)
-      if (blurPaint != null) {
-        _drawSmoothStroke(canvas, stroke, blurPaint);
+      // Pasada 3: halo exterior
+      if (softness > 0.3) {
+        _drawSmoothStroke(canvas, stroke, Paint()
+          ..blendMode = BlendMode.dstOut
+          ..color = Colors.white.withOpacity(softness * 0.25)
+          ..strokeWidth = radius * 3.4
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..style = PaintingStyle.stroke);
       }
 
-      // 2. Core sólido: siempre borra 100% en el centro
-      _drawSmoothStroke(canvas, stroke, corePaint);
-
-      canvas.restore();
       return;
     }
     final baseColor = stroke.color.withOpacity(stroke.opacity);
