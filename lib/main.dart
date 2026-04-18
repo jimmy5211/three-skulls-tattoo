@@ -140,20 +140,25 @@ void main() async {
     const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher')),
     onDidReceiveNotificationResponse: (response) async {
-      // ✅ PUNTO DE ENTRADA PRINCIPAL al tocar notificación local
-      // Funciona siempre: app abierta, background o cerrada
       debugPrint('Notification tapped! payload: ${response.payload}');
       try {
+        UpdateInfo? update;
         if (response.payload != null && response.payload!.isNotEmpty) {
-          final update = UpdateInfo.fromJson(response.payload!);
-          if (update.version.isNotEmpty && update.downloadUrl.isNotEmpty) {
-            pendingUpdateNotifier.value = update;
-            return;
+          update = UpdateInfo.fromJson(response.payload!);
+          if (update.version.isEmpty || update.downloadUrl.isEmpty) {
+            update = null;
           }
         }
-        // Fallback: consultar GitHub
-        final update = await UpdateService.checkForUpdates();
-        if (update.isAvailable) pendingUpdateNotifier.value = update;
+        update ??= await UpdateService.checkForUpdates();
+
+        if (update != null && (update.isAvailable || update.version.isNotEmpty)) {
+          // Guardar en prefs — más confiable que el notifier cuando
+          // el widget tree aún no está listo
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('pending_update', update.toJson());
+          // También setear el notifier por si el widget ya existe
+          pendingUpdateNotifier.value = update;
+        }
       } catch (e) {
         debugPrint('Notification tap error: $e');
       }
