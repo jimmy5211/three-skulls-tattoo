@@ -21,7 +21,8 @@ class BrushStampPainter {
   }) {
     if (stroke.points.isEmpty) return;
 
-    final brushTip = BrushTipManager.get(stroke.brushId ?? '');
+    // FIX: usar getByBrushId que no requiere categoryKey
+    final brushTip = BrushTipManager.getByBrushId(stroke.brushId ?? '');
 
     if (brushTip != null) {
       _stampAlongPath(canvas, stroke, color, brushTip,
