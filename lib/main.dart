@@ -18,18 +18,81 @@ final FlutterLocalNotificationsPlugin notificationsPlugin =
 final ValueNotifier<UpdateInfo?> pendingUpdateNotifier =
     ValueNotifier<UpdateInfo?>(null);
 
+const _channelId = 'update_channel';
 const _channel = AndroidNotificationChannel(
-  'update_channel',
+  _channelId,
   'Actualizaciones',
   description: 'Notificaciones de nuevas versiones de Three Skulls',
   importance: Importance.high,
 );
 
+// ─── MOSTRAR NOTIFICACIÓN LOCAL ──────────────────────────────
+// Función top-level para poder llamarla desde el background handler
+Future<void> _showLocalNotification(
+  FlutterLocalNotificationsPlugin notifs,
+  String title,
+  String body,
+  String payload,
+) async {
+  await notifs.show(
+    0, title, body,
+    NotificationDetails(
+      android: AndroidNotificationDetails(
+        _channelId, 'Actualizaciones',
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      ),
+    ),
+    payload: payload,
+  );
+}
+
+// ─── BACKGROUND FCM HANDLER ──────────────────────────────────
+// Recibe mensajes data-only cuando la app está cerrada/background
+// Muestra una notificación LOCAL — al tocarla, Flutter la maneja
+// via onDidReceiveNotificationResponse de forma confiable
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final data = message.data;
+  if (data['type'] != 'update') return;
+
+  final notifs = FlutterLocalNotificationsPlugin();
+  await notifs.initialize(const InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher')));
+
+  await notifs
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(_channel);
+
+  // Construir payload con los datos del update
+  final updateInfo = UpdateInfo(
+    version: data['version'] ?? '',
+    downloadUrl: data['downloadUrl'] ?? '',
+    releaseNotes: (data['notes'] as String?)
+            ?.split(' • ')
+            .where((s) => s.isNotEmpty)
+            .toList() ?? [],
+    isAvailable: true,
+  );
+
+  await _showLocalNotification(
+    notifs,
+    data['title'] ?? '💀 Three Skulls disponible',
+    data['body'] ?? 'Toca para actualizar',
+    updateInfo.toJson(), // payload completo
+  );
+
+  // Guardar en prefs también por si la app se abre antes de tocar
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('pending_update', updateInfo.toJson());
 }
 
+// ─── WORKMANAGER ─────────────────────────────────────────────
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
@@ -41,65 +104,58 @@ void callbackDispatcher() {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_channel);
-    await _checkAndNotify(notifs);
+    await _backgroundCheck(notifs);
     return true;
   });
 }
 
-/// Verificar update y mostrar notificación local con payload de datos
-Future<void> _checkAndNotify(FlutterLocalNotificationsPlugin notifs) async {
+Future<void> _backgroundCheck(FlutterLocalNotificationsPlugin notifs) async {
   try {
     final update = await UpdateService.checkForUpdates();
     if (!update.isAvailable) return;
-
     final prefs = await SharedPreferences.getInstance();
     if (update.version == (prefs.getString('last_notified') ?? '')) return;
-
-    // Guardar datos en el payload — así al tocar la notificación
-    // no necesitamos consultar nada, ya tenemos todo
-    await notifs.show(
-      0,
+    await _showLocalNotification(
+      notifs,
       '💀 Three Skulls v${update.version} disponible',
       'Toca para actualizar',
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          _channel.id, _channel.name,
-          importance: Importance.high,
-          priority: Priority.high,
-          icon: '@mipmap/ic_launcher',
-        ),
-      ),
-      payload: update.toJson(), // ← datos serializados
+      update.toJson(),
     );
-
     await prefs.setString('last_notified', update.version);
+    await prefs.setString('pending_update', update.toJson());
   } catch (e) {
     debugPrint('Background check: $e');
   }
 }
 
+// ─── MAIN ────────────────────────────────────────────────────
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp();
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
+  // Inicializar notificaciones locales
   await notificationsPlugin.initialize(
     const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher')),
     onDidReceiveNotificationResponse: (response) async {
-      // ✅ Usar payload directo — no necesita red
+      // ✅ PUNTO DE ENTRADA PRINCIPAL al tocar notificación local
+      // Funciona siempre: app abierta, background o cerrada
+      debugPrint('Notification tapped! payload: ${response.payload}');
       try {
         if (response.payload != null && response.payload!.isNotEmpty) {
           final update = UpdateInfo.fromJson(response.payload!);
-          pendingUpdateNotifier.value = update;
-        } else {
-          // Fallback: consultar GitHub
-          final update = await UpdateService.checkForUpdates();
-          if (update.isAvailable) pendingUpdateNotifier.value = update;
+          if (update.version.isNotEmpty && update.downloadUrl.isNotEmpty) {
+            pendingUpdateNotifier.value = update;
+            return;
+          }
         }
+        // Fallback: consultar GitHub
+        final update = await UpdateService.checkForUpdates();
+        if (update.isAvailable) pendingUpdateNotifier.value = update;
       } catch (e) {
-        debugPrint('Notification tap: $e');
+        debugPrint('Notification tap error: $e');
       }
     },
   );
@@ -110,79 +166,33 @@ void main() async {
   await android?.createNotificationChannel(_channel);
   await android?.requestNotificationsPermission();
 
-  // FCM
-  final fcm = FirebaseMessaging.instance;
-  await fcm.requestPermission(alert: true, badge: true, sound: true);
-  await fcm.subscribeToTopic('updates');
-
-  // App en primer plano → mostrar notificación local con payload
+  // FCM: app en primer plano recibe data-only message
+  // → mostrar notificación local con payload
   FirebaseMessaging.onMessage.listen((msg) async {
-    final n = msg.notification;
-    if (n == null) return;
-    // Intentar construir UpdateInfo desde datos FCM
     final data = msg.data;
-    UpdateInfo? update;
-    if (data['version'] != null && data['downloadUrl'] != null) {
-      update = UpdateInfo(
-        version: data['version']!,
-        downloadUrl: data['downloadUrl']!,
-        releaseNotes: (data['notes'] as String?)
-                ?.split(' • ')
-                .where((s) => s.isNotEmpty)
-                .toList() ?? [],
-        isAvailable: true,
-      );
-    }
-    await notificationsPlugin.show(
-      0, n.title, n.body,
-      NotificationDetails(android: AndroidNotificationDetails(
-        _channel.id, _channel.name,
-        importance: Importance.high, priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-      )),
-      payload: update?.toJson(),
+    if (data['type'] != 'update') return;
+    debugPrint('FCM data message received (foreground)');
+    final update = UpdateInfo(
+      version: data['version'] ?? '',
+      downloadUrl: data['downloadUrl'] ?? '',
+      releaseNotes: (data['notes'] as String?)
+              ?.split(' • ')
+              .where((s) => s.isNotEmpty)
+              .toList() ?? [],
+      isAvailable: true,
+    );
+    await _showLocalNotification(
+      notificationsPlugin,
+      data['title'] ?? '💀 Three Skulls disponible',
+      data['body'] ?? 'Toca para actualizar',
+      update.toJson(),
     );
   });
 
-  // App background → usuario tocó notificación FCM
-  FirebaseMessaging.onMessageOpenedApp.listen((msg) async {
-    final data = msg.data;
-    if (data['version'] != null && data['downloadUrl'] != null) {
-      final update = UpdateInfo(
-        version: data['version']!,
-        downloadUrl: data['downloadUrl']!,
-        releaseNotes: (data['notes'] as String?)
-                ?.split(' • ')
-                .where((s) => s.isNotEmpty)
-                .toList() ?? [],
-        isAvailable: true,
-      );
-      // Guardar en prefs por si el widget aún no está listo
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('pending_update', update.toJson());
-      pendingUpdateNotifier.value = update;
-    }
-  });
-
-  // App cerrada → abierta por notificación FCM
-  final initialMessage = await fcm.getInitialMessage();
-  if (initialMessage != null) {
-    final data = initialMessage.data;
-    if (data['version'] != null && data['downloadUrl'] != null) {
-      final update = UpdateInfo(
-        version: data['version']!,
-        downloadUrl: data['downloadUrl']!,
-        releaseNotes: (data['notes'] as String?)
-                ?.split(' • ')
-                .where((s) => s.isNotEmpty)
-                .toList() ?? [],
-        isAvailable: true,
-      );
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('pending_update', update.toJson());
-      pendingUpdateNotifier.value = update;
-    }
-  }
+  // Suscribir a topic
+  await FirebaseMessaging.instance.requestPermission(
+      alert: true, badge: true, sound: true);
+  await FirebaseMessaging.instance.subscribeToTopic('updates');
 
   // Workmanager
   await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
@@ -190,9 +200,6 @@ void main() async {
       frequency: const Duration(hours: 6),
       constraints: Constraints(networkType: NetworkType.connected),
       existingWorkPolicy: ExistingWorkPolicy.keep);
-
-  // Verificar al abrir
-  _checkAndNotify(notificationsPlugin);
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp, DeviceOrientation.portraitDown,
@@ -233,38 +240,40 @@ class _UpdateListener extends StatefulWidget {
   State<_UpdateListener> createState() => _UpdateListenerState();
 }
 
-class _UpdateListenerState extends State<_UpdateListener> {
+class _UpdateListenerState extends State<_UpdateListener>
+    with WidgetsBindingObserver {
   bool _showing = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     pendingUpdateNotifier.addListener(_onUpdate);
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Verificar notifier en memoria
-      if (pendingUpdateNotifier.value != null) {
-        _onUpdate();
-        return;
-      }
-      // Verificar update guardado en prefs (cuando app se abrió por notificación)
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final json = prefs.getString('pending_update');
-        if (json != null && json.isNotEmpty) {
-          await prefs.remove('pending_update');
-          final update = UpdateInfo.fromJson(json);
-          pendingUpdateNotifier.value = update;
-        }
-      } catch (e) {
-        debugPrint('pending_update check: $e');
-      }
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkPending());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     pendingUpdateNotifier.removeListener(_onUpdate);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _checkPending();
+  }
+
+  Future<void> _checkPending() async {
+    if (pendingUpdateNotifier.value != null) { _onUpdate(); return; }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString('pending_update');
+      if (json != null && json.isNotEmpty && mounted) {
+        await prefs.remove('pending_update');
+        pendingUpdateNotifier.value = UpdateInfo.fromJson(json);
+      }
+    } catch (e) { debugPrint('_checkPending: $e'); }
   }
 
   void _onUpdate() {
@@ -272,7 +281,7 @@ class _UpdateListenerState extends State<_UpdateListener> {
     if (update == null || _showing || !mounted) return;
     _showing = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted) { _showing = false; return; }
       ConfirmUpdateDialog.show(context, update).then((_) {
         _showing = false;
         pendingUpdateNotifier.value = null;
