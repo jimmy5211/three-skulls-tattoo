@@ -99,10 +99,11 @@ class CanvasController extends ChangeNotifier {
           ? Colors.white
           : activeColor,
       strokeWidth: activeBrush.size,
-      opacity: activeBrush.opacity, // opacity afecta también al borrador
+      opacity: activeBrush.opacity,
       type: activeBrush.type,
       layerId: activeLayerId,
       hardness: activeBrush.hardness,
+      brushId: activeBrush.id,
     );
 
     if (symmetryEnabled) {
@@ -118,6 +119,7 @@ class CanvasController extends ChangeNotifier {
             : activeBrush.opacity,
         type: activeBrush.type,
         layerId: activeLayerId,
+        brushId: activeBrush.id,
       );
     } else {
       currentMirrorStroke = null;
@@ -145,7 +147,8 @@ class CanvasController extends ChangeNotifier {
       opacity: currentStroke!.opacity,
       type: currentStroke!.type,
       layerId: activeLayerId,
-      hardness: currentStroke!.hardness, // ← preservar hardness en cada punto
+      hardness: currentStroke!.hardness,
+      brushId: currentStroke!.brushId,
     );
 
     if (symmetryEnabled && currentMirrorStroke != null) {
@@ -161,6 +164,7 @@ class CanvasController extends ChangeNotifier {
         opacity: currentMirrorStroke!.opacity,
         type: currentMirrorStroke!.type,
         layerId: activeLayerId,
+        brushId: currentMirrorStroke!.brushId,
       );
     }
 
@@ -188,6 +192,7 @@ class CanvasController extends ChangeNotifier {
         type: currentStroke!.type,
         layerId: currentStroke!.layerId,
         hardness: currentStroke!.hardness,
+        brushId: currentStroke!.brushId,
       );
 
       final updatedStrokes =
@@ -206,6 +211,7 @@ class CanvasController extends ChangeNotifier {
           opacity: currentMirrorStroke!.opacity,
           type: currentMirrorStroke!.type,
           layerId: currentMirrorStroke!.layerId,
+          brushId: currentMirrorStroke!.brushId,
         ));
       }
 
