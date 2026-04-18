@@ -1,692 +1,117 @@
-import 'dart:math';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import '../models/stroke_model.dart';
-import '../models/layer_model.dart';
-import '../models/canvas_image_model.dart';
-import '../controllers/canvas_controller.dart';
-import 'brush_texture_painter.dart';
 
-// Re-export para uso en painter
-export '../models/canvas_image_model.dart' show EraseStroke;
+class DrawPoint {
+  final Offset point;
+  final Paint paint;
+
+  DrawPoint(this.point, this.paint);
+}
+
+class ErasePoint {
+  final Offset point;
+  final double radius;
+  final double hardness;
+
+  ErasePoint({
+    required this.point,
+    required this.radius,
+    required this.hardness,
+  });
+}
 
 class CanvasPainter extends CustomPainter {
-  final List<LayerModel> layers;
-  final StrokeModel? currentStroke;
-  final StrokeModel? currentMirrorStroke;
-  final bool showGrid;
-  final bool showSymmetryLine;
-  final bool symmetryEnabled;
-  final int activeLayerId;
-  final CanvasController controller;
-  final Color backgroundColor;
+  final List<DrawPoint?> points;
+  final List<ErasePoint?> erasePoints;
 
   CanvasPainter({
-    required this.layers,
-    required this.controller,
-    this.currentStroke,
-    this.currentMirrorStroke,
-    this.showGrid = false,
-    this.showSymmetryLine = false,
-    this.symmetryEnabled = false,
-    this.activeLayerId = 0,
-    this.backgroundColor = Colors.white,
+    required this.points,
+    required this.erasePoints,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final canvasW = controller.canvasSize.width;
-    final canvasH = controller.canvasSize.height;
-
-    // FIX: El lienzo es una hoja visible centrada en el área de trabajo.
-    // La "hoja" ocupa exactamente canvasSize píxeles.
-    // Todo lo que esté fuera de la hoja no se pinta.
-
-    // 1. Fondo del área de trabajo (gris oscuro fuera del lienzo)
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = const Color(0xFF3A3A3C),
-    );
-
-    // 2. Sombra de la hoja
-    final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.4)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-    canvas.drawRect(
-      Rect.fromLTWH(4, 4, canvasW, canvasH),
-      shadowPaint,
-    );
-
-    // 3. Fondo de la hoja (color según proyecto)
-    if (backgroundColor == Colors.transparent) {
-      // Patrón de cuadros para indicar transparencia
-      _drawCheckerboard(canvas, canvasW, canvasH);
-    } else {
-      canvas.drawRect(
-        Rect.fromLTWH(0, 0, canvasW, canvasH),
-        Paint()..color = backgroundColor,
-      );
-    }
-
-    // 4. Grid (solo dentro del lienzo)
-    if (showGrid) _drawGrid(canvas, canvasW, canvasH);
-
-    // 5. Capas — clip al lienzo para que los trazos no salgan
-    canvas.save();
-    canvas.clipRect(Rect.fromLTWH(0, 0, canvasW, canvasH));
-
-    for (final layer in layers) {
-      if (!layer.isVisible) continue;
-      _drawLayerOptimized(canvas, size, layer);
-    }
-
-    if (symmetryEnabled && showSymmetryLine) {
-      _drawSymmetryLine(canvas, canvasW, canvasH);
-    }
-
-    canvas.restore();
-
-    // 6. Borde de la hoja
-    final borderColor = backgroundColor == Colors.transparent
-        ? const Color(0xAAC0392B)
-        : const Color(0x33000000);
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, canvasW, canvasH),
-      Paint()
-        ..color = borderColor
-        ..strokeWidth = 1.0
-        ..style = PaintingStyle.stroke,
-    );
+    _drawLines(canvas);
+    _drawErase(canvas);
   }
 
-  void _drawCanvasImage(Canvas canvas, CanvasImageModel img) {
-    if (img.rect.width <= 0 || img.rect.height <= 0) return;
-    if (img.image.width <= 0 || img.image.height <= 0) return;
-
-    final src = Rect.fromLTWH(
-      0, 0, img.image.width.toDouble(), img.image.height.toDouble(),
-    );
-    final cx = img.center.dx;
-    final cy = img.center.dy;
-
-    canvas.save();
-
-    // Aplicar rotación alrededor del centro
-    if (img.rotation != 0.0) {
-      canvas.translate(cx, cy);
-      canvas.rotate(img.rotation);
-      canvas.translate(-cx, -cy);
-    }
-
-    canvas.clipRect(img.rect);
-
-    // Aplicar flip si es necesario
-    if (img.flipX || img.flipY) {
-      canvas.translate(cx, cy);
-      canvas.scale(img.flipX ? -1.0 : 1.0, img.flipY ? -1.0 : 1.0);
-      canvas.translate(-cx, -cy);
-    }
-
-    final imgPaint = Paint()
-      ..color = Colors.white.withOpacity(img.opacity)
-      ..filterQuality = FilterQuality.medium;
-
-    if (!img.hasErases) {
-      canvas.drawImageRect(img.image, src, img.rect, imgPaint);
-    } else {
-      canvas.saveLayer(img.rect, Paint());
-      canvas.drawImageRect(img.image, src, img.rect, imgPaint);
-      for (final erase in [
-        ...img.eraseStrokes,
-        if (img.currentEraseStroke != null) img.currentEraseStroke!,
-      ]) {
-        _drawEraseStroke(canvas, erase);
+  // =========================
+  // ✏️ DIBUJO NORMAL
+  // =========================
+  void _drawLines(Canvas canvas) {
+    for (int i = 0; i < points.length - 1; i++) {
+      if (points[i] != null && points[i + 1] != null) {
+        canvas.drawLine(
+          points[i]!.point,
+          points[i + 1]!.point,
+          points[i]!.paint,
+        );
       }
-      canvas.restore();
-    }
-
-    canvas.restore(); // restore rotación + clip + flip
-
-    // Handles FUERA del clip pero CON rotación
-    if (img.isSelected) {
-      canvas.save();
-      // Aplicar misma rotación para los handles
-      canvas.translate(cx, cy);
-      canvas.rotate(img.rotation);
-      canvas.translate(-cx, -cy);
-
-      // Borde
-      canvas.drawRect(img.rect,
-          Paint()..color = const Color(0xFF4A90E2)..strokeWidth = 2.5..style = PaintingStyle.stroke);
-
-      final hp = Paint()..color = const Color(0xFF4A90E2)..style = PaintingStyle.fill;
-      final hb = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 2.0;
-
-      // 4 handles de esquina (visual 10px, hit area manejado en screen)
-      for (final c in [img.rect.topLeft, img.rect.topRight,
-                       img.rect.bottomLeft, img.rect.bottomRight]) {
-        canvas.drawCircle(c, 10.0, hp);
-        canvas.drawCircle(c, 10.0, hb);
-      }
-
-      // Handle de rotación (rojo, arriba del centro)
-      final rotHandleLocal = img.rect.topCenter - const Offset(0, 36);
-      canvas.drawLine(img.rect.topCenter, rotHandleLocal,
-          Paint()..color = Colors.white..strokeWidth = 1.5);
-      canvas.drawCircle(rotHandleLocal, 12.0,
-          Paint()..color = const Color(0xFFE74C3C)..style = PaintingStyle.fill);
-      canvas.drawCircle(rotHandleLocal, 12.0, hb);
-
-      canvas.restore();
     }
   }
 
+  // =========================
+  // 🧽 BORRADOR CON DUREZA REAL
+  // =========================
+  void _drawErase(Canvas canvas) {
+    for (int i = 0; i < erasePoints.length - 1; i++) {
+      if (erasePoints[i] != null && erasePoints[i + 1] != null) {
+        final current = erasePoints[i]!;
+        final next = erasePoints[i + 1]!;
 
+        final path = Path()
+          ..moveTo(current.point.dx, current.point.dy)
+          ..lineTo(next.point.dx, next.point.dy);
 
-  void _drawEraseStroke(Canvas canvas, EraseStroke erase) {
-    if (erase.points.isEmpty) return;
-    final erasePaint = Paint()
-      ..blendMode = BlendMode.clear
+        _drawEraseStroke(canvas, path, current);
+      }
+    }
+  }
+
+  void _drawEraseStroke(Canvas canvas, Path path, ErasePoint erase) {
+    final hardness = erase.hardness.clamp(0.0, 1.0);
+
+    // =========================
+    // BORRADO PRINCIPAL
+    // =========================
+    final mainPaint = Paint()
+      ..blendMode = BlendMode.dstOut
+      ..color = Colors.white.withOpacity(hardness)
       ..strokeWidth = erase.radius * 2
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
 
-    if (erase.points.length == 1) {
-      canvas.drawCircle(
-        erase.points.first,
-        erase.radius,
-        Paint()
-          ..blendMode = BlendMode.clear
-          ..style = PaintingStyle.fill,
-      );
-      return;
-    }
+    canvas.drawPath(path, mainPaint);
 
-    final path = Path();
-    path.moveTo(erase.points.first.dx, erase.points.first.dy);
-    for (int i = 1; i < erase.points.length - 1; i++) {
-      final mid = Offset(
-        (erase.points[i].dx + erase.points[i + 1].dx) / 2,
-        (erase.points[i].dy + erase.points[i + 1].dy) / 2,
-      );
-      path.quadraticBezierTo(
-        erase.points[i].dx, erase.points[i].dy,
-        mid.dx, mid.dy,
-      );
-    }
-    path.lineTo(erase.points.last.dx, erase.points.last.dy);
-    canvas.drawPath(path, erasePaint);
-  }
+    // =========================
+    // DIFUMINADO (BORDE SUAVE)
+    // =========================
+    if (hardness < 1.0) {
+      final blurSteps = 4;
 
-  void _drawCheckerboard(Canvas canvas, double w, double h) {
-    const squareSize = 12.0;
-    final paint1 = Paint()..color = const Color(0xFFCCCCCC);
-    final paint2 = Paint()..color = const Color(0xFFFFFFFF);
-    int row = 0;
-    for (double y = 0; y < h; y += squareSize) {
-      int col = 0;
-      for (double x = 0; x < w; x += squareSize) {
-        final paint = (row + col) % 2 == 0 ? paint1 : paint2;
-        canvas.drawRect(
-          Rect.fromLTWH(
-            x,
-            y,
-            min(squareSize, w - x),
-            min(squareSize, h - y),
-          ),
-          paint,
-        );
-        col++;
-      }
-      row++;
-    }
-  }
+      for (int i = 1; i <= blurSteps; i++) {
+        final factor = i / blurSteps;
 
-  void _drawLayerOptimized(
-      Canvas canvas, Size size, LayerModel layer) {
-    final rect = Rect.fromLTWH(
-        0, 0, controller.canvasSize.width, controller.canvasSize.height);
-
-    // Imágenes de esta capa, ordenadas por insertionIndex
-    final layerImages = controller.canvasImages
-        .where((img) => img.layerId == layer.id)
-        .toList()
-      ..sort((a, b) => a.insertionIndex.compareTo(b.insertionIndex));
-
-    final hasEraserStrokes =
-        layer.strokes.any((s) => s.type == StrokeType.eraser);
-
-    // Estructura de dos saveLayer para que BlendMode.clear funcione correctamente:
-    //
-    // Externo: aplica opacidad de la capa (si <1.0)
-    // Interno: Paint() limpio — OBLIGATORIO para que BlendMode.clear borre
-    //          píxeles a transparente en lugar de dejar rastro negro
-    //
-    // Sin esta separación, el color del saveLayer externo interfiere con clear.
-    if (layer.opacity < 1.0) {
-      canvas.saveLayer(
-          rect, Paint()..color = Colors.white.withOpacity(layer.opacity));
-    }
-    canvas.saveLayer(rect, Paint()); // LIMPIO — requerido para BlendMode.clear
-
-    // ── RENDERIZADO EN ORDEN TEMPORAL ────────────────────────
-    // Strokes e imágenes se intercalan según su orden de inserción.
-    //
-    // Regla: el borrador (dstOut) solo afecta contenido renderizado
-    // ANTES que él. Una imagen importada DESPUÉS de borrar no es
-    // afectada por ese borrador. ✓
-    //
-    // Ejemplo: [Stroke A, Borrador, Imagen, Stroke B]
-    //   1. Stroke A dibujado
-    //   2. Borrador borra parte de A (dstOut)
-    //   3. Imagen dibujada encima (no afectada por borrador anterior)
-    //   4. Stroke B dibujado encima de todo
-    final strokes = layer.strokes;
-    int imgIdx = 0;
-
-    for (int i = 0; i < strokes.length; i++) {
-      // Insertar imágenes cuyo insertionIndex <= i
-      while (imgIdx < layerImages.length &&
-          layerImages[imgIdx].insertionIndex <= i) {
-        _drawCanvasImage(canvas, layerImages[imgIdx]);
-        imgIdx++;
-      }
-      _drawStroke(canvas, strokes[i]);
-    }
-    // Imágenes insertadas después del último stroke
-    while (imgIdx < layerImages.length) {
-      _drawCanvasImage(canvas, layerImages[imgIdx]);
-      imgIdx++;
-    }
-
-    // Stroke activo en tiempo real
-    if (layer.id == activeLayerId) {
-      if (currentStroke != null) _drawStroke(canvas, currentStroke!);
-      if (currentMirrorStroke != null)
-        _drawStroke(canvas, currentMirrorStroke!);
-    }
-
-    if (hasEraserStrokes) controller.invalidateLayerCache(layer.id);
-
-    canvas.restore(); // interno (dibujo)
-    if (layer.opacity < 1.0) canvas.restore(); // externo (opacidad)
-  }
-
-  void _drawStroke(Canvas canvas, StrokeModel stroke) {
-    if (stroke.points.isEmpty) return;
-    if (stroke.type == StrokeType.eraser) {
-      // ── BORRADOR CON DUREZA VARIABLE ─────────────────────
-      //
-      // Técnica: múltiples pasadas dstOut con alpha parcial y radio creciente.
-      //
-      // BlendMode.dstOut respeta el alpha del paint:
-      //   result = dst × (1 - src.alpha)
-      //   alpha=1.0 → borra 100%   alpha=0.5 → borra 50%   alpha=0.1 → borra 10%
-      //
-      // Pasadas:
-      //   1. Core nítido (radio base, alpha=1.0): borra 100% en el centro
-      //   2. Halo 1 (radio×1.4, alpha=0.5): borra 50% en zona exterior
-      //   3. Halo 2 (radio×2.0, alpha=0.2): borra 20% en zona más exterior
-      //
-      // Para hardness=100%: solo pasada 1 → borrado duro
-      // Para hardness=0%:   las 3 pasadas → bordes muy suaves
-      final hardness = stroke.hardness.clamp(0.0, 1.0);
-      final softness = 1.0 - hardness; // 0=duro, 1=suave
-      final radius = stroke.strokeWidth.toDouble();
-      final bounds = Rect.fromLTWH(
-          0, 0, controller.canvasSize.width, controller.canvasSize.height);
-
-      // Pasada 1: core (siempre presente)
-      canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
-      _drawSmoothStroke(canvas, stroke, Paint()
-        ..color = Colors.white
-        ..strokeWidth = radius * 2
-        ..strokeCap = StrokeCap.round
-        ..style = PaintingStyle.stroke);
-      canvas.restore();
-
-      // Pasada 2: halo interior (solo si softness > 0)
-      if (softness > 0.05) {
-        final halo1Alpha = softness * 0.5;
-        final halo1Radius = radius * (1.0 + softness * 0.5);
-        canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
-        _drawSmoothStroke(canvas, stroke, Paint()
-          ..color = Colors.white.withOpacity(halo1Alpha)
-          ..strokeWidth = halo1Radius * 2
+        final blurPaint = Paint()
+          ..blendMode = BlendMode.dstOut
+          ..color = Colors.white.withOpacity(
+            (1 - hardness) * 0.5 * (1 - factor),
+          )
+          ..strokeWidth = erase.radius * 2 * (1 + factor)
+          ..maskFilter = MaskFilter.blur(
+            BlurStyle.normal,
+            erase.radius * 0.4 * factor,
+          )
           ..strokeCap = StrokeCap.round
-          ..style = PaintingStyle.stroke);
-        canvas.restore();
+          ..style = PaintingStyle.stroke;
+
+        canvas.drawPath(path, blurPaint);
       }
-
-      // Pasada 3: halo exterior (solo si muy suave)
-      if (softness > 0.3) {
-        final halo2Alpha = softness * 0.2;
-        final halo2Radius = radius * (1.0 + softness * 1.2);
-        canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
-        _drawSmoothStroke(canvas, stroke, Paint()
-          ..color = Colors.white.withOpacity(halo2Alpha)
-          ..strokeWidth = halo2Radius * 2
-          ..strokeCap = StrokeCap.round
-          ..style = PaintingStyle.stroke);
-        canvas.restore();
-      }
-
-      return;
     }
-    final baseColor = stroke.color.withOpacity(stroke.opacity);
-    switch (stroke.type) {
-      case StrokeType.liner:
-        _drawLiner(canvas, stroke, baseColor);
-        break;
-      case StrokeType.shader:
-        _drawShader(canvas, stroke, baseColor);
-        break;
-      case StrokeType.dotwork:
-        _drawDotwork(canvas, stroke, baseColor);
-        break;
-      case StrokeType.fill:
-        _drawFill(canvas, stroke, baseColor);
-        break;
-      case StrokeType.caligrafia:
-        _drawCaligrafia(canvas, stroke, baseColor);
-        break;
-      case StrokeType.aerografo:
-        _drawAerografo(canvas, stroke, baseColor);
-        break;
-      case StrokeType.textura:
-        _drawTextura(canvas, stroke, baseColor);
-        break;
-      case StrokeType.abstracto:
-        _drawAbstracto(canvas, stroke, baseColor);
-        break;
-      case StrokeType.carbonciilo:
-        _drawCarboncillo(canvas, stroke, baseColor);
-        break;
-      case StrokeType.elemento:
-        _drawElemento(canvas, stroke, baseColor);
-        break;
-      case StrokeType.aerosol:
-        _drawAerosol(canvas, stroke, baseColor);
-        break;
-      case StrokeType.retoque:
-        _drawRetoque(canvas, stroke, baseColor);
-        break;
-      case StrokeType.luminancia:
-        _drawLuminancia(canvas, stroke, baseColor);
-        break;
-      case StrokeType.industrial:
-        _drawIndustrial(canvas, stroke, baseColor);
-        break;
-      case StrokeType.organico:
-        _drawOrganico(canvas, stroke, baseColor);
-        break;
-      case StrokeType.agua:
-        _drawAgua(canvas, stroke, baseColor);
-        break;
-      case StrokeType.importado:
-        _drawLiner(canvas, stroke, baseColor);
-        break;
-      case StrokeType.eraser:
-        break;
-    }
-  }
-
-  void _drawLiner(Canvas canvas, StrokeModel stroke, Color color) {
-    TextureStrokes.drawLiner(canvas, stroke, color);
-  }
-
-  void _drawShader(Canvas canvas, StrokeModel stroke, Color color) {
-    TextureStrokes.drawShader(canvas, stroke, color);
-  }
-
-  void _drawDotwork(
-      Canvas canvas, StrokeModel stroke, Color color) {
-    final rng = Random(stroke.strokeWidth.toInt() * 7);
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    for (int i = 0; i < stroke.points.length; i += 3) {
-      final variation = 0.6 + rng.nextDouble() * 0.8;
-      canvas.drawCircle(stroke.points[i],
-          stroke.strokeWidth * 0.4 * variation, paint);
-    }
-  }
-
-  void _drawFill(Canvas canvas, StrokeModel stroke, Color color) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = stroke.strokeWidth * 2.5
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-    _drawSmoothStroke(canvas, stroke, paint);
-  }
-
-  void _drawCaligrafia(
-      Canvas canvas, StrokeModel stroke, Color color) {
-    if (stroke.points.length < 2) return;
-    for (int i = 1; i < stroke.points.length; i++) {
-      final p1 = stroke.points[i - 1];
-      final p2 = stroke.points[i];
-      final angle = atan2(p2.dy - p1.dy, p2.dx - p1.dx);
-      final thickness = stroke.strokeWidth *
-          (0.3 + 2.0 * sin(angle + pi / 4).abs());
-      final paint = Paint()
-        ..color = color
-        ..strokeWidth =
-            thickness.clamp(0.3, stroke.strokeWidth * 3.5)
-        ..strokeCap = StrokeCap.square
-        ..style = PaintingStyle.stroke;
-      canvas.drawLine(p1, p2, paint);
-    }
-  }
-
-  void _drawAerografo(
-      Canvas canvas, StrokeModel stroke, Color color) {
-    TextureStrokes.drawAerografo(canvas, stroke, color);
-  }
-
-  void _drawTextura(
-      Canvas canvas, StrokeModel stroke, Color color) {
-    TextureStrokes.drawTextura(canvas, stroke, color);
-  }
-
-  void _drawAbstracto(
-      Canvas canvas, StrokeModel stroke, Color color) {
-    if (stroke.points.length < 2) return;
-    final rng = Random(77);
-    for (int pass = 0; pass < 3; pass++) {
-      final spread = stroke.strokeWidth * (0.5 + pass * 0.8);
-      final path = Path();
-      path.moveTo(
-        stroke.points.first.dx + (rng.nextDouble() - 0.5) * spread,
-        stroke.points.first.dy + (rng.nextDouble() - 0.5) * spread,
-      );
-      for (int i = 1; i < stroke.points.length; i++) {
-        path.lineTo(
-          stroke.points[i].dx +
-              (rng.nextDouble() - 0.5) * spread * 2,
-          stroke.points[i].dy +
-              (rng.nextDouble() - 0.5) * spread * 2,
-        );
-      }
-      final paint = Paint()
-        ..color = color
-            .withOpacity(stroke.opacity * (0.4 - pass * 0.1))
-        ..strokeWidth = stroke.strokeWidth * (0.8 - pass * 0.2)
-        ..strokeCap = StrokeCap.round
-        ..style = PaintingStyle.stroke;
-      canvas.drawPath(path, paint);
-    }
-  }
-
-  void _drawCarboncillo(
-      Canvas canvas, StrokeModel stroke, Color color) {
-    TextureStrokes.drawCarboncillo(canvas, stroke, color);
-  }
-
-  void _drawElemento(
-      Canvas canvas, StrokeModel stroke, Color color) {
-    final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(stroke.opacity * 0.2)
-      ..strokeWidth = stroke.strokeWidth + 3
-      ..strokeCap = StrokeCap.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3)
-      ..style = PaintingStyle.stroke;
-    _drawSmoothStroke(canvas, stroke, shadowPaint);
-    final borderPaint = Paint()
-      ..color =
-          Colors.black.withOpacity(stroke.opacity * 0.8)
-      ..strokeWidth = stroke.strokeWidth + 1.5
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-    _drawSmoothStroke(canvas, stroke, borderPaint);
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = stroke.strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-    _drawSmoothStroke(canvas, stroke, paint);
-    final highlightPaint = Paint()
-      ..color =
-          Colors.white.withOpacity(stroke.opacity * 0.3)
-      ..strokeWidth = stroke.strokeWidth * 0.25
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    _drawSmoothStroke(canvas, stroke, highlightPaint);
-  }
-
-  void _drawAerosol(
-      Canvas canvas, StrokeModel stroke, Color color) {
-    TextureStrokes.drawAerosol(canvas, stroke, color);
-  }
-
-  void _drawRetoque(
-      Canvas canvas, StrokeModel stroke, Color color) {
-    final dodgePaint = Paint()
-      ..color =
-          Colors.white.withOpacity(stroke.opacity * 0.15)
-      ..strokeWidth = stroke.strokeWidth * 2
-      ..strokeCap = StrokeCap.round
-      ..blendMode = BlendMode.colorDodge
-      ..maskFilter = MaskFilter.blur(
-          BlurStyle.normal, stroke.strokeWidth * 0.6)
-      ..style = PaintingStyle.stroke;
-    _drawSmoothStroke(canvas, stroke, dodgePaint);
-    final softPaint = Paint()
-      ..color = color.withOpacity(stroke.opacity * 0.08)
-      ..strokeWidth = stroke.strokeWidth * 1.5
-      ..strokeCap = StrokeCap.round
-      ..maskFilter = MaskFilter.blur(
-          BlurStyle.normal, stroke.strokeWidth * 0.3)
-      ..style = PaintingStyle.stroke;
-    _drawSmoothStroke(canvas, stroke, softPaint);
-  }
-
-  void _drawLuminancia(
-      Canvas canvas, StrokeModel stroke, Color color) {
-    TextureStrokes.drawLuminancia(canvas, stroke, color);
-  }
-
-  void _drawIndustrial(
-      Canvas canvas, StrokeModel stroke, Color color) {
-    TextureStrokes.drawIndustrial(canvas, stroke, color);
-  }
-
-  void _drawOrganico(
-      Canvas canvas, StrokeModel stroke, Color color) {
-    TextureStrokes.drawOrganico(canvas, stroke, color);
-  }
-
-  void _drawAgua(Canvas canvas, StrokeModel stroke, Color color) {
-    TextureStrokes.drawAcuarela(canvas, stroke, color);
-  }
-
-  void _drawSmoothStroke(
-      Canvas canvas, StrokeModel stroke, Paint paint) {
-    if (stroke.points.isEmpty) return;
-    if (stroke.points.length == 1) {
-      canvas.drawCircle(
-        stroke.points.first,
-        paint.strokeWidth / 2,
-        paint..style = PaintingStyle.fill,
-      );
-      return;
-    }
-    final path = Path();
-    path.moveTo(
-        stroke.points.first.dx, stroke.points.first.dy);
-    if (stroke.points.length == 2) {
-      path.lineTo(
-          stroke.points.last.dx, stroke.points.last.dy);
-    } else {
-      for (int i = 1; i < stroke.points.length - 1; i++) {
-        final midPoint = Offset(
-          (stroke.points[i].dx + stroke.points[i + 1].dx) / 2,
-          (stroke.points[i].dy + stroke.points[i + 1].dy) / 2,
-        );
-        path.quadraticBezierTo(
-          stroke.points[i].dx,
-          stroke.points[i].dy,
-          midPoint.dx,
-          midPoint.dy,
-        );
-      }
-      path.lineTo(
-          stroke.points.last.dx, stroke.points.last.dy);
-    }
-    canvas.drawPath(path, paint);
-  }
-
-  void _drawGrid(Canvas canvas, double w, double h) {
-    final gridPaint = Paint()
-      ..color = Colors.grey.withOpacity(0.15)
-      ..strokeWidth = 0.5;
-    const gridSize = 50.0;
-    for (double x = 0; x < w; x += gridSize) {
-      canvas.drawLine(Offset(x, 0), Offset(x, h), gridPaint);
-    }
-    for (double y = 0; y < h; y += gridSize) {
-      canvas.drawLine(Offset(0, y), Offset(w, y), gridPaint);
-    }
-  }
-
-  void _drawSymmetryLine(
-      Canvas canvas, double w, double h) {
-    final paint = Paint()
-      ..color = Colors.blue.withOpacity(0.35)
-      ..strokeWidth = 1.0
-      ..style = PaintingStyle.stroke;
-    canvas.drawLine(
-        Offset(w / 2, 0), Offset(w / 2, h), paint);
   }
 
   @override
-  bool shouldRepaint(CanvasPainter oldDelegate) {
-    if (oldDelegate.currentStroke != currentStroke) return true;
-    if (oldDelegate.currentMirrorStroke != currentMirrorStroke) return true;
-    if (oldDelegate.showGrid != showGrid) return true;
-    if (oldDelegate.symmetryEnabled != symmetryEnabled) return true;
-    if (oldDelegate.showSymmetryLine != showSymmetryLine) return true;
-    if (oldDelegate.activeLayerId != activeLayerId) return true;
-    if (oldDelegate.layers.length != layers.length) return true;
-    if (oldDelegate.backgroundColor != backgroundColor) return true;
-    // Detectar cambios en imágenes (posición, resize, flip, borrador)
-    if (controller.imagesChanged) {
-      controller.resetImagesChanged();
-      return true;
-    }
-    // Siempre repintar si hay imágenes activas (fallback para borrador en tiempo real)
-    if (controller.canvasImages.any((img) => img.currentEraseStroke != null)) {
-      return true;
-    }
-    if (controller.cacheInvalidated) {
-      controller.resetCacheFlag();
-      return true;
-    }
-    return false;
+  bool shouldRepaint(covariant CanvasPainter oldDelegate) {
+    return true;
   }
 }
