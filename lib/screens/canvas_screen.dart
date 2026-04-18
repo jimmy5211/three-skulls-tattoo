@@ -19,6 +19,8 @@ import 'dart:async';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
+import '../models/stamp_model.dart';
+import 'package:flutter/services.dart';
 
 enum BrushPanelTab { todos, descargados, creados, sellos }
 enum SelloTab { creados, descargados }
@@ -48,6 +50,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
   SelectionMode _selectionMode = SelectionMode.ninguno;
   TransformMode _transformMode = TransformMode.ninguno;
   bool _smudgeMode = false;
+
+  // ─── SELLOS ──────────────────────────────────────────────
+  StampItem? _activeStamp;
+  ui.Image? _activeStampImage;
+  StampCategory? _selectedStampCategory;
+  double _stampSize = 300.0;
+  bool _stampMode = false;
 
   BrushPanelTab _brushTab = BrushPanelTab.todos;
   SelloTab _selloTab = SelloTab.creados;
@@ -1934,49 +1943,207 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   Widget _buildSelloContent() {
+    if (_selectedStampCategory != null) {
+      return _buildStampGrid(_selectedStampCategory!);
+    }
+    return _buildStampCategoryGrid();
+  }
+
+  Widget _buildStampCategoryGrid() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          height: 34,
-          margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
-          decoration: BoxDecoration(
-            color: _panelColor,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            children: [
-              _buildSelloTab('Creados', SelloTab.creados),
-              _buildSelloTab(
-                  'Descargados', SelloTab.descargados),
-            ],
-          ),
-        ),
-        Expanded(
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.interests_outlined,
-                    color: _textSecondary, size: 40),
-                const SizedBox(height: 12),
-                Text('No hay sellos aquí',
-                    style: TextStyle(
-                        fontFamily: 'Raleway',
-                        fontSize: 13,
-                        color: _textSecondary)),
-                const SizedBox(height: 6),
-                Text('Toca ··· para agregar',
-                    style: TextStyle(
-                        fontFamily: 'Raleway',
-                        fontSize: 11,
-                        color: _textSecondary
-                            .withOpacity(0.6))),
-              ],
+        if (_activeStamp != null)
+          Container(
+            margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE74C3C).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE74C3C).withOpacity(0.4)),
             ),
+            child: Row(children: [
+              const Icon(Icons.interests, color: Color(0xFFE74C3C), size: 14),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Sello: ${_activeStamp!.name}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'Raleway'))),
+              GestureDetector(
+                onTap: () => setState(() {
+                  _activeStamp = null;
+                  _activeStampImage = null;
+                  _stampMode = false;
+                }),
+                child: const Icon(Icons.close, color: Colors.white38, size: 14),
+              ),
+            ]),
+          ),
+
+        if (_stampMode)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
+            child: Row(children: [
+              const Text('TAM', style: TextStyle(color: Colors.white38, fontSize: 10, fontFamily: 'Raleway')),
+              Expanded(
+                child: Slider(
+                  value: _stampSize.clamp(50.0, 800.0),
+                  min: 50, max: 800,
+                  activeColor: const Color(0xFFE74C3C),
+                  inactiveColor: Colors.white12,
+                  onChanged: (v) => setState(() => _stampSize = v),
+                ),
+              ),
+              Text('${_stampSize.toInt()}',
+                  style: const TextStyle(color: Colors.white54, fontSize: 10, fontFamily: 'Raleway')),
+            ]),
+          ),
+
+        const Padding(
+          padding: EdgeInsets.fromLTRB(12, 10, 10, 6),
+          child: Text('CATEGORÍAS', style: TextStyle(
+              color: Color(0xFFE74C3C), fontSize: 10,
+              fontWeight: FontWeight.bold, letterSpacing: 2, fontFamily: 'Raleway')),
+        ),
+
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 2.2,
+            ),
+            itemCount: StampLibrary.categories.length,
+            itemBuilder: (context, index) {
+              final cat = StampLibrary.categories[index];
+              return GestureDetector(
+                onTap: () => setState(() => _selectedStampCategory = cat),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2C2C2E),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF48484A)),
+                  ),
+                  child: Row(children: [
+                    const SizedBox(width: 12),
+                    Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF3A3A3C),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(child: Text(cat.emoji, style: const TextStyle(fontSize: 18))),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(cat.name, style: const TextStyle(color: Colors.white, fontSize: 12,
+                            fontFamily: 'Raleway', fontWeight: FontWeight.bold)),
+                        Text('${cat.stamps.length} sellos', style: const TextStyle(
+                            color: Colors.white38, fontSize: 10, fontFamily: 'Raleway')),
+                      ],
+                    )),
+                    const Icon(Icons.chevron_right, color: Colors.white24, size: 16),
+                    const SizedBox(width: 8),
+                  ]),
+                ),
+              );
+            },
           ),
         ),
       ],
     );
+  }
+
+  Widget _buildStampGrid(StampCategory category) {
+    return Column(children: [
+      Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(children: [
+          GestureDetector(
+            onTap: () => setState(() => _selectedStampCategory = null),
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              child: const Icon(Icons.arrow_back_ios, color: Colors.white70, size: 16),
+            ),
+          ),
+          Text('${category.emoji}  ${category.name}',
+              style: const TextStyle(color: Colors.white, fontSize: 13, fontFamily: 'BlackOpsOne')),
+          const Spacer(),
+          Text('${category.stamps.length} sellos',
+              style: const TextStyle(color: Colors.white38, fontSize: 10, fontFamily: 'Raleway')),
+          const SizedBox(width: 8),
+        ]),
+      ),
+      Container(height: 0.5, color: const Color(0xFF48484A)),
+      Expanded(
+        child: GridView.builder(
+          padding: const EdgeInsets.all(10),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8,
+          ),
+          itemCount: category.stamps.length,
+          itemBuilder: (context, index) {
+            final stamp = category.stamps[index];
+            final isActive = _activeStamp?.id == stamp.id;
+            return GestureDetector(
+              onTap: () => _selectStamp(stamp),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isActive ? const Color(0xFFE74C3C).withOpacity(0.15) : const Color(0xFF2C2C2E),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isActive ? const Color(0xFFE74C3C) : const Color(0xFF48484A),
+                    width: isActive ? 2 : 1,
+                  ),
+                ),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Image.asset(
+                        stamp.assetPath,
+                        fit: BoxFit.contain,
+                        color: isActive ? const Color(0xFFE74C3C) : Colors.white,
+                        colorBlendMode: BlendMode.srcATop,
+                        errorBuilder: (_, __, ___) => const Icon(
+                            Icons.interests_outlined, color: Colors.white24, size: 28),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 5),
+                    child: Text(stamp.name,
+                        style: TextStyle(
+                            color: isActive ? const Color(0xFFE74C3C) : Colors.white54,
+                            fontSize: 9, fontFamily: 'Raleway'),
+                        maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                  ),
+                ]),
+              ),
+            );
+          },
+        ),
+      ),
+    ]);
+  }
+
+  Future<void> _selectStamp(StampItem stamp) async {
+    try {
+      final data = await rootBundle.load(stamp.assetPath);
+      final codec = await ui.instantiateImageCodec(
+        data.buffer.asUint8List(), targetWidth: 512, targetHeight: 512,
+      );
+      final frame = await codec.getNextFrame();
+      setState(() {
+        _activeStamp = stamp;
+        _activeStampImage = frame.image;
+        _stampMode = true;
+        _showBrushPanel = false;
+      });
+    } catch (e) {
+      debugPrint('Error cargando sello: $e');
+    }
   }
 
   Widget _buildSelloTab(String label, SelloTab tab) {
@@ -2432,6 +2599,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _selectionDragStart = cp;
             _selectionDragCurrent = cp;
             _finalizedMode = SelectionMode.ninguno;
+            return;
+          }
+
+          // ── Sello ────────────────────────────────────────
+          if (_stampMode && _activeStampImage != null) {
+            _controller.placeStampAtPosition(_activeStampImage!, cp, _stampSize);
             return;
           }
 
