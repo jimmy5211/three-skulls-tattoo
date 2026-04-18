@@ -1292,8 +1292,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   ),
                 ),
               ),
-              // ─── DUREZA (solo borrador) ─────────────
-              if (_controller.activeBrush.type == StrokeType.eraser) ...[
+              // ─── DUREZA (todos los pinceles) ────────
+              ...[
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   child: Container(height: 0.5, color: _borderColor),
