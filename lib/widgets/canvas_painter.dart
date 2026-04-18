@@ -340,6 +340,7 @@ class CanvasPainter extends CustomPainter {
       //
       // La interpolación entre puntos evita huecos ("puntillado") en el trazo.
       final hardness = stroke.hardness.clamp(0.0, 1.0);
+      final softness = 1.0 - hardness;
       final radius = stroke.strokeWidth.toDouble();
       // PATH-BASED approach: línea suave sin puntos visibles.
       // Multi-pasada dstOut con paths → funciona ahora que hardness
