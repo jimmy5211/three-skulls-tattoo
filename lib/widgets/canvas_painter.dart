@@ -341,58 +341,48 @@ class CanvasPainter extends CustomPainter {
       // La interpolación entre puntos evita huecos ("puntillado") en el trazo.
       final hardness = stroke.hardness.clamp(0.0, 1.0);
       final radius = stroke.strokeWidth.toDouble();
-      final bounds = Rect.fromLTWH(
-          0, 0, controller.canvasSize.width, controller.canvasSize.height);
+      // PATH-BASED approach: línea suave sin puntos visibles.
+      // Multi-pasada dstOut con paths → funciona ahora que hardness
+      // se preserva correctamente en continueStroke.
+      //
+      // Pasada 1 (core): path sólido ancho=hardness×R×2 → borra 100%
+      // Pasada 2 (halo1): path más ancho + alpha parcial → borde suave
+      // Pasada 3 (halo2): path aún más ancho + alpha bajo → borde exterior
+      //
+      // Cada pasada usa _drawSmoothStroke (Bezier) → trazo limpio sin puntos.
+      // dstOut con withOpacity() funciona en todos los GPUs Android.
 
-      // Un solo saveLayer para todo el trazo — evita acumulación por stroke
-      canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
+      // Pasada 1: núcleo — siempre borra 100%
+      _drawSmoothStroke(canvas, stroke, Paint()
+        ..blendMode = BlendMode.dstOut
+        ..color = Colors.white
+        ..strokeWidth = radius * 2 * hardness.clamp(0.2, 1.0)
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke);
 
-      // Gradiente 2 stops: [hardness, 1.0] → [white, transparent]
-      // SIN stop intermedio — evita el anillo visible que causaba el efecto punteado.
-      // hardness=1.0 → zona sólida hasta el borde → corte duro
-      // hardness=0.0 → fade desde el centro → borrador aerógrafo
-      final gradientColors = [Colors.white, Colors.transparent];
-      final gradientStops = [hardness.clamp(0.0, 0.95), 1.0];
-      // Paso = 70% del radio — menos círculos, trazo sigue siendo continuo
-      final stepSize = radius * 0.7;
-
-      void stampCircle(Offset point) {
-        canvas.drawCircle(
-          point,
-          radius,
-          Paint()
-            ..shader = RadialGradient(
-              colors: gradientColors,
-              stops: gradientStops,
-            ).createShader(Rect.fromCircle(center: point, radius: radius))
-            ..style = PaintingStyle.fill,
-        );
+      // Pasada 2: halo interior suave
+      if (softness > 0.02) {
+        _drawSmoothStroke(canvas, stroke, Paint()
+          ..blendMode = BlendMode.dstOut
+          ..color = Colors.white.withOpacity(softness * 0.65)
+          ..strokeWidth = radius * 2 * (1.0 + softness * 0.55)
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..style = PaintingStyle.stroke);
       }
 
-      if (stroke.points.length == 1) {
-        stampCircle(stroke.points.first);
-      } else {
-        Offset? lastStamped;
-        for (int i = 0; i < stroke.points.length - 1; i++) {
-          final p1 = stroke.points[i];
-          final p2 = stroke.points[i + 1];
-          final dist = (p2 - p1).distance;
-          final steps = (dist / stepSize).ceil().clamp(1, 8); // máx 8 pasos
-          for (int s = 0; s <= steps; s++) {
-            final t = s / steps;
-            final pt = Offset(
-              p1.dx + (p2.dx - p1.dx) * t,
-              p1.dy + (p2.dy - p1.dy) * t,
-            );
-            if (lastStamped != null &&
-                (pt - lastStamped!).distance < stepSize * 0.85) continue;
-            stampCircle(pt);
-            lastStamped = pt;
-          }
-        }
+      // Pasada 3: halo exterior (solo si muy suave)
+      if (softness > 0.25) {
+        _drawSmoothStroke(canvas, stroke, Paint()
+          ..blendMode = BlendMode.dstOut
+          ..color = Colors.white.withOpacity(softness * 0.25)
+          ..strokeWidth = radius * 2 * (1.0 + softness * 1.1)
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..style = PaintingStyle.stroke);
       }
 
-      canvas.restore(); // aplica dstOut con el alpha acumulado del gradiente
       return;
     }
     final baseColor = stroke.color.withOpacity(stroke.opacity);
