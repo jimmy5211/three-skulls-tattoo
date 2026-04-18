@@ -353,32 +353,52 @@ class CanvasPainter extends CustomPainter {
       // Cada pasada usa _drawSmoothStroke (Bezier) → trazo limpio sin puntos.
       // dstOut con withOpacity() funciona en todos los GPUs Android.
 
-      // Pasada 1: núcleo — siempre borra 100%
+      // ── 5 PASADAS para falloff gradual y suave ──────────
+      // Cada pasada: más ancha y menos opaca → borde que se desvanece
+      // sin corte visible en el exterior.
+
+      // P1: Núcleo — borra 100%
       _drawSmoothStroke(canvas, stroke, Paint()
         ..blendMode = BlendMode.dstOut
         ..color = Colors.white
-        ..strokeWidth = radius * 2 * hardness.clamp(0.2, 1.0)
+        ..strokeWidth = radius * 2 * hardness.clamp(0.1, 1.0)
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
         ..style = PaintingStyle.stroke);
 
-      // Pasada 2: halo interior suave
       if (softness > 0.02) {
+        // P2: Halo 1 — 60% alpha
         _drawSmoothStroke(canvas, stroke, Paint()
           ..blendMode = BlendMode.dstOut
-          ..color = Colors.white.withOpacity(softness * 0.65)
-          ..strokeWidth = radius * 2 * (1.0 + softness * 0.55)
+          ..color = Colors.white.withOpacity(softness * 0.6)
+          ..strokeWidth = radius * 2 * (1.0 + softness * 0.5)
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
           ..style = PaintingStyle.stroke);
-      }
 
-      // Pasada 3: halo exterior (solo si muy suave)
-      if (softness > 0.25) {
+        // P3: Halo 2 — 30% alpha, más ancho
         _drawSmoothStroke(canvas, stroke, Paint()
           ..blendMode = BlendMode.dstOut
-          ..color = Colors.white.withOpacity(softness * 0.25)
+          ..color = Colors.white.withOpacity(softness * 0.3)
           ..strokeWidth = radius * 2 * (1.0 + softness * 1.1)
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..style = PaintingStyle.stroke);
+
+        // P4: Halo 3 — 13% alpha, ancho ×2
+        _drawSmoothStroke(canvas, stroke, Paint()
+          ..blendMode = BlendMode.dstOut
+          ..color = Colors.white.withOpacity(softness * 0.13)
+          ..strokeWidth = radius * 2 * (1.0 + softness * 1.9)
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..style = PaintingStyle.stroke);
+
+        // P5: Halo 4 — 5% alpha, muy ancho → borde invisible gradual
+        _drawSmoothStroke(canvas, stroke, Paint()
+          ..blendMode = BlendMode.dstOut
+          ..color = Colors.white.withOpacity(softness * 0.05)
+          ..strokeWidth = radius * 2 * (1.0 + softness * 2.8)
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
           ..style = PaintingStyle.stroke);
