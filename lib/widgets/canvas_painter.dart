@@ -250,45 +250,38 @@ class CanvasPainter extends CustomPainter {
     final rect = Rect.fromLTWH(
         0, 0, controller.canvasSize.width, controller.canvasSize.height);
 
-    // Imágenes de esta capa, ordenadas por insertionIndex
     final layerImages = controller.canvasImages
         .where((img) => img.layerId == layer.id)
         .toList()
       ..sort((a, b) => a.insertionIndex.compareTo(b.insertionIndex));
 
-    final hasEraserStrokes =
-        layer.strokes.any((s) => s.type == StrokeType.eraser);
+    final isActiveLayer = layer.id == activeLayerId;
+    final hasCurrentStroke = isActiveLayer && currentStroke != null;
 
-    // Estructura de dos saveLayer para que BlendMode.clear funcione correctamente:
-    //
-    // Externo: aplica opacidad de la capa (si <1.0)
-    // Interno: Paint() limpio — OBLIGATORIO para que BlendMode.clear borre
-    //          píxeles a transparente en lugar de dejar rastro negro
-    //
-    // Sin esta separación, el color del saveLayer externo interfiere con clear.
     if (layer.opacity < 1.0) {
       canvas.saveLayer(
           rect, Paint()..color = Colors.white.withOpacity(layer.opacity));
     }
-    canvas.saveLayer(rect, Paint()); // LIMPIO — requerido para BlendMode.clear
+    canvas.saveLayer(rect, Paint());
 
-    // ── RENDERIZADO EN ORDEN TEMPORAL ────────────────────────
-    // Strokes e imágenes se intercalan según su orden de inserción.
-    //
-    // Regla: el borrador (dstOut) solo afecta contenido renderizado
-    // ANTES que él. Una imagen importada DESPUÉS de borrar no es
-    // afectada por ese borrador. ✓
-    //
-    // Ejemplo: [Stroke A, Borrador, Imagen, Stroke B]
-    //   1. Stroke A dibujado
-    //   2. Borrador borra parte de A (dstOut)
-    //   3. Imagen dibujada encima (no afectada por borrador anterior)
-    //   4. Stroke B dibujado encima de todo
+    // ── CACHÉ DE STROKES HISTÓRICOS ──────────────────────────
+    // Si no hay stroke en progreso en esta capa, usamos el Picture cacheado.
+    // Solo re-renderizamos todos los strokes cuando hay cambios.
+    if (!hasCurrentStroke) {
+      final cached = controller.getLayerCache(layer.id);
+      if (cached != null) {
+        // Usar caché — O(1) en lugar de O(n_strokes)
+        canvas.drawPicture(cached);
+        canvas.restore();
+        if (layer.opacity < 1.0) canvas.restore();
+        return;
+      }
+    }
+
+    // Renderizar todos los strokes e imágenes
     final strokes = layer.strokes;
     int imgIdx = 0;
-
     for (int i = 0; i < strokes.length; i++) {
-      // Insertar imágenes cuyo insertionIndex <= i
       while (imgIdx < layerImages.length &&
           layerImages[imgIdx].insertionIndex <= i) {
         _drawCanvasImage(canvas, layerImages[imgIdx]);
@@ -296,28 +289,44 @@ class CanvasPainter extends CustomPainter {
       }
       _drawStroke(canvas, strokes[i]);
     }
-    // Imágenes insertadas después del último stroke
     while (imgIdx < layerImages.length) {
       _drawCanvasImage(canvas, layerImages[imgIdx]);
       imgIdx++;
     }
 
-    // Stroke activo en tiempo real
-    if (layer.id == activeLayerId) {
-      if (currentStroke != null) _drawStroke(canvas, currentStroke!);
-      if (currentMirrorStroke != null)
-        _drawStroke(canvas, currentMirrorStroke!);
+    // ── GUARDAR EN CACHÉ si no hay stroke activo ─────────────
+    // Cuando el usuario levanta el dedo, el resultado se cachea.
+    if (!hasCurrentStroke && layer.strokes.isNotEmpty) {
+      final recorder = ui.PictureRecorder();
+      final cacheCanvas = Canvas(recorder, rect);
+      // Re-render en el canvas de caché (misma lógica)
+      int ci = 0;
+      for (int i = 0; i < strokes.length; i++) {
+        while (ci < layerImages.length &&
+            layerImages[ci].insertionIndex <= i) {
+          _drawCanvasImage(cacheCanvas, layerImages[ci]);
+          ci++;
+        }
+        _drawStroke(cacheCanvas, strokes[i]);
+      }
+      while (ci < layerImages.length) {
+        _drawCanvasImage(cacheCanvas, layerImages[ci]);
+        ci++;
+      }
+      controller.setLayerCache(layer.id, recorder.endRecording());
     }
 
-    // Solo invalidar cache si hay un stroke de borrador EN PROGRESO
-    // Los strokes históricos no necesitan re-renderizado constante
-    if (currentStroke != null && currentStroke!.type == StrokeType.eraser &&
-        currentStroke!.layerId == layer.id) {
+    // Stroke activo en tiempo real (encima del caché)
+    if (hasCurrentStroke) {
+      _drawStroke(canvas, currentStroke!);
+      if (currentMirrorStroke != null)
+        _drawStroke(canvas, currentMirrorStroke!);
+      // Invalidar caché mientras se dibuja (se regenera al soltar)
       controller.invalidateLayerCache(layer.id);
     }
 
-    canvas.restore(); // interno (dibujo)
-    if (layer.opacity < 1.0) canvas.restore(); // externo (opacidad)
+    canvas.restore();
+    if (layer.opacity < 1.0) canvas.restore();
   }
 
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
@@ -351,7 +360,7 @@ class CanvasPainter extends CustomPainter {
       // Rellenar huecos entre puntos para trazo continuo
       void fillGap(Offset p1, Offset p2) {
         final dist = (p2 - p1).distance;
-        final steps = (dist / (radius * 0.3)).ceil().clamp(1, 20);
+        final steps = (dist / (radius * 0.5)).ceil().clamp(1, 10);
         for (int s = 1; s < steps; s++) {
           stamp(Offset.lerp(p1, p2, s / steps)!);
         }
@@ -423,33 +432,13 @@ class CanvasPainter extends CustomPainter {
   }
 
   void _drawLiner(Canvas canvas, StrokeModel stroke, Color color) {
-    final hardness = stroke.hardness.clamp(0.0, 1.0);
-    if (hardness < 0.98) {
-      final sigma = (1.0 - hardness) * stroke.strokeWidth * 0.4;
-      final bounds = Rect.fromLTWH(0, 0,
-          controller.canvasSize.width, controller.canvasSize.height);
-      canvas.saveLayer(bounds,
-          Paint()..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma));
-      TextureStrokes.drawLiner(canvas, stroke, color);
-      canvas.restore();
-    } else {
-      TextureStrokes.drawLiner(canvas, stroke, color);
-    }
+    TextureStrokes.drawLiner(canvas, stroke, color,
+        hardness: stroke.hardness);
   }
 
   void _drawShader(Canvas canvas, StrokeModel stroke, Color color) {
-    final hardness = stroke.hardness.clamp(0.0, 1.0);
-    if (hardness < 0.98) {
-      final sigma = (1.0 - hardness) * stroke.strokeWidth * 0.4;
-      final bounds = Rect.fromLTWH(0, 0,
-          controller.canvasSize.width, controller.canvasSize.height);
-      canvas.saveLayer(bounds,
-          Paint()..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma));
-      TextureStrokes.drawShader(canvas, stroke, color);
-      canvas.restore();
-    } else {
-      TextureStrokes.drawShader(canvas, stroke, color);
-    }
+    TextureStrokes.drawShader(canvas, stroke, color,
+        hardness: stroke.hardness);
   }
 
   void _drawDotwork(
@@ -617,12 +606,12 @@ class CanvasPainter extends CustomPainter {
     TextureStrokes.drawAcuarela(canvas, stroke, color);
   }
 
-  // Aplica hardness como blur a un paint de dibujo normal (no borrador)
+  // Aplica hardness como MaskFilter.blur al paint (pinceles normales, no borrador)
   void _applyHardness(Paint paint, StrokeModel stroke) {
     final hardness = stroke.hardness.clamp(0.0, 1.0);
-    if (hardness < 0.98 && stroke.type != StrokeType.eraser) {
-      final sigma = (1.0 - hardness) * stroke.strokeWidth * 0.4;
-      if (sigma > 0.3) paint.maskFilter = MaskFilter.blur(BlurStyle.normal, sigma);
+    if (hardness < 0.95) {
+      final sigma = (1.0 - hardness) * stroke.strokeWidth * 0.35;
+      if (sigma > 0.5) paint.maskFilter = MaskFilter.blur(BlurStyle.normal, sigma);
     }
   }
 
