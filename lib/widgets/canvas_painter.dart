@@ -323,85 +323,41 @@ class CanvasPainter extends CustomPainter {
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
-      // ── BORRADOR RADIAL CON DUREZA REAL ──────────────────
-      // Técnica: círculos con RadialGradient estampados a lo largo del trazo,
-      // dentro de UN saveLayer(dstOut).
-      //
-      // saveLayer(dstOut): todo lo dibujado adentro con srcOver acumula alpha.
-      // Al restore(), ese alpha acumulado corta el contenido exterior:
-      //   resultado = exterior × (1 - alpha_acumulado)
-      //
-      // RadialGradient por círculo:
-      //   stops: [0.0, hardness, 1.0]
-      //   colors: [white, white×hardness, transparent]
-      //
-      //   hardness=1.0 → gradiente casi sólido hasta el borde → corte duro
-      //   hardness=0.0 → gradiente desde blanco hasta transparente → borde suave
-      //
-      // La interpolación entre puntos evita huecos ("puntillado") en el trazo.
-      final hardness = stroke.hardness.clamp(0.0, 1.0);
-      final softness = 1.0 - hardness;
       final radius = stroke.strokeWidth.toDouble();
-      // PATH-BASED approach: línea suave sin puntos visibles.
-      // Multi-pasada dstOut con paths → funciona ahora que hardness
-      // se preserva correctamente en continueStroke.
-      //
-      // Pasada 1 (core): path sólido ancho=hardness×R×2 → borra 100%
-      // Pasada 2 (halo1): path más ancho + alpha parcial → borde suave
-      // Pasada 3 (halo2): path aún más ancho + alpha bajo → borde exterior
-      //
-      // Cada pasada usa _drawSmoothStroke (Bezier) → trazo limpio sin puntos.
-      // dstOut con withOpacity() funciona en todos los GPUs Android.
+      final hardness = stroke.hardness.clamp(0.0, 1.0);
 
-      // ── 5 PASADAS para falloff gradual y suave ──────────
-      // Cada pasada: más ancha y menos opaca → borde que se desvanece
-      // sin corte visible en el exterior.
+      // Estampar un círculo con gradiente radial real
+      void stamp(Offset point) {
+        canvas.drawCircle(
+          point,
+          radius,
+          Paint()
+            ..shader = ui.Gradient.radial(
+              point,
+              radius,
+              [
+                Colors.white,
+                Colors.white.withOpacity(hardness),
+                Colors.transparent,
+              ],
+              [0.0, hardness.clamp(0.01, 0.99), 1.0],
+            )
+            ..blendMode = BlendMode.dstOut,
+        );
+      }
 
-      // P1: Núcleo — borra 100%
-      _drawSmoothStroke(canvas, stroke, Paint()
-        ..blendMode = BlendMode.dstOut
-        ..color = Colors.white
-        ..strokeWidth = radius * 2 * hardness.clamp(0.1, 1.0)
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke);
+      // Rellenar huecos entre puntos para trazo continuo
+      void fillGap(Offset p1, Offset p2) {
+        final dist = (p2 - p1).distance;
+        final steps = (dist / (radius * 0.3)).ceil().clamp(1, 20);
+        for (int s = 1; s < steps; s++) {
+          stamp(Offset.lerp(p1, p2, s / steps)!);
+        }
+      }
 
-      if (softness > 0.02) {
-        // P2: Halo 1 — 60% alpha
-        _drawSmoothStroke(canvas, stroke, Paint()
-          ..blendMode = BlendMode.dstOut
-          ..color = Colors.white.withOpacity(softness * 0.6)
-          ..strokeWidth = radius * 2 * (1.0 + softness * 0.5)
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..style = PaintingStyle.stroke);
-
-        // P3: Halo 2 — 30% alpha, más ancho
-        _drawSmoothStroke(canvas, stroke, Paint()
-          ..blendMode = BlendMode.dstOut
-          ..color = Colors.white.withOpacity(softness * 0.3)
-          ..strokeWidth = radius * 2 * (1.0 + softness * 1.1)
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..style = PaintingStyle.stroke);
-
-        // P4: Halo 3 — 13% alpha, ancho ×2
-        _drawSmoothStroke(canvas, stroke, Paint()
-          ..blendMode = BlendMode.dstOut
-          ..color = Colors.white.withOpacity(softness * 0.13)
-          ..strokeWidth = radius * 2 * (1.0 + softness * 1.9)
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..style = PaintingStyle.stroke);
-
-        // P5: Halo 4 — 5% alpha, muy ancho → borde invisible gradual
-        _drawSmoothStroke(canvas, stroke, Paint()
-          ..blendMode = BlendMode.dstOut
-          ..color = Colors.white.withOpacity(softness * 0.05)
-          ..strokeWidth = radius * 2 * (1.0 + softness * 2.8)
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..style = PaintingStyle.stroke);
+      for (int i = 0; i < stroke.points.length; i++) {
+        stamp(stroke.points[i]);
+        if (i > 0) fillGap(stroke.points[i - 1], stroke.points[i]);
       }
 
       return;
