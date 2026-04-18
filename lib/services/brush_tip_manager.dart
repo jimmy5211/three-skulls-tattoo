@@ -15,7 +15,7 @@ class BrushTipManager {
     'aerografo': 'aerografo',
     'texturas': 'texturas',
     'abstractos': 'abstractos',
-    'carbonciilo': 'carboncillo',
+    'carboncillo': 'carboncillo', // FIX: typo corregido (era 'carbonciilo')
     'elementos': 'elementos',
     'aerosoles': 'aerosoles',
     'retoque': 'retoque',
@@ -32,10 +32,16 @@ class BrushTipManager {
     return 'assets/brushes/$folder/$brushId.png';
   }
 
+  /// Clave única para el caché (evita colisiones entre categorías)
+  static String _cacheKey(String brushId, String categoryKey) =>
+      '$categoryKey/$brushId';
+
   /// Carga un brush tip PNG desde assets. Retorna null si no existe.
   static Future<ui.Image?> load(String brushId, String categoryKey) async {
+    final key = _cacheKey(brushId, categoryKey);
+
     // Ya en caché
-    if (_cache.containsKey(brushId)) return _cache[brushId];
+    if (_cache.containsKey(key)) return _cache[key];
 
     final path = assetPath(brushId, categoryKey);
 
@@ -46,11 +52,11 @@ class BrushTipManager {
       final data = await rootBundle.load(path);
       final codec = await ui.instantiateImageCodec(
         data.buffer.asUint8List(),
-        targetWidth: 256, // Normalizar tamaño
+        targetWidth: 256,
         targetHeight: 256,
       );
       final frame = await codec.getNextFrame();
-      _cache[brushId] = frame.image;
+      _cache[key] = frame.image;
       return frame.image;
     } catch (_) {
       _notFound.add(path);
@@ -59,7 +65,8 @@ class BrushTipManager {
   }
 
   /// Obtiene el tip cacheado (null si no se ha cargado o no existe)
-  static ui.Image? get(String brushId) => _cache[brushId];
+  static ui.Image? get(String brushId, String categoryKey) =>
+      _cache[_cacheKey(brushId, categoryKey)];
 
   /// Precarga TODOS los pinceles default al iniciar la app
   static Future<void> preloadAll(List<dynamic> brushes) async {
@@ -76,6 +83,14 @@ class BrushTipManager {
     }
   }
 
+  /// Precarga todos los aerosoles (aers_01 a aers_15)
+  static Future<void> preloadAerosoles() async {
+    for (int i = 1; i <= 15; i++) {
+      final id = 'aers_${i.toString().padLeft(2, '0')}';
+      await load(id, 'aerosoles');
+    }
+  }
+
   /// Limpia toda la caché
   static void clearCache() {
     for (final img in _cache.values) {
@@ -86,5 +101,6 @@ class BrushTipManager {
   }
 
   /// ¿Tiene tip cargado este pincel?
-  static bool hasTip(String brushId) => _cache.containsKey(brushId);
+  static bool hasTip(String brushId, String categoryKey) =>
+      _cache.containsKey(_cacheKey(brushId, categoryKey));
 }
