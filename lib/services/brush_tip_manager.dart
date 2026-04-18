@@ -64,9 +64,22 @@ class BrushTipManager {
     }
   }
 
-  /// Obtiene el tip cacheado (null si no se ha cargado o no existe)
+  /// Obtiene el tip cacheado por brushId + categoryKey
   static ui.Image? get(String brushId, String categoryKey) =>
       _cache[_cacheKey(brushId, categoryKey)];
+
+  /// Obtiene el tip cacheado buscando solo por brushId (sin necesitar categoryKey).
+  /// Útil cuando solo se tiene el brushId (p.ej. en StrokeModel al pintar).
+  /// Si hay colisión de nombre entre categorías devuelve el primero encontrado.
+  static ui.Image? getByBrushId(String brushId) {
+    if (brushId.isEmpty) return null;
+    // Busca cualquier clave que termine en '/$brushId'
+    final suffix = '/$brushId';
+    for (final entry in _cache.entries) {
+      if (entry.key.endsWith(suffix)) return entry.value;
+    }
+    return null;
+  }
 
   /// Precarga TODOS los pinceles default al iniciar la app
   static Future<void> preloadAll(List<dynamic> brushes) async {
