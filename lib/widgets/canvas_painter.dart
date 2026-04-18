@@ -342,36 +342,49 @@ class CanvasPainter extends CustomPainter {
       // Un solo saveLayer para todo el trazo — evita acumulación por stroke
       canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
 
+      // Pre-calcular colors y stops UNA VEZ fuera del loop
+      final gradientColors = [
+        Colors.white,
+        Colors.white.withOpacity(hardness),
+        Colors.transparent,
+      ];
+      final gradientStops = [0.0, hardness.clamp(0.01, 0.99), 1.0];
+      // Paso = 50% del radio (era 30%) — 40% menos círculos, visualmente igual
+      final stepSize = radius * 0.5;
+
       void stampCircle(Offset point) {
-        final rect = Rect.fromCircle(center: point, radius: radius);
-        final paint = Paint()
-          ..shader = RadialGradient(
-            colors: [
-              Colors.white,
-              Colors.white.withOpacity(hardness),
-              Colors.transparent,
-            ],
-            stops: [0.0, hardness.clamp(0.01, 0.99), 1.0],
-          ).createShader(rect)
-          ..style = PaintingStyle.fill;
-        canvas.drawCircle(point, radius, paint);
+        canvas.drawCircle(
+          point,
+          radius,
+          Paint()
+            ..shader = RadialGradient(
+              colors: gradientColors,
+              stops: gradientStops,
+            ).createShader(Rect.fromCircle(center: point, radius: radius))
+            ..style = PaintingStyle.fill,
+        );
       }
 
       if (stroke.points.length == 1) {
         stampCircle(stroke.points.first);
       } else {
+        Offset? lastStamped;
         for (int i = 0; i < stroke.points.length - 1; i++) {
           final p1 = stroke.points[i];
           final p2 = stroke.points[i + 1];
           final dist = (p2 - p1).distance;
-          // Paso = 30% del radio → trazo continuo sin huecos
-          final steps = (dist / (radius * 0.3)).ceil().clamp(1, 30);
+          final steps = (dist / stepSize).ceil().clamp(1, 12); // máx 12 pasos
           for (int s = 0; s <= steps; s++) {
             final t = s / steps;
-            stampCircle(Offset(
+            final pt = Offset(
               p1.dx + (p2.dx - p1.dx) * t,
               p1.dy + (p2.dy - p1.dy) * t,
-            ));
+            );
+            // Saltar si estamos muy cerca del último círculo estampado
+            if (lastStamped != null &&
+                (pt - lastStamped!).distance < stepSize * 0.8) continue;
+            stampCircle(pt);
+            lastStamped = pt;
           }
         }
       }
