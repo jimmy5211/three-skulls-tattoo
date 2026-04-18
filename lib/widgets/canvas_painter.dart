@@ -327,6 +327,8 @@ class CanvasPainter extends CustomPainter {
       final hardness = stroke.hardness.clamp(0.0, 1.0);
 
       // Estampar un círculo con gradiente radial real
+      final opacity = stroke.opacity.clamp(0.0, 1.0);
+
       void stamp(Offset point) {
         canvas.drawCircle(
           point,
@@ -336,8 +338,8 @@ class CanvasPainter extends CustomPainter {
               point,
               radius,
               [
-                Colors.white,
-                Colors.white.withOpacity(hardness),
+                Colors.white.withOpacity(opacity),          // centro: opacidad real
+                Colors.white.withOpacity(hardness * opacity), // transición
                 Colors.transparent,
               ],
               [0.0, hardness.clamp(0.01, 0.99), 1.0],
@@ -421,11 +423,33 @@ class CanvasPainter extends CustomPainter {
   }
 
   void _drawLiner(Canvas canvas, StrokeModel stroke, Color color) {
-    TextureStrokes.drawLiner(canvas, stroke, color);
+    final hardness = stroke.hardness.clamp(0.0, 1.0);
+    if (hardness < 0.98) {
+      final sigma = (1.0 - hardness) * stroke.strokeWidth * 0.4;
+      final bounds = Rect.fromLTWH(0, 0,
+          controller.canvasSize.width, controller.canvasSize.height);
+      canvas.saveLayer(bounds,
+          Paint()..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma));
+      TextureStrokes.drawLiner(canvas, stroke, color);
+      canvas.restore();
+    } else {
+      TextureStrokes.drawLiner(canvas, stroke, color);
+    }
   }
 
   void _drawShader(Canvas canvas, StrokeModel stroke, Color color) {
-    TextureStrokes.drawShader(canvas, stroke, color);
+    final hardness = stroke.hardness.clamp(0.0, 1.0);
+    if (hardness < 0.98) {
+      final sigma = (1.0 - hardness) * stroke.strokeWidth * 0.4;
+      final bounds = Rect.fromLTWH(0, 0,
+          controller.canvasSize.width, controller.canvasSize.height);
+      canvas.saveLayer(bounds,
+          Paint()..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma));
+      TextureStrokes.drawShader(canvas, stroke, color);
+      canvas.restore();
+    } else {
+      TextureStrokes.drawShader(canvas, stroke, color);
+    }
   }
 
   void _drawDotwork(
@@ -448,8 +472,8 @@ class CanvasPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
-    _drawSmoothStroke(canvas, stroke, paint);
-  }
+    _applyHardness(paint, stroke);
+    _drawSmoothStroke(canvas, stroke, paint); }
 
   void _drawCaligrafia(
       Canvas canvas, StrokeModel stroke, Color color) {
@@ -591,6 +615,15 @@ class CanvasPainter extends CustomPainter {
 
   void _drawAgua(Canvas canvas, StrokeModel stroke, Color color) {
     TextureStrokes.drawAcuarela(canvas, stroke, color);
+  }
+
+  // Aplica hardness como blur a un paint de dibujo normal (no borrador)
+  void _applyHardness(Paint paint, StrokeModel stroke) {
+    final hardness = stroke.hardness.clamp(0.0, 1.0);
+    if (hardness < 0.98 && stroke.type != StrokeType.eraser) {
+      final sigma = (1.0 - hardness) * stroke.strokeWidth * 0.4;
+      if (sigma > 0.3) paint.maskFilter = MaskFilter.blur(BlurStyle.normal, sigma);
+    }
   }
 
   void _drawSmoothStroke(
