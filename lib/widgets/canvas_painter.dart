@@ -316,40 +316,51 @@ class CanvasPainter extends CustomPainter {
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
-      // MaskFilter.blur + BlendMode.clear no funciona en GPUs Android.
-      // Solución: saveLayer(dstOut) + trazo BLANCO con blur adentro.
+      // Borrador con dureza variable usando RadialGradient + dstOut.
+      // 
+      // Funciona en TODOS los GPUs Android sin depender de MaskFilter.
       //
-      // dstOut: resultado = dst × (1 - src.alpha)
-      //   - Donde src es blanco opaco (alpha=1): borra 100%
-      //   - Donde src es blanco difuminado (alpha<1): borra parcialmente
-      //
-      // El blur en el trazo blanco crea la degradación suave en los bordes.
-      // Este enfoque funciona en TODOS los GPUs Android.
+      // Técnica:
+      // - saveLayer(dstOut): al restore(), outer = outer × (1 - src.alpha)
+      // - Círculos con gradiente blanco→transparente según hardness
+      //   · hardness=1.0 → parada del gradiente en el borde → borrado duro
+      //   · hardness=0.0 → gradiente desde el centro → borrado muy suave
+      // - dstOut usa el alpha del gradiente para borrar parcialmente
       final hardness = stroke.hardness.clamp(0.0, 1.0);
       final radius = stroke.strokeWidth.toDouble();
-      final sigma = (1.0 - hardness) * radius * 0.8;
-      final rect = Rect.fromLTWH(
+      final bounds = Rect.fromLTWH(
           0, 0, controller.canvasSize.width, controller.canvasSize.height);
 
-      // 1. Abrir layer con dstOut: lo que dibujemos adentro "recortará" el exterior
-      canvas.saveLayer(rect, Paint()..blendMode = BlendMode.dstOut);
+      canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
 
-      // 2. Dibujar trazo BLANCO (el alpha del blanco controla cuánto se borra)
-      final paint = Paint()
-        ..color = Colors.white  // blanco = alpha máximo = borra 100%
-        ..strokeWidth = radius * 2
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke;
+      for (final point in stroke.points) {
+        final rect = Rect.fromCircle(center: point, radius: radius);
+        final Paint circlePaint;
 
-      // 3. Aplicar blur al trazo blanco para suavizar los bordes
-      if (sigma > 0.5) {
-        paint.maskFilter = MaskFilter.blur(BlurStyle.normal, sigma);
+        if (hardness >= 0.99) {
+          // Duro: círculo blanco sólido
+          circlePaint = Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.fill;
+        } else {
+          // Suave: gradiente radial blanco→transparente
+          // El hardness define dónde empieza el fade:
+          //   hardness=0 → fade desde el centro mismo
+          //   hardness=0.5 → core sólido hasta la mitad, luego fade
+          circlePaint = Paint()
+            ..shader = RadialGradient(
+              colors: [
+                Colors.white,                  // centro: borra 100%
+                Colors.white.withOpacity(0.0), // borde: no borra
+              ],
+              stops: [hardness, 1.0],
+            ).createShader(rect)
+            ..style = PaintingStyle.fill;
+        }
+
+        canvas.drawCircle(point, radius, circlePaint);
       }
 
-      _drawSmoothStroke(canvas, stroke, paint);
-
-      // 4. restore() aplica el dstOut: exterior = exterior × (1 - alpha_blanco)
       canvas.restore();
       return;
     }
