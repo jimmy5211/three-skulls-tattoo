@@ -99,9 +99,7 @@ class CanvasController extends ChangeNotifier {
           ? Colors.white
           : activeColor,
       strokeWidth: activeBrush.size,
-      opacity: activeBrush.type == StrokeType.eraser
-          ? 1.0
-          : activeBrush.opacity,
+      opacity: activeBrush.opacity, // opacity afecta también al borrador
       type: activeBrush.type,
       layerId: activeLayerId,
       hardness: activeBrush.hardness,
