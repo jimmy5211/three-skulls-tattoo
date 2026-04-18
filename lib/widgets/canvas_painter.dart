@@ -309,7 +309,12 @@ class CanvasPainter extends CustomPainter {
         _drawStroke(canvas, currentMirrorStroke!);
     }
 
-    if (hasEraserStrokes) controller.invalidateLayerCache(layer.id);
+    // Solo invalidar cache si hay un stroke de borrador EN PROGRESO
+    // Los strokes históricos no necesitan re-renderizado constante
+    if (currentStroke != null && currentStroke!.type == StrokeType.eraser &&
+        currentStroke!.layerId == layer.id) {
+      controller.invalidateLayerCache(layer.id);
+    }
 
     canvas.restore(); // interno (dibujo)
     if (layer.opacity < 1.0) canvas.restore(); // externo (opacidad)
@@ -342,15 +347,14 @@ class CanvasPainter extends CustomPainter {
       // Un solo saveLayer para todo el trazo — evita acumulación por stroke
       canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
 
-      // Pre-calcular colors y stops UNA VEZ fuera del loop
-      final gradientColors = [
-        Colors.white,
-        Colors.white.withOpacity(hardness),
-        Colors.transparent,
-      ];
-      final gradientStops = [0.0, hardness.clamp(0.01, 0.99), 1.0];
-      // Paso = 50% del radio (era 30%) — 40% menos círculos, visualmente igual
-      final stepSize = radius * 0.5;
+      // Gradiente 2 stops: [hardness, 1.0] → [white, transparent]
+      // SIN stop intermedio — evita el anillo visible que causaba el efecto punteado.
+      // hardness=1.0 → zona sólida hasta el borde → corte duro
+      // hardness=0.0 → fade desde el centro → borrador aerógrafo
+      final gradientColors = [Colors.white, Colors.transparent];
+      final gradientStops = [hardness.clamp(0.0, 0.95), 1.0];
+      // Paso = 70% del radio — menos círculos, trazo sigue siendo continuo
+      final stepSize = radius * 0.7;
 
       void stampCircle(Offset point) {
         canvas.drawCircle(
@@ -373,16 +377,15 @@ class CanvasPainter extends CustomPainter {
           final p1 = stroke.points[i];
           final p2 = stroke.points[i + 1];
           final dist = (p2 - p1).distance;
-          final steps = (dist / stepSize).ceil().clamp(1, 12); // máx 12 pasos
+          final steps = (dist / stepSize).ceil().clamp(1, 8); // máx 8 pasos
           for (int s = 0; s <= steps; s++) {
             final t = s / steps;
             final pt = Offset(
               p1.dx + (p2.dx - p1.dx) * t,
               p1.dy + (p2.dy - p1.dy) * t,
             );
-            // Saltar si estamos muy cerca del último círculo estampado
             if (lastStamped != null &&
-                (pt - lastStamped!).distance < stepSize * 0.8) continue;
+                (pt - lastStamped!).distance < stepSize * 0.85) continue;
             stampCircle(pt);
             lastStamped = pt;
           }
