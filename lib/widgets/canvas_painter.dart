@@ -318,57 +318,52 @@ class CanvasPainter extends CustomPainter {
     if (stroke.type == StrokeType.eraser) {
       // ── BORRADOR CON DUREZA VARIABLE ─────────────────────
       //
-      // Problema de acumulación: si dibujamos N círculos con dstOut
-      // cada uno borra del resultado anterior → efecto acumulativo → borra 100%.
+      // Técnica final que funciona en TODOS los GPUs Android:
       //
-      // Solución correcta: dos capas anidadas
-      //   1. Capa MÁSCARA (interna, srcOver): acumula todos los círculos
-      //      con su gradiente. La acumulación srcOver funciona correctamente
-      //      aquí porque solo estamos construyendo la forma de la máscara.
-      //   2. Capa BORRADOR (externa, dstOut): aplica la máscara de una sola vez.
-      //      Solo se aplica el dstOut una vez al final → no hay acumulación.
+      // 1. saveLayer(dstOut): capa exterior que aplica el borrado
+      // 2. saveLayer(ImageFilter.blur): capa interior con blur pixel-level
+      //    - Dibuja el trazo como shape sólido blanco (nítido)
+      //    - El ImageFilter aplica gaussian blur al RASTER resultante
+      //    - Blur en pixels = bordes suaves garantizados en cualquier GPU
+      // 3. restore() x2: compone blur→dstOut
       //
-      // hardness=0% → gradiente desde el centro → bordes muy difusos
-      // hardness=50% → core sólido hasta la mitad + fade suave
-      // hardness=100% → círculo sólido → bordes nítidos
+      // ImageFilter.blur opera sobre los PIXELS del layer rasterizado,
+      // no sobre el pipeline de renderizado. Funciona siempre.
       final hardness = stroke.hardness.clamp(0.0, 1.0);
       final radius = stroke.strokeWidth.toDouble();
+      final sigma = (1.0 - hardness) * radius * 0.8;
       final bounds = Rect.fromLTWH(
           0, 0, controller.canvasSize.width, controller.canvasSize.height);
 
-      // Capa BORRADOR: dstOut se aplica una sola vez al hacer restore()
+      // Capa exterior: aplica el borrado con dstOut
       canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.dstOut);
 
-        // Capa MÁSCARA: acumula los círculos con srcOver (normal)
-        // Usamos saveLayer con Paint() limpio para aislar la acumulación
-        canvas.saveLayer(bounds, Paint());
+      if (sigma > 0.5) {
+        // Capa interior: blur pixel-level sobre el trazo sólido
+        canvas.saveLayer(
+          bounds,
+          Paint()..imageFilter = ui.ImageFilter.blur(
+            sigmaX: sigma,
+            sigmaY: sigma,
+            tileMode: TileMode.decal,
+          ),
+        );
+      }
 
-          for (final point in stroke.points) {
-            final rect = Rect.fromCircle(center: point, radius: radius);
-            final Paint circlePaint;
+      // Dibujar trazo SÓLIDO blanco (forma del borrador)
+      final maskPaint = Paint()
+        ..color = Colors.white
+        ..strokeWidth = radius * 2
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke;
+      _drawSmoothStroke(canvas, stroke, maskPaint);
 
-            if (hardness >= 0.99) {
-              circlePaint = Paint()
-                ..color = Colors.white
-                ..style = PaintingStyle.fill;
-            } else {
-              circlePaint = Paint()
-                ..shader = RadialGradient(
-                  colors: [
-                    Colors.white,
-                    Colors.white.withOpacity(0.0),
-                  ],
-                  stops: [hardness, 1.0],
-                ).createShader(rect)
-                ..style = PaintingStyle.fill;
-            }
+      if (sigma > 0.5) {
+        canvas.restore(); // Aplica blur al trazo → bordes difuminados
+      }
 
-            canvas.drawCircle(point, radius, circlePaint);
-          }
-
-        canvas.restore(); // Capa MÁSCARA → produce la forma acumulada
-
-      canvas.restore(); // Capa BORRADOR → aplica dstOut UNA SOLA VEZ
+      canvas.restore(); // Aplica dstOut → borra con bordes suaves
       return;
     }
     final baseColor = stroke.color.withOpacity(stroke.opacity);
