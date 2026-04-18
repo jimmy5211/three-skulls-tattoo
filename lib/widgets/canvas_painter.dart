@@ -316,20 +316,41 @@ class CanvasPainter extends CustomPainter {
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     if (stroke.type == StrokeType.eraser) {
+      // MaskFilter.blur + BlendMode.clear no funciona en GPUs Android.
+      // Solución: saveLayer(dstOut) + trazo BLANCO con blur adentro.
+      //
+      // dstOut: resultado = dst × (1 - src.alpha)
+      //   - Donde src es blanco opaco (alpha=1): borra 100%
+      //   - Donde src es blanco difuminado (alpha<1): borra parcialmente
+      //
+      // El blur en el trazo blanco crea la degradación suave en los bordes.
+      // Este enfoque funciona en TODOS los GPUs Android.
       final hardness = stroke.hardness.clamp(0.0, 1.0);
       final radius = stroke.strokeWidth.toDouble();
+      final sigma = (1.0 - hardness) * radius * 0.8;
+      final rect = Rect.fromLTWH(
+          0, 0, controller.canvasSize.width, controller.canvasSize.height);
 
-      double sigma = (1.0 - hardness) * radius;
+      // 1. Abrir layer con dstOut: lo que dibujemos adentro "recortará" el exterior
+      canvas.saveLayer(rect, Paint()..blendMode = BlendMode.dstOut);
 
+      // 2. Dibujar trazo BLANCO (el alpha del blanco controla cuánto se borra)
       final paint = Paint()
-        ..blendMode = BlendMode.clear
+        ..color = Colors.white  // blanco = alpha máximo = borra 100%
         ..strokeWidth = radius * 2
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke
-        ..maskFilter = sigma > 0 ? MaskFilter.blur(BlurStyle.normal, sigma) : null;
+        ..style = PaintingStyle.stroke;
+
+      // 3. Aplicar blur al trazo blanco para suavizar los bordes
+      if (sigma > 0.5) {
+        paint.maskFilter = MaskFilter.blur(BlurStyle.normal, sigma);
+      }
 
       _drawSmoothStroke(canvas, stroke, paint);
+
+      // 4. restore() aplica el dstOut: exterior = exterior × (1 - alpha_blanco)
+      canvas.restore();
       return;
     }
     final baseColor = stroke.color.withOpacity(stroke.opacity);
