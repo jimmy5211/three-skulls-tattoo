@@ -17,7 +17,7 @@ download_url = (
     f'v{version}/app-release.apk'
 )
 
-# Leer notas de versión
+# Leer notas
 try:
     with open('RELEASE_NOTES.md', 'r') as f:
         lines = [l.strip().lstrip('- ').strip()
@@ -27,23 +27,26 @@ try:
 except:
     notes = 'Mejoras y bug fixes'
 
+# ✅ DATA-ONLY message — sin campo "notification"
+# Esto hace que Flutter intercepte el mensaje en background/foreground
+# y muestre una notificación LOCAL via flutter_local_notifications.
+# Al tocar esa notificación local, onDidReceiveNotificationResponse
+# dispara de forma 100% confiable con el payload completo.
 body = json.dumps({
     'message': {
         'topic': 'updates',
-        'notification': {
-            'title': f'💀 Three Skulls {version} disponible',
-            'body': notes[:100],
-        },
-        # data: disponible aunque la app esté cerrada
+        # ❌ NO incluir "notification" — Android lo mostraría directamente
+        #    saltándose flutter_local_notifications
         'data': {
+            'type': 'update',
             'version': version,
             'downloadUrl': download_url,
             'notes': notes,
-            'type': 'update',
+            'title': f'💀 Three Skulls {version} disponible',
+            'body': 'Toca para actualizar',
         },
         'android': {
             'priority': 'HIGH',
-            'notification': {'click_action': 'FLUTTER_NOTIFICATION_CLICK'},
         }
     }
 }).encode('utf-8')
@@ -57,4 +60,4 @@ req = urllib.request.Request(
     }
 )
 resp = urllib.request.urlopen(req)
-print(f'FCM sent: {resp.status} | version: {version}')
+print(f'FCM sent (data-only): {resp.status} | version: {version}')
