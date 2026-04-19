@@ -654,6 +654,7 @@ class CanvasController extends ChangeNotifier {
         ? null
         : canvasImages.firstWhere((img) => img.id == id,
             orElse: () => canvasImages.first);
+    _imagesChanged = true; // FIX: forzar repaint para mostrar/ocultar handles
     notifyListeners();
   }
 
