@@ -113,6 +113,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // ─── BORRADOR EN IMAGEN ──────────────────────────────────
   String? _erasingImageId;
   DateTime? _strokeStartTime; // para detectar dots accidentales al hacer pan
+  int _activePointers = 0;     // FIX: contador real de dedos en pantalla
 
   // ─── AJUSTES DEL CANVAS ──────────────────────────────────────
   bool _showCanvasSettings = false;
@@ -350,6 +351,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 bottom: 12,
                 child: _buildZoomIndicator(),
               ),
+
+            // Regla — overlay fijo en pantalla, fuera de la transformación del canvas
+            if (_showRuler && !_isFullscreen)
+              _buildRuler(),
 
             if (_showCanvasSettings && !_isFullscreen)
               _buildCanvasSettingsPanel(),
@@ -2501,46 +2506,50 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   Widget _buildRuler() {
-    if (!_showRuler) return const SizedBox.shrink();
-    const rulerSize = 20.0; // grosor de la regla en pantalla
-    return Stack(children: [
-      // Regla horizontal (arriba)
-      Positioned(
-        top: 0, left: rulerSize,
-        right: 0, height: rulerSize,
-        child: ClipRect(child: CustomPaint(
-          painter: _RulerPainter(
-            direction: Axis.horizontal,
-            scale: _scale,
-            offset: _offset.dx,
-            canvasSize: _controller.canvasSize.width,
-            pxPerUnit: _canvasPxPerUnit,
-            unit: _rulerUnit,
-          ),
-        )),
-      ),
-      // Regla vertical (izquierda)
-      Positioned(
-        top: rulerSize, left: 0,
-        bottom: 0, width: rulerSize,
-        child: ClipRect(child: CustomPaint(
-          painter: _RulerPainter(
-            direction: Axis.vertical,
-            scale: _scale,
-            offset: _offset.dy,
-            canvasSize: _controller.canvasSize.height,
-            pxPerUnit: _canvasPxPerUnit,
-            unit: _rulerUnit,
-          ),
-        )),
-      ),
-      // Esquina
-      Positioned(
-        top: 0, left: 0,
-        width: rulerSize, height: rulerSize,
-        child: Container(color: const Color(0xFF2C2C2E)),
-      ),
-    ]);
+    const rulerSize = 20.0;
+    final topOffset = _topBarHeight;
+    final leftOffset = _sideBarWidth.toDouble();
+    return Positioned(
+      top: topOffset,
+      left: leftOffset,
+      right: 0,
+      bottom: 0,
+      child: Stack(children: [
+        // Regla horizontal (arriba)
+        Positioned(
+          top: 0, left: rulerSize, right: 0, height: rulerSize,
+          child: ClipRect(child: CustomPaint(
+            painter: _RulerPainter(
+              direction: Axis.horizontal,
+              scale: _scale,
+              offset: _offset.dx - leftOffset,
+              canvasSize: _controller.canvasSize.width,
+              pxPerUnit: _canvasPxPerUnit,
+              unit: _rulerUnit,
+            ),
+          )),
+        ),
+        // Regla vertical (izquierda)
+        Positioned(
+          top: rulerSize, left: 0, bottom: 0, width: rulerSize,
+          child: ClipRect(child: CustomPaint(
+            painter: _RulerPainter(
+              direction: Axis.vertical,
+              scale: _scale,
+              offset: _offset.dy - topOffset,
+              canvasSize: _controller.canvasSize.height,
+              pxPerUnit: _canvasPxPerUnit,
+              unit: _rulerUnit,
+            ),
+          )),
+        ),
+        // Esquina
+        Positioned(
+          top: 0, left: 0, width: rulerSize, height: rulerSize,
+          child: Container(color: const Color(0xFF2C2C2E)),
+        ),
+      ]),
+    );
   }
 
   /// Acopia el sello con todos los strokes del canvas que están encima.
@@ -3003,7 +3012,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildCanvas() {
     return Positioned.fill(
-      child: GestureDetector(
+      child: Listener(
+        onPointerDown: (_) => _activePointers++,
+        onPointerUp: (_) => _activePointers--,
+        onPointerCancel: (_) => _activePointers--,
+        child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
           if (_showBrushPanel) setState(() => _showBrushPanel = false);
@@ -3473,13 +3486,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _controller.endEraseOnImage(_erasingImageId!);
               setState(() => _erasingImageId = null);
             } else {
-              // FIX: cancelar dot accidental si el stroke duró < 120ms con 1 solo punto
-              // Esto ocurre cuando onScaleEnd se llama al agregar el 2do dedo para pan
-              final strokeAge = _strokeStartTime != null
-                  ? DateTime.now().difference(_strokeStartTime!).inMilliseconds
-                  : 9999;
+              // FIX: si hay 2+ dedos activos, el onScaleEnd es falso → cancelar
               _strokeStartTime = null;
-              if (strokeAge < 120 && (_controller.currentStroke?.points.length ?? 9) <= 1) {
+              if (_activePointers >= 2) {
                 _controller.cancelStroke();
               } else {
                 _controller.endStroke();
@@ -3552,9 +3561,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
             );
           },
         ),
-          // Regla fija sobre el canvas
-          if (_showRuler) _buildRuler(),
         ]),
+      ),
       ),
     );
   }
