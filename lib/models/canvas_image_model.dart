@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 class EraseStroke {
   final List<Offset> points; // mutable — se agrega en tiempo real
   final double radius;
+  final double hardness; // 0.0 = suave, 1.0 = duro
 
-  EraseStroke({required this.points, required this.radius});
+  EraseStroke({required this.points, required this.radius, this.hardness = 1.0});
 
   EraseStroke copyWithPoint(Offset point) => EraseStroke(
         points: [...points, point],
         radius: radius,
+        hardness: hardness,
       );
 }
 
