@@ -2152,7 +2152,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
         _activeStampImage = frame.image;
         _stampMode = true;
         _showBrushPanel = false;
+        // FIX: al seleccionar sello, limpiar transform mode y selección
+        _transformMode = TransformMode.ninguno;
+        _selectedImageId = null;
       });
+      _controller.selectCanvasImage(null);
     } catch (e) {
       debugPrint('Error cargando sello: $e');
       if (mounted) {
@@ -3860,7 +3864,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   // Eliminar
                   _selectionAction(Icons.delete_outline, 'Eliminar', () {
                     _controller.removeCanvasImage(imgId);
-                    setState(() => _selectedImageId = null);
+                    setState(() {
+                      _selectedImageId = null;
+                      // FIX: limpiar transform mode al eliminar sello
+                      _transformMode = TransformMode.ninguno;
+                    });
                   }, isDestructive: true),
                   // Listo
                   _selectionAction(Icons.check, 'Listo', () {
