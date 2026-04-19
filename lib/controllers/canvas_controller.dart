@@ -14,6 +14,9 @@ class CanvasController extends ChangeNotifier {
   StrokeModel? currentMirrorStroke;
   List<List<LayerModel>> _undoHistory = [];
   List<List<LayerModel>> _redoHistory = [];
+  // Historial paralelo para canvasImages (sellos e imágenes)
+  List<List<CanvasImageModel>> _imageUndoHistory = [];
+  List<List<CanvasImageModel>> _imageRedoHistory = [];
   bool symmetryEnabled = false;
   SymmetryType symmetryType = SymmetryType.horizontal;
   Color backgroundColor = Colors.transparent;
@@ -238,41 +241,64 @@ class CanvasController extends ChangeNotifier {
     }
   }
 
+  // Snapshot de canvasImages para historial (comparte referencia ui.Image)
+  List<CanvasImageModel> _snapshotImages() => canvasImages.map((img) =>
+    CanvasImageModel(
+      id: img.id,
+      image: img.image,
+      position: img.position,
+      size: img.size,
+      layerId: img.layerId,
+      opacity: img.opacity,
+      rotation: img.rotation,
+      flipX: img.flipX,
+      flipY: img.flipY,
+      insertionIndex: img.insertionIndex,
+      eraseStrokes: List<EraseStroke>.from(img.eraseStrokes),
+    )).toList();
+
   void _saveToHistory() {
     _undoHistory.add(
-      layers
-          .map((l) => l.copyWith(
-                strokes: List<StrokeModel>.from(l.strokes),
-              ))
-          .toList(),
+      layers.map((l) => l.copyWith(
+        strokes: List<StrokeModel>.from(l.strokes),
+      )).toList(),
     );
+    _imageUndoHistory.add(_snapshotImages());
     _redoHistory.clear();
+    _imageRedoHistory.clear();
     if (_undoHistory.length > 30) {
       _undoHistory.removeAt(0);
+      if (_imageUndoHistory.isNotEmpty) _imageUndoHistory.removeAt(0);
     }
   }
 
   void undo() {
     if (_undoHistory.isEmpty) return;
-    _redoHistory.add(layers
-        .map((l) => l.copyWith(
-              strokes: List<StrokeModel>.from(l.strokes),
-            ))
-        .toList());
+    _redoHistory.add(layers.map((l) => l.copyWith(
+      strokes: List<StrokeModel>.from(l.strokes),
+    )).toList());
+    _imageRedoHistory.add(_snapshotImages());
     layers = _undoHistory.removeLast();
+    if (_imageUndoHistory.isNotEmpty) {
+      canvasImages = _imageUndoHistory.removeLast();
+    }
     invalidateAllCache();
+    _imagesChanged = true;
     notifyListeners();
   }
 
   void redo() {
     if (_redoHistory.isEmpty) return;
-    _undoHistory.add(layers
-        .map((l) => l.copyWith(
-              strokes: List<StrokeModel>.from(l.strokes),
-            ))
-        .toList());
+    _undoHistory.add(layers.map((l) => l.copyWith(
+      strokes: List<StrokeModel>.from(l.strokes),
+    )).toList());
+    _imageUndoHistory.add(_snapshotImages());
     layers = _redoHistory.removeLast();
+    if (_imageRedoHistory.isNotEmpty) {
+      canvasImages = _imageRedoHistory.removeLast();
+    }
     invalidateAllCache();
+    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -499,8 +525,12 @@ class CanvasController extends ChangeNotifier {
   }
 
   void placeStampAtPosition(ui.Image image, Offset canvasPoint, double stampSize) {
+    _saveToHistory(); // FIX: sello colocado es deshacer-able
     final half = stampSize / 2;
-    final pos = Offset(canvasPoint.dx - half, canvasPoint.dy - half);
+    // FIX: clamp para que el sello no salga del canvas
+    final px = (canvasPoint.dx - half).clamp(0.0, (canvasSize.width - stampSize).clamp(0.0, canvasSize.width));
+    final py = (canvasPoint.dy - half).clamp(0.0, (canvasSize.height - stampSize).clamp(0.0, canvasSize.height));
+    final pos = Offset(px, py);
     final activeLayer = layers.firstWhere(
       (l) => l.id == activeLayerId, orElse: () => layers.first);
     final insertIdx = activeLayer.strokes.length;
