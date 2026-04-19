@@ -792,9 +792,10 @@ class CanvasController extends ChangeNotifier {
     final current = canvasImages[idx].currentEraseStroke;
     if (current == null) return;
     final last = current.points.last;
-    // Distancia mínima: 30% del radio o 4px mínimo para suavidad
     final minDist = max(current.radius * 0.3, 4.0);
     if ((last - point).distance < minDist) return;
+    // Safety: limitar puntos por stroke para evitar crash de memoria
+    if (current.points.length >= 300) return;
     current.points.add(point);
     // Solo notificar cada 3 puntos para reducir repaints sin perder fluidez
     if (current.points.length % DeviceProfile.instance.eraseRepaintEvery == 0) {
