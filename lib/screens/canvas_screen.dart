@@ -123,6 +123,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // ─── BRUSH PREVIEW ────────────────────────────────────
   bool _showBrushPreview = false;
   double _brushPreviewSize = 0;
+  int _previewToken = 0; // incrementa en cada llamada para cancelar timers viejos
 
   // ─── TOOLTIP ─────────────────────────────────────────────────
   String? _tooltipText;
@@ -591,12 +592,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   void _triggerBrushPreview(double size) {
-    setState(() {
-      _showBrushPreview = true;
-      _brushPreviewSize = size;
-    });
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) setState(() => _showBrushPreview = false);
+    _previewToken++;
+    final token = _previewToken;
+    // Solo actualizar tamaño sin rebuild completo si ya está visible
+    _brushPreviewSize = size;
+    if (!_showBrushPreview) {
+      setState(() => _showBrushPreview = true);
+    }
+    // Solo el último timer cierra el preview (evita flickering por timers acumulados)
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (mounted && _previewToken == token) {
+        setState(() => _showBrushPreview = false);
+      }
     });
   }
 
@@ -2715,10 +2722,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   /// Funde los borrados en la imagen y limpia eraseStrokes para liberar memoria.
   /// Se llama automáticamente después de cada trazo de borrador.
+  bool _isBaking = false; // prevent concurrent bakes
+
   Future<void> _bakeErases(String imageId) async {
+    if (_isBaking) return; // already baking
     final img = _controller.canvasImages
         .where((i) => i.id == imageId).firstOrNull;
     if (img == null || !img.hasErases) return;
+    _isBaking = true;
 
     final w = img.size.width.round().clamp(1, 4096);
     final h = img.size.height.round().clamp(1, 4096);
@@ -2745,8 +2756,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
     final picture = recorder.endRecording();
     final bakedImage = await picture.toImage(w, h);
 
-    if (!mounted) return;
-    _controller.replaceCanvasImageBaked(imageId, bakedImage);
+    if (!mounted) { _isBaking = false; return; }
+    try {
+      _controller.replaceCanvasImageBaked(imageId, bakedImage);
+    } catch (e) {
+      debugPrint('bake error: $e');
+    } finally {
+      _isBaking = false;
+    }
   }
 
   /// Acopia el sello con todos los strokes del canvas que están encima.
@@ -3443,8 +3460,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _erasingImageId = imgUnder.id;
               _controller.startEraseOnImage(
                 imgUnder.id, cp,
-                _controller.activeBrush.size,
-                hardness: _controller.activeBrush.hardness, // FIX: hardness
+                _controller.activeBrush.size / _scale, // FIX: tamaño independiente del zoom
+                hardness: _controller.activeBrush.hardness,
               );
               return;
             }
@@ -3693,7 +3710,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _erasingImageId = imgUnder.id;
               _controller.startEraseOnImage(
                 imgUnder.id, cp,
-                _controller.activeBrush.size,
+                _controller.activeBrush.size / _scale,
                 hardness: _controller.activeBrush.hardness,
               );
               return;
