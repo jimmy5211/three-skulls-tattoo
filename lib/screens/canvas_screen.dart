@@ -115,6 +115,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
   DateTime? _strokeStartTime; // para detectar dots accidentales al hacer pan
   int _activePointers = 0;     // FIX: contador real de dedos en pantalla
 
+  // ─── TOOLTIP ─────────────────────────────────────────────────
+  String? _tooltipText;
+  Offset _tooltipPosition = Offset.zero;
+  DateTime? _tooltipHideAt;
+
   // ─── AJUSTES DEL CANVAS ──────────────────────────────────────
   bool _showCanvasSettings = false;
   double _panSensitivity = 1.0;       // 0.5 - 2.0
@@ -356,6 +361,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
             if (_showRuler && !_isFullscreen)
               _buildRuler(),
 
+            // Tooltip overlay
+            if (_tooltipText != null)
+              _buildTooltipOverlay(),
+
             if (_showCanvasSettings && !_isFullscreen)
               _buildCanvasSettingsPanel(),
 
@@ -417,9 +426,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return Row(
       children: [
         const SizedBox(width: 4),
-        _btn(Icons.arrow_back_ios, onTap: () => context.go('/home')),
-        _btn(Icons.undo, onTap: _controller.undo),
-        _btn(Icons.redo, onTap: _controller.redo),
+        _btn(Icons.arrow_back_ios, tooltip: 'Inicio', onTap: () => context.go('/home')),
+        _btn(Icons.undo, tooltip: 'Deshacer', onTap: _controller.undo),
+        _btn(Icons.redo, tooltip: 'Rehacer', onTap: _controller.redo),
         _btn(
           _zoomMode ? Icons.edit_outlined : Icons.zoom_in,
           isActive: _zoomMode,
@@ -434,6 +443,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           animation: _controller,
           builder: (c, _) => _btn(
             Icons.flip,
+            tooltip: 'Simetría',
             isActive: _controller.symmetryEnabled,
             onTap: _controller.toggleSymmetry,
           ),
@@ -467,12 +477,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _btn(
                 _zoomMode ? Icons.edit_outlined : Icons.zoom_in,
                 isActive: _zoomMode,
+                tooltip: 'Modo zoom',
                 onTap: () =>
                     setState(() => _zoomMode = !_zoomMode),
               ),
               _btn(
                 _showGrid ? Icons.grid_on : Icons.grid_off,
                 isActive: _showGrid,
+                tooltip: 'Cuadrícula',
                 onTap: () =>
                     setState(() => _showGrid = !_showGrid),
               ),
@@ -486,12 +498,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ),
               const Spacer(),
               _btn(Icons.tune,
+                  tooltip: 'Ajustes del lienzo',
                   isActive: _showCanvasSettings,
                   onTap: () => setState(() {
                     _showCanvasSettings = !_showCanvasSettings;
                     if (_showCanvasSettings) _showBrushPanel = false;
                   })),
               _btn(Icons.add_photo_alternate_outlined,
+                  tooltip: 'Importar imagen',
                   onTap: _showImportImageSheet),
             ],
           ),
@@ -511,6 +525,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _buildLayersBtn(),
               _buildColorBtn(),
               _btn(Icons.save_outlined,
+                  tooltip: 'Guardar',
                   color: AppTheme.accentRed, onTap: _saveDesign),
               const SizedBox(width: 4),
             ],
@@ -520,13 +535,73 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
+  Widget _buildTooltipOverlay() {
+    final screen = MediaQuery.of(context).size;
+    // Calcular posición: aparece encima del dedo, centrado, sin salirse de pantalla
+    final tipW = 140.0;
+    final tipH = 32.0;
+    double x = (_tooltipPosition.dx - tipW / 2)
+        .clamp(8.0, screen.width - tipW - 8);
+    double y = (_tooltipPosition.dy - tipH - 12)
+        .clamp(_topBarHeight + 4.0, screen.height - tipH - 8);
+    return Positioned(
+      left: x, top: y,
+      width: tipW, height: tipH,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          opacity: _tooltipText != null ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 200),
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C1C1E),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFF3A3A3C), width: 0.5),
+              boxShadow: [BoxShadow(
+                color: Colors.black.withOpacity(0.5),
+                blurRadius: 8, offset: const Offset(0, 2),
+              )],
+            ),
+            child: Text(
+              _tooltipText ?? '',
+              style: const TextStyle(
+                fontFamily: 'Raleway',
+                fontSize: 11,
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showTooltip(String text, Offset globalPos) {
+    setState(() {
+      _tooltipText = text;
+      _tooltipPosition = globalPos;
+      _tooltipHideAt = DateTime.now().add(const Duration(seconds: 3));
+    });
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted && _tooltipHideAt != null &&
+          DateTime.now().isAfter(_tooltipHideAt!)) {
+        setState(() => _tooltipText = null);
+      }
+    });
+  }
+
   Widget _btn(IconData icon, {
     VoidCallback? onTap,
     bool isActive = false,
     Color? color,
+    String? tooltip,
   }) {
     return GestureDetector(
       onTap: onTap,
+      onLongPressStart: tooltip != null
+          ? (d) => _showTooltip(tooltip, d.globalPosition)
+          : null,
       child: Container(
         width: 40,
         height: 40,
