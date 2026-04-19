@@ -112,6 +112,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   // ─── BORRADOR EN IMAGEN ──────────────────────────────────
   String? _erasingImageId;
+  DateTime? _strokeStartTime; // para detectar dots accidentales al hacer pan
 
   // ─── AJUSTES DEL CANVAS ──────────────────────────────────────
   bool _showCanvasSettings = false;
@@ -3191,6 +3192,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
           // ── Borrador sobre sello/imagen: borra del sello directamente ──
           // Así el borrado se mueve con el sello cuando se reposiciona
+          _strokeStartTime = DateTime.now(); // para detectar dots accidentales
           if (_controller.activeBrush.type == StrokeType.eraser) {
             final imgUnder = _controller.imageAtPoint(cp);
             if (imgUnder != null && imgUnder.layerId == _controller.activeLayerId) {
@@ -3471,7 +3473,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _controller.endEraseOnImage(_erasingImageId!);
               setState(() => _erasingImageId = null);
             } else {
-              _controller.endStroke();
+              // FIX: cancelar dot accidental si el stroke duró < 120ms con 1 solo punto
+              // Esto ocurre cuando onScaleEnd se llama al agregar el 2do dedo para pan
+              final strokeAge = _strokeStartTime != null
+                  ? DateTime.now().difference(_strokeStartTime!).inMilliseconds
+                  : 9999;
+              _strokeStartTime = null;
+              if (strokeAge < 120 && (_controller.currentStroke?.points.length ?? 9) <= 1) {
+                _controller.cancelStroke();
+              } else {
+                _controller.endStroke();
+              }
             }
           }
           _isScaling = false;
