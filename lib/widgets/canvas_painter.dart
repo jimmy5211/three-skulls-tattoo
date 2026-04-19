@@ -15,6 +15,7 @@ class CanvasPainter extends CustomPainter {
   final StrokeModel? currentStroke;
   final StrokeModel? currentMirrorStroke;
   final bool showGrid;
+  final bool showCenterGuides;
   final bool showSymmetryLine;
   final bool symmetryEnabled;
   final int activeLayerId;
@@ -27,6 +28,7 @@ class CanvasPainter extends CustomPainter {
     this.currentStroke,
     this.currentMirrorStroke,
     this.showGrid = false,
+    this.showCenterGuides = false,
     this.showSymmetryLine = false,
     this.symmetryEnabled = false,
     this.activeLayerId = 0,
@@ -65,6 +67,9 @@ class CanvasPainter extends CustomPainter {
 
     // 4. Grid (solo dentro del lienzo)
     if (showGrid) _drawGrid(canvas, canvasW, canvasH);
+
+    // 4b. Guías del centro
+    if (showCenterGuides) _drawCenterGuides(canvas, canvasW, canvasH);
 
     // 5. Capas — clip al lienzo para que los trazos no salgan
     canvas.save();
@@ -464,6 +469,35 @@ class CanvasPainter extends CustomPainter {
 
   // ── GRID Y SIMETRÍA ──
 
+  void _drawCenterGuides(Canvas canvas, double w, double h) {
+    final paint = Paint()
+      ..color = const Color(0xFF4A90E2).withOpacity(0.5)
+      ..strokeWidth = 0.75
+      ..style = PaintingStyle.stroke;
+    final dashPaint = Paint()
+      ..color = const Color(0xFF4A90E2).withOpacity(0.5)
+      ..strokeWidth = 0.75;
+    // Horizontal center
+    _drawDashedLine(canvas, Offset(0, h / 2), Offset(w, h / 2), dashPaint);
+    // Vertical center
+    _drawDashedLine(canvas, Offset(w / 2, 0), Offset(w / 2, h), dashPaint);
+  }
+
+  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
+    const dashLen = 8.0;
+    const gapLen = 5.0;
+    final total = (end - start).distance;
+    final dir = (end - start) / total;
+    double dist = 0.0;
+    bool drawing = true;
+    while (dist < total) {
+      final segEnd = (dist + (drawing ? dashLen : gapLen)).clamp(0.0, total);
+      if (drawing) canvas.drawLine(start + dir * dist, start + dir * segEnd, paint);
+      dist = segEnd;
+      drawing = !drawing;
+    }
+  }
+
   void _drawGrid(Canvas canvas, double w, double h) {
     final gridPaint = Paint()
       ..color = Colors.grey.withOpacity(0.15)
@@ -490,6 +524,7 @@ class CanvasPainter extends CustomPainter {
     if (oldDelegate.currentStroke != currentStroke) return true;
     if (oldDelegate.currentMirrorStroke != currentMirrorStroke) return true;
     if (oldDelegate.showGrid != showGrid) return true;
+    if (oldDelegate.showCenterGuides != showCenterGuides) return true;
     if (oldDelegate.symmetryEnabled != symmetryEnabled) return true;
     if (oldDelegate.showSymmetryLine != showSymmetryLine) return true;
     if (oldDelegate.activeLayerId != activeLayerId) return true;
