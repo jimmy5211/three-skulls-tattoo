@@ -2553,6 +2553,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _controller.selectCanvasImage(null);
             _selectedImageId = null;
             setState(() {});
+            return; // FIX: no dibujar stroke al deseleccionar imagen
           }
 
           // ── Transform mode: tap en imagen = seleccionar ──
