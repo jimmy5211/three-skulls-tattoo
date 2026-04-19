@@ -117,8 +117,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _cancelStrokeImmediately = false;
   bool _isDrawing = false;
   Offset? _pendingStrokePoint;
-  final List<Offset> _pendingPoints = []; // buffer: acumula puntos antes de comprometer
+  final List<Offset> _pendingPoints = [];
   Offset? _tapDownCanvasPos;
+  int _lastScaleFrame = 0; // throttle zoom setState
 
   // ─── BRUSH PREVIEW (ValueNotifier = sin setState) ────
   final _brushPreviewNotifier = ValueNotifier<double?>(null);
@@ -1445,7 +1446,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       onChanged: (v) => setState(
                           () {
                             _controller.setBrushSize(v);
-                            _triggerBrushPreview(v);
+                            if (!_isScaling) _triggerBrushPreview(v);
                           }),
                     ),
                   ),
@@ -2723,7 +2724,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   /// Se llama automáticamente después de cada trazo de borrador.
   bool _isBaking = false; // prevent concurrent bakes
 
-  Future<void> _bakeErases(String imageId) async {
+  void _bakeErases(String imageId) {
     if (_isBaking) return;
     final img = _controller.canvasImages
         .where((i) => i.id == imageId).firstOrNull;
@@ -2757,16 +2758,25 @@ class _CanvasScreenState extends State<CanvasScreen> {
     c.restore();
 
     final picture = recorder.endRecording();
-    final bakedImage = await picture.toImage(nativeW, nativeH);
-
-    if (!mounted) { _isBaking = false; return; }
+    // FIX: toImageSync evita el gap async durante zoom (causa de crash GPU)
+    ui.Image? bakedImage;
     try {
-      _controller.replaceCanvasImageBaked(imageId, bakedImage);
+      bakedImage = picture.toImageSync(nativeW, nativeH);
     } catch (e) {
-      debugPrint('bake error: $e');
-    } finally {
+      debugPrint('toImageSync error: $e');
+      _controller.clearEraseStrokesForced(imageId); // liberar aunque falle
       _isBaking = false;
+      return;
+    } finally {
+      picture.dispose();
     }
+    if (!mounted) {
+      bakedImage.dispose();
+      _isBaking = false;
+      return;
+    }
+    _controller.replaceCanvasImageBaked(imageId, bakedImage);
+    _isBaking = false;
   }
 
   /// Dibuja erase stroke en espacio nativo de la imagen (sin blur por reescalado)
@@ -3594,11 +3604,21 @@ class _CanvasScreenState extends State<CanvasScreen> {
             );
             // FIX: aplicar sensibilidad de pan
             final panDelta = newOffset - _offset;
-            setState(() {
+            // Throttle: actualizar máx 60fps (evita flood de repaints)
+            final frame = DateTime.now().millisecondsSinceEpoch;
+            if (frame - _lastScaleFrame >= 16) { // ~60fps
+              _lastScaleFrame = frame;
+              setState(() {
+                _scale = newScale;
+                _offset = _offset + panDelta * _panSensitivity;
+                _rotation = newRotation;
+              });
+            } else {
+              // Actualizar variables sin setState — se renderizará en próximo frame
               _scale = newScale;
               _offset = _offset + panDelta * _panSensitivity;
               _rotation = newRotation;
-            });
+            }
             return;
           }
 
@@ -3830,8 +3850,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
               final idToBake = _erasingImageId!;
               _controller.endEraseOnImage(idToBake);
               setState(() => _erasingImageId = null);
-              // Bake inmediatamente para liberar memoria de eraseStrokes
-              _bakeErases(idToBake);
+              // Programar bake DESPUÉS del frame actual — evita conflicto raster
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _bakeErases(idToBake);
+              });
             } else {
               _strokeStartTime = null;
               _isDrawing = false;
