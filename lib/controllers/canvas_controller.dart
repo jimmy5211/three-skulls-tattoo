@@ -264,6 +264,20 @@ class CanvasController extends ChangeNotifier {
       eraseStrokes: List<EraseStroke>.from(img.eraseStrokes),
     )).toList();
 
+  /// Cancela el stroke actual SIN guardarlo (usado al hacer zoom con 2 dedos).
+  /// También revierte el _saveToHistory() que se hizo en startStroke.
+  void cancelStroke() {
+    if (currentStroke == null) return;
+    currentStroke = null;
+    currentMirrorStroke = null;
+    // Revertir el _saveToHistory() que se llamó en startStroke
+    if (_undoHistory.isNotEmpty) {
+      _undoHistory.removeLast();
+      if (_imageUndoHistory.isNotEmpty) _imageUndoHistory.removeLast();
+    }
+    notifyListeners();
+  }
+
   void _saveToHistory() {
     _undoHistory.add(
       layers.map((l) => l.copyWith(
