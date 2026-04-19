@@ -120,10 +120,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
   final List<Offset> _pendingPoints = []; // buffer: acumula puntos antes de comprometer
   Offset? _tapDownCanvasPos;
 
-  // ─── BRUSH PREVIEW ────────────────────────────────────
-  bool _showBrushPreview = false;
-  double _brushPreviewSize = 0;
-  int _previewToken = 0; // incrementa en cada llamada para cancelar timers viejos
+  // ─── BRUSH PREVIEW (ValueNotifier = sin setState) ────
+  final _brushPreviewNotifier = ValueNotifier<double?>(null);
+  int _previewToken = 0;
 
   // ─── TOOLTIP ─────────────────────────────────────────────────
   String? _tooltipText;
@@ -375,9 +374,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
             if (_tooltipText != null)
               _buildTooltipOverlay(),
 
-            // Brush size preview
-            if (_showBrushPreview)
-              _buildBrushPreview(),
+            // Brush size preview (ValueNotifier — sin setState)
+            _buildBrushPreview(),
 
             if (_showCanvasSettings && !_isFullscreen)
               _buildCanvasSettingsPanel(),
@@ -594,68 +592,68 @@ class _CanvasScreenState extends State<CanvasScreen> {
   void _triggerBrushPreview(double size) {
     _previewToken++;
     final token = _previewToken;
-    // setState siempre para que el círculo actualice su tamaño
-    setState(() {
-      _brushPreviewSize = size;
-      _showBrushPreview = true;
-    });
+    // Sin setState — ValueNotifier actualiza solo el widget del preview
+    _brushPreviewNotifier.value = size;
     Future.delayed(const Duration(milliseconds: 1000), () {
       if (mounted && _previewToken == token) {
-        setState(() => _showBrushPreview = false);
+        _brushPreviewNotifier.value = null; // null = ocultar
       }
     });
   }
 
   Widget _buildBrushPreview() {
-    // Tamaño visual en pantalla = brushSize * scale (para mostrar tamaño real)
-    // Mostrar tamaño real del pincel en canvas (no escalado por zoom)
-    // porque el trazo se guarda en unidades de canvas
-    final screenRadius = (_brushPreviewSize / 2).clamp(4.0, 120.0);
-    return Positioned(
-      top: 0, left: 0, right: 0, bottom: 0,
-      child: IgnorePointer(
-        child: Center(
-          child: AnimatedOpacity(
-            opacity: _showBrushPreview ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 150),
-            child: Container(
-              width: screenRadius * 2 + 32,
-              height: screenRadius * 2 + 64,
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.55),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Círculo preview del pincel
-                  Container(
-                    width: screenRadius * 2,
-                    height: screenRadius * 2,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _controller.activeBrush.type == StrokeType.eraser
-                          ? Colors.white.withOpacity(0.9)
-                          : _controller.activeColor.withOpacity(0.9),
-                      border: Border.all(color: Colors.white38, width: 1),
-                    ),
+    return ValueListenableBuilder<double?>(
+      valueListenable: _brushPreviewNotifier,
+      builder: (context, size, _) {
+        final visible = size != null;
+        final s = size ?? 10.0;
+        final radius = (s / 2).clamp(4.0, 110.0);
+        final isEraser = _controller.activeBrush.type == StrokeType.eraser;
+        final color = isEraser
+            ? Colors.white.withOpacity(0.9)
+            : _controller.activeColor.withOpacity(0.9);
+        return Positioned(
+          top: 0, left: 0, right: 0, bottom: 0,
+          child: IgnorePointer(
+            child: Center(
+              child: AnimatedOpacity(
+                opacity: visible ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 120),
+                child: Container(
+                  width: (radius * 2 + 28).clamp(60.0, 260.0),
+                  height: (radius * 2 + 48).clamp(60.0, 280.0),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${_brushPreviewSize.round()} px',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontFamily: 'Raleway',
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: radius * 2,
+                        height: radius * 2,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: color,
+                          border: Border.all(color: Colors.white38, width: 1),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text('${s.round()} px',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontFamily: 'Raleway',
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        )),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
