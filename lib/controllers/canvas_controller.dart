@@ -750,12 +750,13 @@ class CanvasController extends ChangeNotifier {
 
   // ─── BORRADOR EN IMAGEN ──────────────────────────────────
 
-  void startEraseOnImage(String id, Offset point, double radius) {
+  void startEraseOnImage(String id, Offset point, double radius, {double hardness = 1.0}) {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].currentEraseStroke = EraseStroke(
       points: [point],
       radius: radius,
+      hardness: hardness,
     );
     notifyListeners();
   }
