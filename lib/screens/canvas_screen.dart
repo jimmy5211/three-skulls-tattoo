@@ -3128,6 +3128,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
             Offset.zero,
           );
 
+          // ── Sello: colocar con un tap ────────────────────
+          if (_stampMode && _activeStampImage != null && _tapDownCanvasPos != null) {
+            _controller.placeStampAtPosition(_activeStampImage!, _tapDownCanvasPos!, _stampSize);
+            return;
+          }
+
           // FIX: en transform mode, tap selecciona/deselecciona imagen
           if (_transformMode == TransformMode.activo) {
             final tapPos = _tapDownCanvasPos;
@@ -3312,11 +3318,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
 
-          // ── Sello ────────────────────────────────────────
-          if (_stampMode && _activeStampImage != null) {
-            _controller.placeStampAtPosition(_activeStampImage!, cp, _stampSize);
-            return;
-          }
+          // Sello: manejado en onTap (tap único)
 
           // ── Borrador sobre sello/imagen: borra del sello directamente ──
           _strokeStartTime = DateTime.now();
