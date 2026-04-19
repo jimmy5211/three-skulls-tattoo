@@ -2140,6 +2140,138 @@ class _CanvasScreenState extends State<CanvasScreen> {
     ]);
   }
 
+  /// Acopia el sello con todos los strokes del canvas que están encima.
+  /// El resultado es una sola imagen movible con el sello + boceto integrados.
+  Future<void> _flattenStampWithCanvas(String stampId) async {
+    final imgModel = _controller.canvasImages
+        .where((i) => i.id == stampId)
+        .firstOrNull;
+    if (imgModel == null) return;
+
+    final layerIdx = _controller.layers
+        .indexWhere((l) => l.id == imgModel.layerId);
+    if (layerIdx == -1) return;
+
+    final strokes = _controller.layers[layerIdx].strokes;
+    // Strokes "encima" del sello = todos los que se dibujaron después de su insertionIndex
+    final overlayIndices = <int>[];
+    for (int i = imgModel.insertionIndex; i < strokes.length; i++) {
+      overlayIndices.add(i);
+    }
+
+    final w = imgModel.rect.width.round().clamp(1, 4096);
+    final h = imgModel.rect.height.round().clamp(1, 4096);
+
+    // Renderizar sello + borrados + strokes encima en una imagen
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(
+      recorder,
+      Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()),
+    );
+
+    // Trasladar para que el sello quede en origen (0,0)
+    canvas.translate(-imgModel.position.dx, -imgModel.position.dy);
+
+    final src = Rect.fromLTWH(
+      0, 0,
+      imgModel.image.width.toDouble(),
+      imgModel.image.height.toDouble(),
+    );
+
+    // Dibujar sello con sus borrados
+    if (!imgModel.hasErases) {
+      canvas.drawImageRect(
+        imgModel.image, src, imgModel.rect,
+        Paint()..color = Colors.white.withOpacity(imgModel.opacity),
+      );
+    } else {
+      canvas.saveLayer(imgModel.rect, Paint());
+      canvas.drawImageRect(
+        imgModel.image, src, imgModel.rect,
+        Paint()..color = Colors.white.withOpacity(imgModel.opacity),
+      );
+      for (final erase in imgModel.eraseStrokes) {
+        _drawEraseOnCanvas(canvas, erase);
+      }
+      canvas.restore();
+    }
+
+    // Dibujar strokes del canvas que están encima del sello
+    for (final i in overlayIndices) {
+      _drawStrokeOnCanvas(canvas, strokes[i]);
+    }
+
+    final picture = recorder.endRecording();
+    final flatImage = await picture.toImage(w, h);
+
+    // Actualizar controller: reemplazar sello y eliminar strokes acoplados
+    _controller.flattenStamp(
+      stampId,
+      flatImage,
+      overlayIndices,
+      imgModel.layerId,
+    );
+  }
+
+  void _drawEraseOnCanvas(ui.Canvas canvas, EraseStroke erase) {
+    if (erase.points.isEmpty) return;
+    final p = Paint()
+      ..blendMode = BlendMode.dstOut
+      ..color = Colors.white
+      ..strokeWidth = erase.radius * 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+    if (erase.points.length == 1) {
+      canvas.drawCircle(erase.points.first, erase.radius,
+          Paint()..blendMode = BlendMode.dstOut..color = Colors.white..style = PaintingStyle.fill);
+      return;
+    }
+    final path = ui.Path();
+    path.moveTo(erase.points.first.dx, erase.points.first.dy);
+    for (int i = 1; i < erase.points.length - 1; i++) {
+      final mid = Offset(
+        (erase.points[i].dx + erase.points[i + 1].dx) / 2,
+        (erase.points[i].dy + erase.points[i + 1].dy) / 2,
+      );
+      path.quadraticBezierTo(erase.points[i].dx, erase.points[i].dy, mid.dx, mid.dy);
+    }
+    path.lineTo(erase.points.last.dx, erase.points.last.dy);
+    canvas.drawPath(path, p);
+  }
+
+  void _drawStrokeOnCanvas(ui.Canvas canvas, StrokeModel stroke) {
+    if (stroke.points.isEmpty) return;
+    final color = stroke.color.withOpacity(stroke.opacity);
+    final paint = Paint()
+      ..color = stroke.type == StrokeType.eraser
+          ? Colors.transparent.withOpacity(0)
+          : color
+      ..strokeWidth = stroke.strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke
+      ..blendMode = stroke.type == StrokeType.eraser
+          ? BlendMode.dstOut
+          : BlendMode.srcOver;
+    if (stroke.points.length == 1) {
+      canvas.drawCircle(stroke.points.first, stroke.strokeWidth / 2,
+          paint..style = PaintingStyle.fill);
+      return;
+    }
+    final path = ui.Path();
+    path.moveTo(stroke.points.first.dx, stroke.points.first.dy);
+    for (int i = 1; i < stroke.points.length - 1; i++) {
+      final mid = Offset(
+        (stroke.points[i].dx + stroke.points[i + 1].dx) / 2,
+        (stroke.points[i].dy + stroke.points[i + 1].dy) / 2,
+      );
+      path.quadraticBezierTo(stroke.points[i].dx, stroke.points[i].dy, mid.dx, mid.dy);
+    }
+    path.lineTo(stroke.points.last.dx, stroke.points.last.dy);
+    canvas.drawPath(path, paint);
+  }
+
   Future<void> _selectStamp(StampItem stamp) async {
     try {
       final data = await rootBundle.load(stamp.assetPath);
@@ -2651,9 +2783,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
 
-          // ── Dibujo / Borrador ────────────────────────────
-          // El borrador borra strokes E imágenes de la capa activa
-          // gracias al saveLayer+BlendMode.clear en el painter
+          // ── Borrador sobre sello/imagen: borra del sello directamente ──
+          // Así el borrado se mueve con el sello cuando se reposiciona
+          if (_controller.activeBrush.type == StrokeType.eraser) {
+            final imgUnder = _controller.imageAtPoint(cp);
+            if (imgUnder != null && imgUnder.layerId == _controller.activeLayerId) {
+              _erasingImageId = imgUnder.id;
+              _controller.startEraseOnImage(imgUnder.id, cp, _controller.activeBrush.size);
+              return;
+            }
+          }
+
+          // ── Dibujo / Borrador sobre canvas ────────────────────────────
           _controller.startStroke(cp);
         },
         onScaleUpdate: (details) {
@@ -2867,6 +3008,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
 
+          // ── Continuar borrado sobre imagen ───────────────
+          if (_erasingImageId != null) {
+            _controller.continueEraseOnImage(_erasingImageId!, cp);
+            return;
+          }
+
           // ── Continuar stroke / borrador ──────────────────
           _controller.continueStroke(cp);
         },
@@ -2907,7 +3054,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _finalizeSelection();
             }
           } else {
-            _controller.endStroke();
+            if (_erasingImageId != null) {
+              _controller.endEraseOnImage(_erasingImageId!);
+              setState(() => _erasingImageId = null);
+            } else {
+              _controller.endStroke();
+            }
           }
           _isScaling = false;
         },
@@ -3840,6 +3992,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
+                  // Acoplar: fusiona sello + strokes encima en una sola imagen
+                  _selectionAction(Icons.merge_type, 'Acoplar', () {
+                    _flattenStampWithCanvas(imgId);
+                  }),
                   // Ajustar: centra y escala al 60% del canvas
                   _selectionAction(Icons.zoom_out_map, 'Ajustar', () {
                     final cs = _controller.canvasSize;
