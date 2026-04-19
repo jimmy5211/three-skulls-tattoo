@@ -10,6 +10,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'theme/app_theme.dart';
 import 'app_router.dart';
 import 'services/update_service.dart';
+import 'services/device_profile.dart';
 import 'confirm_update_dialog.dart';
 
 final FlutterLocalNotificationsPlugin notificationsPlugin =
@@ -216,6 +217,9 @@ void main() async {
     systemNavigationBarColor: Color(0xFF000000),
     systemNavigationBarIconBrightness: Brightness.light,
   ));
+
+  // Detectar hardware y configurar perfil de rendimiento
+  await DeviceProfile.detect();
 
   runApp(const ThreeSkullsApp());
 }
