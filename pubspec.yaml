@@ -27,6 +27,9 @@ dependencies:
   permission_handler: ^11.3.0
   path_provider: ^2.1.2
 
+  # Información del dispositivo (para adaptación de rendimiento)
+  device_info_plus: ^10.1.0
+
   # Utilidades
   uuid: ^4.3.3
   image_picker: ^1.0.7
