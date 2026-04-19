@@ -553,6 +553,42 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Acopia sello: reemplaza su imagen con la versión fusionada
+  /// y elimina los strokes del canvas que quedaron integrados.
+  void flattenStamp(String stampId, ui.Image flatImage, List<int> strokeIndicesToRemove, int layerId) {
+    _saveToHistory();
+    // Reemplazar imagen del sello
+    final idx = canvasImages.indexWhere((img) => img.id == stampId);
+    if (idx != -1) {
+      final old = canvasImages[idx];
+      canvasImages[idx] = CanvasImageModel(
+        id: old.id,
+        image: flatImage,
+        position: old.position,
+        size: old.size,
+        layerId: old.layerId,
+        opacity: old.opacity,
+        rotation: old.rotation,
+        flipX: old.flipX,
+        flipY: old.flipY,
+        insertionIndex: old.insertionIndex,
+      );
+    }
+    // Eliminar strokes acoplados de la capa
+    final lIdx = layers.indexWhere((l) => l.id == layerId);
+    if (lIdx != -1 && strokeIndicesToRemove.isNotEmpty) {
+      final toRemove = Set<int>.from(strokeIndicesToRemove);
+      final newStrokes = [
+        for (int i = 0; i < layers[lIdx].strokes.length; i++)
+          if (!toRemove.contains(i)) layers[lIdx].strokes[i]
+      ];
+      layers[lIdx] = layers[lIdx].copyWith(strokes: newStrokes);
+    }
+    _invalidateImageLayer(layerId);
+    invalidateLayerCache(layerId);
+    notifyListeners();
+  }
+
   void removeCanvasImage(String id) {
     final img = canvasImages.where((i) => i.id == id).firstOrNull;
     final layerId = img?.layerId ?? activeLayerId;
