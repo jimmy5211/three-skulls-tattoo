@@ -134,10 +134,14 @@ class CanvasPainter extends CustomPainter {
     } else {
       canvas.saveLayer(img.rect, Paint());
       canvas.drawImageRect(img.image, src, img.rect, imgPaint);
-      for (final erase in [
-        ...img.eraseStrokes,
-        if (img.currentEraseStroke != null) img.currentEraseStroke!,
-      ]) {
+      // Safety: solo renderizar el stroke actual para no acumular
+      // Los históricos ya están horneados en la imagen via _bakeErases
+      final toRender = img.currentEraseStroke != null
+          ? [img.currentEraseStroke!]
+          : img.eraseStrokes.length <= 3
+              ? img.eraseStrokes
+              : img.eraseStrokes.sublist(img.eraseStrokes.length - 3);
+      for (final erase in toRender) {
         _drawEraseStroke(canvas, erase);
       }
       canvas.restore();
