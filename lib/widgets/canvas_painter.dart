@@ -181,6 +181,44 @@ class CanvasPainter extends CustomPainter {
 
   void _drawEraseStroke(Canvas canvas, EraseStroke erase) {
     if (erase.points.isEmpty) return;
+    final hardness = erase.hardness.clamp(0.0, 1.0);
+
+    void stamp(Offset point) {
+      if (hardness >= 0.99) {
+        // Borrado duro: círculo sólido
+        canvas.drawCircle(point, erase.radius,
+          Paint()..blendMode = BlendMode.dstOut..color = Colors.white..style = PaintingStyle.fill);
+      } else {
+        // Borrado suave: gradiente radial (igual que el borrador del canvas)
+        canvas.drawCircle(point, erase.radius, Paint()
+          ..shader = ui.Gradient.radial(point, erase.radius, [
+            Colors.white.withOpacity(1.0),
+            Colors.white.withOpacity(hardness),
+            Colors.transparent,
+          ], [0.0, hardness.clamp(0.01, 0.99), 1.0])
+          ..blendMode = BlendMode.dstOut);
+      }
+    }
+
+    if (erase.points.length == 1) {
+      stamp(erase.points.first);
+      return;
+    }
+
+    // Stamp along path for smooth erase
+    for (int i = 0; i < erase.points.length; i++) {
+      stamp(erase.points[i]);
+      if (i > 0) {
+        final dist = (erase.points[i] - erase.points[i-1]).distance;
+        final steps = (dist / (erase.radius * 0.4)).ceil().clamp(1, 8);
+        for (int s = 1; s < steps; s++) {
+          stamp(Offset.lerp(erase.points[i-1], erase.points[i], s / steps)!);
+        }
+      }
+    }
+    return;
+
+    // UNUSED - kept for reference
     final erasePaint = Paint()
       ..blendMode = BlendMode.dstOut
       ..color = Colors.white
