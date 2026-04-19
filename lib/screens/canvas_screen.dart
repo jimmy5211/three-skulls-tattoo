@@ -2640,6 +2640,42 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
+  /// Funde los borrados en la imagen y limpia eraseStrokes para liberar memoria.
+  /// Se llama automáticamente después de cada trazo de borrador.
+  Future<void> _bakeErases(String imageId) async {
+    final img = _controller.canvasImages
+        .where((i) => i.id == imageId).firstOrNull;
+    if (img == null || !img.hasErases) return;
+
+    final w = img.size.width.round().clamp(1, 4096);
+    final h = img.size.height.round().clamp(1, 4096);
+
+    final recorder = ui.PictureRecorder();
+    final c = ui.Canvas(recorder, Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()));
+
+    // Trasladar al espacio de la imagen
+    c.translate(-img.position.dx, -img.position.dy);
+
+    final src = Rect.fromLTWH(
+        0, 0, img.image.width.toDouble(), img.image.height.toDouble());
+
+    // Dibujar imagen + borrados fusionados
+    c.saveLayer(img.rect, Paint());
+    c.drawImageRect(img.image, src, img.rect,
+        Paint()..color = Colors.white.withOpacity(img.opacity)
+               ..filterQuality = FilterQuality.medium);
+    for (final erase in img.eraseStrokes) {
+      _drawEraseOnCanvas(c, erase);
+    }
+    c.restore();
+
+    final picture = recorder.endRecording();
+    final bakedImage = await picture.toImage(w, h);
+
+    if (!mounted) return;
+    _controller.replaceCanvasImageBaked(imageId, bakedImage);
+  }
+
   /// Acopia el sello con todos los strokes del canvas que están encima.
   /// El resultado es una sola imagen movible con el sello + boceto integrados.
   Future<void> _flattenStampWithCanvas(String stampId) async {
@@ -3644,8 +3680,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
             }
           } else {
             if (_erasingImageId != null) {
-              _controller.endEraseOnImage(_erasingImageId!);
+              final idToBake = _erasingImageId!;
+              _controller.endEraseOnImage(idToBake);
               setState(() => _erasingImageId = null);
+              // Bake inmediatamente para liberar memoria de eraseStrokes
+              _bakeErases(idToBake);
             } else {
               _strokeStartTime = null;
               _isDrawing = false;
