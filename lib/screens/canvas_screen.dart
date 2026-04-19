@@ -113,8 +113,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // ─── BORRADOR EN IMAGEN ──────────────────────────────────
   String? _erasingImageId;
   DateTime? _strokeStartTime; // para detectar dots accidentales al hacer pan
-  int _activePointers = 0;     // FIX: contador real de dedos en pantalla
-  Offset? _tapDownCanvasPos;   // posición del dedo al bajar (para transform tap)
+  int _activePointers = 0;
+  bool _cancelStrokeImmediately = false; // kill switch: cancela el stroke en curso
+  bool _isDrawing = false;               // true solo cuando hay stroke activo válido
+  Offset? _tapDownCanvasPos;
 
   // ─── TOOLTIP ─────────────────────────────────────────────────
   String? _tooltipText;
@@ -3103,9 +3105,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
       child: Listener(
         onPointerDown: (_) {
           _activePointers++;
-          // FIX: cancelar stroke INMEDIATAMENTE cuando llega el 2do dedo
-          // Esto ocurre antes de que el GestureDetector procese nada
-          if (_activePointers >= 2 && _controller.currentStroke != null) {
+          if (_activePointers > 1) {
+            // Kill switch: 2do dedo detectado — descartar stroke inmediatamente
+            _cancelStrokeImmediately = true;
+            _isDrawing = false;
             _controller.cancelStroke();
           }
         },
@@ -3336,6 +3339,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
 
           // ── Dibujo / Borrador sobre canvas ────────────────────────────
+          _cancelStrokeImmediately = false;
+          _isDrawing = true;
           _controller.startStroke(cp);
         },
         onScaleUpdate: (details) {
@@ -3579,7 +3584,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
 
           // ── Continuar stroke / borrador ──────────────────
-          _controller.continueStroke(cp);
+          // Filtro en caliente: si 2+ dedos activos, no seguir dibujando
+          if (_cancelStrokeImmediately || _activePointers > 1) {
+            _isDrawing = false;
+            _controller.cancelStroke();
+            return;
+          }
+          if (_isDrawing) _controller.continueStroke(cp);
         },
         onScaleEnd: (details) {
           if (_isScaling) { _isScaling = false; return; }
@@ -3623,16 +3634,26 @@ class _CanvasScreenState extends State<CanvasScreen> {
               setState(() => _erasingImageId = null);
             } else {
               _strokeStartTime = null;
-              // FIX dots: cancelar si 2+ dedos O si stroke es < 3px (toque accidental)
-              final stroke = _controller.currentStroke;
-              final isTinyDot = stroke != null &&
-                  stroke.points.length <= 2 &&
-                  (stroke.points.length < 2 ||
-                   (stroke.points.last - stroke.points.first).distance < 3.0);
-              if (_activePointers >= 2 || isTinyDot) {
+              _isDrawing = false;
+              if (_cancelStrokeImmediately) {
+                // Kill switch activo → descartar sin dudar
+                _cancelStrokeImmediately = false;
                 _controller.cancelStroke();
               } else {
-                _controller.endStroke();
+                // Delayed commit: esperar microtask para que _activePointers se actualice
+                Future.microtask(() {
+                  if (!mounted) return;
+                  final stroke = _controller.currentStroke;
+                  // Validación: descartar si 2+ dedos, stroke inválido o muy corto
+                  final isValid = stroke != null &&
+                      stroke.points.length > 2 &&
+                      _activePointers <= 1;
+                  if (isValid) {
+                    _controller.endStroke();
+                  } else {
+                    _controller.cancelStroke();
+                  }
+                });
               }
             }
           }
