@@ -116,8 +116,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
   int _activePointers = 0;
   bool _cancelStrokeImmediately = false;
   bool _isDrawing = false;
-  Offset? _pendingStrokePoint; // punto inicial pendiente hasta confirmar 1 dedo
+  Offset? _pendingStrokePoint;
+  final List<Offset> _pendingPoints = []; // buffer: acumula puntos antes de comprometer
   Offset? _tapDownCanvasPos;
+
+  // ─── BRUSH PREVIEW ────────────────────────────────────
+  bool _showBrushPreview = false;
+  double _brushPreviewSize = 0;
 
   // ─── TOOLTIP ─────────────────────────────────────────────────
   String? _tooltipText;
@@ -369,6 +374,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
             if (_tooltipText != null)
               _buildTooltipOverlay(),
 
+            // Brush size preview
+            if (_showBrushPreview)
+              _buildBrushPreview(),
+
             if (_showCanvasSettings && !_isFullscreen)
               _buildCanvasSettingsPanel(),
 
@@ -573,6 +582,67 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 fontSize: 11,
                 color: Colors.white,
                 fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _triggerBrushPreview(double size) {
+    setState(() {
+      _showBrushPreview = true;
+      _brushPreviewSize = size;
+    });
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _showBrushPreview = false);
+    });
+  }
+
+  Widget _buildBrushPreview() {
+    // Tamaño visual en pantalla = brushSize * scale (para mostrar tamaño real)
+    final screenRadius = (_brushPreviewSize * _scale / 2).clamp(4.0, 200.0);
+    return Positioned(
+      top: 0, left: 0, right: 0, bottom: 0,
+      child: IgnorePointer(
+        child: Center(
+          child: AnimatedOpacity(
+            opacity: _showBrushPreview ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 150),
+            child: Container(
+              width: screenRadius * 2 + 32,
+              height: screenRadius * 2 + 64,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.55),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Círculo preview del pincel
+                  Container(
+                    width: screenRadius * 2,
+                    height: screenRadius * 2,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _controller.activeBrush.type == StrokeType.eraser
+                          ? Colors.white.withOpacity(0.9)
+                          : _controller.activeColor.withOpacity(0.9),
+                      border: Border.all(color: Colors.white38, width: 1),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${_brushPreviewSize.round()} px',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontFamily: 'Raleway',
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1367,7 +1437,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       min: 1,
                       max: 100,
                       onChanged: (v) => setState(
-                          () => _controller.setBrushSize(v)),
+                          () {
+                            _controller.setBrushSize(v);
+                            _triggerBrushPreview(v);
+                          }),
                     ),
                   ),
                 ),
@@ -3146,6 +3219,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
             // Kill switch: 2do dedo detectado — descartar stroke inmediatamente
             _cancelStrokeImmediately = true;
             _isDrawing = false;
+            _pendingPoints.clear();
+            _pendingStrokePoint = null;
             _controller.cancelStroke();
           }
         },
@@ -3385,9 +3460,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
         onScaleUpdate: (details) {
           // ── PRIORIDAD ABSOLUTA: multitouch → pan/zoom, nunca stroke ──
           if (details.pointerCount >= 2 || _activePointers > 1) {
-            // Cancelar cualquier stroke en curso o pendiente
             _isDrawing = false;
             _pendingStrokePoint = null;
+            _pendingPoints.clear();
             _controller.cancelStroke();
             if (!_isScaling) {
               _isDraggingImage = false;
@@ -3633,14 +3708,22 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return;
           }
 
-          if (!_isDrawing && _pendingStrokePoint != null) {
-            // 🔥 Stroke nace aquí — ya sabemos que es 1 dedo
-            _isDrawing = true;
-            _controller.startStroke(_pendingStrokePoint!);
-            _pendingStrokePoint = null;
+          if (!_isDrawing) {
+            // Buffer: acumular puntos hasta confirmar que es un gesto real
+            _pendingPoints.add(cp);
+            if (_pendingPoints.length >= 3) {
+              // 🔥 Stroke nace aquí — 3+ puntos con 1 dedo = intención real
+              _isDrawing = true;
+              _controller.startStroke(_pendingPoints.first, viewScale: _scale);
+              for (final p in _pendingPoints.skip(1)) {
+                _controller.continueStroke(p);
+              }
+              _pendingPoints.clear();
+              _pendingStrokePoint = null;
+            }
+          } else {
+            _controller.continueStroke(cp);
           }
-
-          if (_isDrawing) _controller.continueStroke(cp);
         },
         onScaleEnd: (details) {
           if (_isScaling) { _isScaling = false; return; }
@@ -3689,8 +3772,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _strokeStartTime = null;
               _isDrawing = false;
               if (_cancelStrokeImmediately) {
-                // Kill switch activo → descartar sin dudar
                 _cancelStrokeImmediately = false;
+                _pendingPoints.clear();
                 _controller.cancelStroke();
               } else {
                 // Delayed commit: esperar microtask para que _activePointers se actualice
