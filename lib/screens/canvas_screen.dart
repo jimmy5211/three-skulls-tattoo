@@ -3097,7 +3097,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget _buildCanvas() {
     return Positioned.fill(
       child: Listener(
-        onPointerDown: (_) => _activePointers++,
+        onPointerDown: (_) {
+          _activePointers++;
+          // FIX: cancelar stroke INMEDIATAMENTE cuando llega el 2do dedo
+          // Esto ocurre antes de que el GestureDetector procese nada
+          if (_activePointers >= 2 && _controller.currentStroke != null) {
+            _controller.cancelStroke();
+          }
+        },
         onPointerUp: (_) => _activePointers--,
         onPointerCancel: (_) => _activePointers--,
         child: GestureDetector(
@@ -5155,11 +5162,11 @@ class _EraserAIBtn extends StatelessWidget {
 
 class _RulerPainter extends CustomPainter {
   final Axis direction;
-  final double scale;      // current canvas zoom
-  final double offset;     // canvas offset in this axis (screen coords)
-  final double canvasSize; // canvas dimension in this axis (canvas px)
-  final double pxPerUnit;  // canvas pixels per 1 ruler unit
-  final String unit;
+  final double scale;
+  final double offset;
+  final double canvasSize;
+  final double pxPerUnit;   // canvas px per base unit (cm/inch)
+  final String unit;        // 'cm' | 'mm' | 'inch'
 
   const _RulerPainter({
     required this.direction,
@@ -5170,98 +5177,150 @@ class _RulerPainter extends CustomPainter {
     required this.unit,
   });
 
+  // ── Niveles adaptativos por unidad ──────────────────────────
+  // Cada entrada: (divisor de la unidad base, etiqueta, esMinor)
+  // cm: base=1cm. Subdivisiones: mm=0.1, 5mm=0.5
+  // inch: base=1in. Subdivisiones: 1/8=0.125, 1/4=0.25, 1/2=0.5
+  // mm: base=1mm. Subdivisiones: 0.5mm=0.5
+
+  static const _cmLevels = [
+    (1.0,   true,  false),  // 1 cm — label
+    (0.5,   false, true),   // 5 mm — mid tick
+    (0.1,   false, true),   // 1 mm — minor tick
+  ];
+  static const _inchLevels = [
+    (1.0,   true,  false),  // 1 inch — label
+    (0.5,   false, true),   // 1/2 — mid tick
+    (0.25,  false, true),   // 1/4 — minor tick
+    (0.125, false, true),   // 1/8 — tiny tick
+  ];
+  static const _mmLevels = [
+    (1.0,   true,  false),  // 1 mm — label
+    (0.5,   false, true),   // 0.5 mm — minor tick
+  ];
+
   @override
   void paint(Canvas canvas, Size size) {
     final bg = Paint()..color = const Color(0xFF2C2C2E);
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bg);
 
-    final tickPaint = Paint()
-      ..color = const Color(0xFF8E8E93)
-      ..strokeWidth = 0.5;
-
-    final textStyle = const TextStyle(
-      color: Color(0xFF8E8E93),
-      fontSize: 7,
-      fontFamily: 'Raleway',
-    );
-
-    // Screen pixels per unit
     final screenPxPerUnit = pxPerUnit * scale;
     if (screenPxPerUnit <= 0) return;
 
-    // Find a "nice" tick interval — guarded against infinite loop
-    // Target: screen ticks between 20px and 80px apart
-    double tickInterval = 1.0;
-    // If ticks are too dense, increase interval (×2 steps: 1,2,5,10,20,50...)
-    final niceSteps = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0];
-    for (final step in niceSteps) {
-      tickInterval = step;
-      if (screenPxPerUnit * tickInterval >= 15) break;
-    }
-    // Safety: if still too small, cap it
-    if (screenPxPerUnit * tickInterval < 5) return;
+    final isH = direction == Axis.horizontal;
+    final totalSize = isH ? size.width : size.height;
+    final rulerThickness = isH ? size.height : size.width;
 
-    final screenTickSize = screenPxPerUnit * tickInterval;
-    final totalScreenSize = direction == Axis.horizontal ? size.width : size.height;
+    final majorPaint = Paint()..color = const Color(0xFF8E8E93)..strokeWidth = 0.5;
+    final minorPaint = Paint()..color = const Color(0xFF555558)..strokeWidth = 0.5;
+    final edgePaint  = Paint()..color = const Color(0xFFE74C3C)..strokeWidth = 1.0;
 
-    // Canvas origin in screen coords
-    final origin = offset; // offset already in screen coords
+    final labelStyle = const TextStyle(
+      color: Color(0xFF8E8E93), fontSize: 7, fontFamily: 'Raleway');
+    final subLabelStyle = const TextStyle(
+      color: Color(0xFF666669), fontSize: 6, fontFamily: 'Raleway');
 
-    // First tick position
-    final firstTick = ((-origin) / screenTickSize).floor() * screenTickSize + origin;
+    // Choose levels based on unit
+    final levels = unit == 'inch' ? _inchLevels
+                 : unit == 'mm'   ? _mmLevels
+                 :                  _cmLevels;
 
-    double pos = firstTick;
-    while (pos < totalScreenSize) {
-      final unitValue = (pos - origin) / screenPxPerUnit;
-      final isInCanvas = unitValue >= 0 && unitValue * pxPerUnit <= canvasSize;
+    // Minimum screen px per tick to show that level
+    const minPxToShow = 6.0;
 
-      if (isInCanvas) {
-        final tickLength = direction == Axis.horizontal ? size.height * 0.5 : size.width * 0.5;
-        if (direction == Axis.horizontal) {
-          canvas.drawLine(Offset(pos, size.height), Offset(pos, size.height - tickLength), tickPaint);
-          if ((unitValue / tickInterval).round() % 2 == 0) {
-            _drawText(canvas, '${unitValue.toStringAsFixed(unitValue < 10 ? 0 : 0)}', pos + 2, 1, textStyle);
+    for (final (divisor, showLabel, isMinor) in levels) {
+      final screenPxPerTick = screenPxPerUnit * divisor;
+      if (screenPxPerTick < minPxToShow) continue; // too dense, skip
+
+      final tickPaint = isMinor ? minorPaint : majorPaint;
+      final tickH = isMinor
+          ? rulerThickness * 0.25
+          : (showLabel ? rulerThickness * 0.6 : rulerThickness * 0.4);
+
+      final firstPos = ((-offset) / screenPxPerTick).floor() * screenPxPerTick + offset;
+      double pos = firstPos;
+
+      while (pos < totalSize + screenPxPerTick) {
+        final unitVal = (pos - offset) / screenPxPerUnit;
+        if (unitVal < -0.001) { pos += screenPxPerTick; continue; }
+        if (unitVal * pxPerUnit > canvasSize + 0.5) { pos += screenPxPerTick; continue; }
+
+        if (isH) {
+          canvas.drawLine(
+            Offset(pos, rulerThickness),
+            Offset(pos, rulerThickness - tickH),
+            tickPaint,
+          );
+          if (showLabel && screenPxPerTick >= 20) {
+            _drawLabel(canvas, _formatVal(unitVal, divisor), pos + 2, 1, labelStyle);
+          } else if (!showLabel && isMinor && screenPxPerTick >= 30) {
+            // Sub-labels for mm when zoomed in
+            final subVal = _subLabel(unitVal, divisor);
+            if (subVal != null) {
+              _drawLabel(canvas, subVal, pos + 1, rulerThickness * 0.15, subLabelStyle);
+            }
           }
         } else {
-          canvas.drawLine(Offset(size.width, pos), Offset(size.width - tickLength, pos), tickPaint);
-          if ((unitValue / tickInterval).round() % 2 == 0) {
-            _drawTextVertical(canvas, '${unitValue.toStringAsFixed(0)}', 1, pos + 2, textStyle);
+          canvas.drawLine(
+            Offset(rulerThickness, pos),
+            Offset(rulerThickness - tickH, pos),
+            tickPaint,
+          );
+          if (showLabel && screenPxPerTick >= 20) {
+            _drawLabelV(canvas, _formatVal(unitVal, divisor), 1, pos + 2, labelStyle);
           }
         }
+        pos += screenPxPerTick;
       }
-      pos += screenTickSize;
     }
 
-    // Canvas edge markers
-    final canvasStartScreen = origin;
-    final canvasEndScreen = origin + canvasSize * scale;
-    final edgePaint = Paint()..color = const Color(0xFFE74C3C)..strokeWidth = 1.0;
-    if (direction == Axis.horizontal) {
-      if (canvasStartScreen >= 0 && canvasStartScreen <= totalScreenSize)
-        canvas.drawLine(Offset(canvasStartScreen, 0), Offset(canvasStartScreen, size.height), edgePaint);
-      if (canvasEndScreen >= 0 && canvasEndScreen <= totalScreenSize)
-        canvas.drawLine(Offset(canvasEndScreen, 0), Offset(canvasEndScreen, size.height), edgePaint);
+    // Canvas edge markers (red)
+    final canvasStart = offset;
+    final canvasEnd   = offset + canvasSize * scale;
+    if (isH) {
+      if (canvasStart >= 0 && canvasStart <= totalSize)
+        canvas.drawLine(Offset(canvasStart, 0), Offset(canvasStart, rulerThickness), edgePaint);
+      if (canvasEnd >= 0 && canvasEnd <= totalSize)
+        canvas.drawLine(Offset(canvasEnd, 0), Offset(canvasEnd, rulerThickness), edgePaint);
     } else {
-      if (canvasStartScreen >= 0 && canvasStartScreen <= totalScreenSize)
-        canvas.drawLine(Offset(0, canvasStartScreen), Offset(size.width, canvasStartScreen), edgePaint);
-      if (canvasEndScreen >= 0 && canvasEndScreen <= totalScreenSize)
-        canvas.drawLine(Offset(0, canvasEndScreen), Offset(size.width, canvasEndScreen), edgePaint);
+      if (canvasStart >= 0 && canvasStart <= totalSize)
+        canvas.drawLine(Offset(0, canvasStart), Offset(rulerThickness, canvasStart), edgePaint);
+      if (canvasEnd >= 0 && canvasEnd <= totalSize)
+        canvas.drawLine(Offset(0, canvasEnd), Offset(rulerThickness, canvasEnd), edgePaint);
     }
   }
 
-  void _drawText(Canvas canvas, String text, double x, double y, TextStyle style) {
+  String _formatVal(double val, double divisor) {
+    if (val < 0.001) return '0';
+    if (divisor >= 1.0) return val.round().toString();
+    // Sub-unit: show decimal
+    final decimals = divisor < 0.15 ? 2 : 1;
+    return val.toStringAsFixed(decimals);
+  }
+
+  /// For sub-ticks between major ticks, show mm value if unit is cm
+  String? _subLabel(double val, double divisor) {
+    if (unit != 'cm') return null;
+    // divisor 0.1 = 1mm — show mm number
+    if ((divisor - 0.1).abs() < 0.01) {
+      final mm = (val * 10).round() % 10;
+      if (mm == 0) return null; // already labeled as cm
+      return '$mm';
+    }
+    return null;
+  }
+
+  void _drawLabel(Canvas canvas, String text, double x, double y, TextStyle style) {
     final tp = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
-    )..layout();
+        text: TextSpan(text: text, style: style),
+        textDirection: TextDirection.ltr)..layout();
     tp.paint(canvas, Offset(x, y));
   }
 
-  void _drawTextVertical(Canvas canvas, String text, double x, double y, TextStyle style) {
+  void _drawLabelV(Canvas canvas, String text, double x, double y, TextStyle style) {
     final tp = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
-    )..layout();
+        text: TextSpan(text: text, style: style),
+        textDirection: TextDirection.ltr)..layout();
     canvas.save();
     canvas.translate(x, y + tp.width);
     canvas.rotate(-3.14159 / 2);
