@@ -594,13 +594,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
   void _triggerBrushPreview(double size) {
     _previewToken++;
     final token = _previewToken;
-    // Solo actualizar tamaño sin rebuild completo si ya está visible
-    _brushPreviewSize = size;
-    if (!_showBrushPreview) {
-      setState(() => _showBrushPreview = true);
-    }
-    // Solo el último timer cierra el preview (evita flickering por timers acumulados)
-    Future.delayed(const Duration(milliseconds: 1200), () {
+    // setState siempre para que el círculo actualice su tamaño
+    setState(() {
+      _brushPreviewSize = size;
+      _showBrushPreview = true;
+    });
+    Future.delayed(const Duration(milliseconds: 1000), () {
       if (mounted && _previewToken == token) {
         setState(() => _showBrushPreview = false);
       }
@@ -609,7 +608,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildBrushPreview() {
     // Tamaño visual en pantalla = brushSize * scale (para mostrar tamaño real)
-    final screenRadius = (_brushPreviewSize * _scale / 2).clamp(4.0, 200.0);
+    // Mostrar tamaño real del pincel en canvas (no escalado por zoom)
+    // porque el trazo se guarda en unidades de canvas
+    final screenRadius = (_brushPreviewSize / 2).clamp(4.0, 120.0);
     return Positioned(
       top: 0, left: 0, right: 0, bottom: 0,
       child: IgnorePointer(
@@ -2725,36 +2726,40 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _isBaking = false; // prevent concurrent bakes
 
   Future<void> _bakeErases(String imageId) async {
-    if (_isBaking) return; // already baking
+    if (_isBaking) return;
     final img = _controller.canvasImages
         .where((i) => i.id == imageId).firstOrNull;
     if (img == null || !img.hasErases) return;
     _isBaking = true;
 
-    final w = img.size.width.round().clamp(1, 4096);
-    final h = img.size.height.round().clamp(1, 4096);
+    // FIX: bake a resolución NATIVA de la imagen (sin reescalar = sin blur)
+    final nativeW = img.image.width;
+    final nativeH = img.image.height;
+    final dispW = img.size.width;
+    final dispH = img.size.height;
+    // Factores de escala: de coordenadas canvas a píxeles nativos
+    final scaleX = nativeW / dispW;
+    final scaleY = nativeH / dispH;
 
     final recorder = ui.PictureRecorder();
-    final c = ui.Canvas(recorder, Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()));
+    final c = ui.Canvas(recorder,
+        Rect.fromLTWH(0, 0, nativeW.toDouble(), nativeH.toDouble()));
 
-    // Trasladar al espacio de la imagen
-    c.translate(-img.position.dx, -img.position.dy);
+    final srcRect = Rect.fromLTWH(0, 0, nativeW.toDouble(), nativeH.toDouble());
+    final dstRect = Rect.fromLTWH(0, 0, nativeW.toDouble(), nativeH.toDouble());
 
-    final src = Rect.fromLTWH(
-        0, 0, img.image.width.toDouble(), img.image.height.toDouble());
-
-    // Dibujar imagen + borrados fusionados
-    c.saveLayer(img.rect, Paint());
-    c.drawImageRect(img.image, src, img.rect,
+    // Dibujar imagen a 1:1 + borrados escalados
+    c.saveLayer(dstRect, Paint());
+    c.drawImageRect(img.image, srcRect, dstRect,
         Paint()..color = Colors.white.withOpacity(img.opacity)
-               ..filterQuality = FilterQuality.medium);
+               ..filterQuality = FilterQuality.none); // sin blur
     for (final erase in img.eraseStrokes) {
-      _drawEraseOnCanvas(c, erase);
+      _drawEraseOnCanvasNative(c, erase, img.position, scaleX, scaleY);
     }
     c.restore();
 
     final picture = recorder.endRecording();
-    final bakedImage = await picture.toImage(w, h);
+    final bakedImage = await picture.toImage(nativeW, nativeH);
 
     if (!mounted) { _isBaking = false; return; }
     try {
@@ -2763,6 +2768,49 @@ class _CanvasScreenState extends State<CanvasScreen> {
       debugPrint('bake error: $e');
     } finally {
       _isBaking = false;
+    }
+  }
+
+  /// Dibuja erase stroke en espacio nativo de la imagen (sin blur por reescalado)
+  void _drawEraseOnCanvasNative(ui.Canvas canvas, EraseStroke erase,
+      Offset imgPos, double scaleX, double scaleY) {
+    if (erase.points.isEmpty) return;
+    final hardness = erase.hardness.clamp(0.0, 1.0);
+    final r = erase.radius * scaleX; // escalar radio a píxeles nativos
+
+    // Transformar puntos de canvas coords a píxeles nativos
+    Offset toNative(Offset p) => Offset(
+        (p.dx - imgPos.dx) * scaleX,
+        (p.dy - imgPos.dy) * scaleY,
+    );
+
+    void stamp(Offset p) {
+      final np = toNative(p);
+      if (hardness >= 0.99) {
+        canvas.drawCircle(np, r,
+            Paint()..blendMode = BlendMode.dstOut
+                   ..color = Colors.white
+                   ..style = PaintingStyle.fill);
+      } else {
+        canvas.drawCircle(np, r, Paint()
+          ..shader = ui.Gradient.radial(np, r, [
+            Colors.white.withOpacity(1.0),
+            Colors.white.withOpacity(hardness),
+            Colors.transparent,
+          ], [0.0, hardness.clamp(0.01, 0.99), 1.0])
+          ..blendMode = BlendMode.dstOut);
+      }
+    }
+
+    if (erase.points.length == 1) { stamp(erase.points.first); return; }
+    stamp(erase.points.first);
+    for (int i = 1; i < erase.points.length; i++) {
+      stamp(erase.points[i]);
+      final dist = (erase.points[i] - erase.points[i-1]).distance * scaleX;
+      final steps = (dist / (r * 0.4)).ceil().clamp(1, 6);
+      for (int s = 1; s < steps; s++) {
+        stamp(Offset.lerp(erase.points[i-1], erase.points[i], s / steps)!);
+      }
     }
   }
 
@@ -2843,32 +2891,33 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   void _drawEraseOnCanvas(ui.Canvas canvas, EraseStroke erase) {
     if (erase.points.isEmpty) return;
-    final hardness = erase.hardness.clamp(0.0, 1.0);
-    // FIX: usar hardness igual que el borrador del canvas (gradiente radial)
-    void stamp(Offset point) {
-      if (hardness >= 0.99) {
-        canvas.drawCircle(point, erase.radius,
-            Paint()..blendMode = BlendMode.dstOut..color = Colors.white..style = PaintingStyle.fill);
-      } else {
-        canvas.drawCircle(point, erase.radius, Paint()
-          ..shader = ui.Gradient.radial(point, erase.radius, [
-            Colors.white.withOpacity(1.0),
-            Colors.white.withOpacity(hardness),
-            Colors.transparent,
-          ], [0.0, hardness.clamp(0.01, 0.99), 1.0])
-          ..blendMode = BlendMode.dstOut);
-      }
+    final opacity = erase.hardness.clamp(0.1, 1.0);
+    final paint = Paint()
+      ..blendMode = BlendMode.dstOut
+      ..color = Colors.white.withOpacity(opacity)
+      ..strokeWidth = erase.radius * 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+    if (erase.points.length == 1) {
+      canvas.drawCircle(erase.points.first, erase.radius,
+          Paint()..blendMode = BlendMode.dstOut
+                 ..color = Colors.white.withOpacity(opacity)
+                 ..style = PaintingStyle.fill);
+      return;
     }
-    for (int i = 0; i < erase.points.length; i++) {
-      stamp(erase.points[i]);
-      if (i > 0) {
-        final dist = (erase.points[i] - erase.points[i-1]).distance;
-        final steps = (dist / (erase.radius * 0.4)).ceil().clamp(1, 8);
-        for (int s = 1; s < steps; s++) {
-          stamp(Offset.lerp(erase.points[i-1], erase.points[i], s / steps)!);
-        }
-      }
+    final path = ui.Path();
+    path.moveTo(erase.points.first.dx, erase.points.first.dy);
+    for (int i = 1; i < erase.points.length - 1; i++) {
+      final mid = Offset(
+        (erase.points[i].dx + erase.points[i+1].dx) / 2,
+        (erase.points[i].dy + erase.points[i+1].dy) / 2,
+      );
+      path.quadraticBezierTo(
+          erase.points[i].dx, erase.points[i].dy, mid.dx, mid.dy);
     }
+    path.lineTo(erase.points.last.dx, erase.points.last.dy);
+    canvas.drawPath(path, paint);
   }
 
   void _drawStrokeOnCanvas(ui.Canvas canvas, StrokeModel stroke) {
