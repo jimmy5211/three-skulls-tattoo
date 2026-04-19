@@ -2548,7 +2548,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
               }
               // Hit area de drag: dentro de la imagen (con rotación)
               final relCp = _rotatePointAround(cp, selImg.center, -selImg.rotation);
-              if (selImg.rect.inflate(10 / _scale).contains(relCp)) {
+              // FIX: inflate grande para que sea fácil tocar en móvil
+              if (selImg.rect.inflate(80 / _scale).contains(relCp)) {
                 _isDraggingImage = true;
                 _lastDragCanvas = cp;
                 return;
@@ -2560,13 +2561,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return; // FIX: no dibujar stroke al deseleccionar imagen
           }
 
-          // ── Transform mode: tap en imagen = seleccionar ──
+          // ── Transform mode: tap en imagen = seleccionar + iniciar drag ──
           if (_selectedImageId == null &&
               _selectionMode == SelectionMode.ninguno &&
               _transformMode == TransformMode.activo) {
             final img = _controller.imageAtPoint(cp);
             if (img != null) {
               _controller.selectCanvasImage(img.id);
+              // FIX: iniciar drag en el mismo gesto que selecciona
+              _isDraggingImage = true;
+              _lastDragCanvas = cp;
               setState(() => _selectedImageId = img.id);
               return;
             }
