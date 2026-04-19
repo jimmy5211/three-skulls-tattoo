@@ -628,6 +628,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
           _smudgeMode = false;
           _showSelectionOptions = false;
           _showBrushPanel = false;
+          // FIX: desactivar sello al entrar en transform mode
+          _stampMode = false;
+          _activeStamp = null;
+          _activeStampImage = null;
         }
       }),
       child: Container(
@@ -2462,6 +2466,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
             // En su lugar manejamos selección en onScaleStart con tap rápido
             Offset.zero,
           );
+
+          // FIX: en transform mode, onTap NO deselecciona.
+          // La selección/deselección la maneja onScaleStart para evitar
+          // que onTap deshaga inmediatamente lo que onScaleStart acaba de seleccionar.
+          if (_transformMode == TransformMode.activo) return;
 
           if (_selectedImageId != null) {
             setState(() {
