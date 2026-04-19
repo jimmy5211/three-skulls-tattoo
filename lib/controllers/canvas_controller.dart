@@ -576,6 +576,29 @@ class CanvasController extends ChangeNotifier {
 
   /// Acopia sello: reemplaza su imagen con la versión fusionada
   /// y elimina los strokes del canvas que quedaron integrados.
+  /// Reemplaza la imagen con versión con borrados horneados (eraseStrokes vacío).
+  /// Libera memoria acumulada de trazos de borrador.
+  void replaceCanvasImageBaked(String id, ui.Image bakedImage) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    final old = canvasImages[idx];
+    canvasImages[idx] = CanvasImageModel(
+      id: old.id,
+      image: bakedImage,
+      position: old.position,
+      size: old.size,
+      layerId: old.layerId,
+      opacity: 1.0, // opacidad ya está horneada en la imagen
+      rotation: old.rotation,
+      flipX: old.flipX,
+      flipY: old.flipY,
+      insertionIndex: old.insertionIndex,
+      eraseStrokes: [], // limpiar → memoria liberada
+    );
+    _invalidateImageLayer(old.layerId);
+    notifyListeners();
+  }
+
   void flattenStamp(String stampId, ui.Image flatImage, List<int> strokeIndicesToRemove, int layerId) {
     _saveToHistory();
     // Reemplazar imagen del sello
