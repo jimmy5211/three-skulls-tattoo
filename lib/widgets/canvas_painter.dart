@@ -112,8 +112,7 @@ class CanvasPainter extends CustomPainter {
       canvas.translate(-cx, -cy);
     }
 
-    // FIX: eliminado canvas.clipRect(img.rect) — causaba recorte en sellos rotados.
-    // El clipRect del lienzo principal ya maneja los límites del canvas.
+    // FIX: eliminado clipRect — causaba recorte en sellos
 
     if (img.flipX || img.flipY) {
       canvas.translate(cx, cy);
@@ -140,35 +139,39 @@ class CanvasPainter extends CustomPainter {
     }
 
     canvas.restore();
+  }
 
-    // Handles de selección
-    if (img.isSelected) {
-      canvas.save();
-      canvas.translate(cx, cy);
-      canvas.rotate(img.rotation);
-      canvas.translate(-cx, -cy);
+  // FIX: handles fuera del caché — siempre se dibujan frescos
+  void _drawSelectionHandles(Canvas canvas, CanvasImageModel img) {
+    if (!img.isSelected) return;
+    final cx = img.center.dx;
+    final cy = img.center.dy;
 
-      canvas.drawRect(img.rect,
-          Paint()..color = const Color(0xFF4A90E2)..strokeWidth = 2.5..style = PaintingStyle.stroke);
+    canvas.save();
+    canvas.translate(cx, cy);
+    canvas.rotate(img.rotation);
+    canvas.translate(-cx, -cy);
 
-      final hp = Paint()..color = const Color(0xFF4A90E2)..style = PaintingStyle.fill;
-      final hb = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 2.0;
+    canvas.drawRect(img.rect,
+        Paint()..color = const Color(0xFF4A90E2)..strokeWidth = 2.5..style = PaintingStyle.stroke);
 
-      for (final c in [img.rect.topLeft, img.rect.topRight,
-                       img.rect.bottomLeft, img.rect.bottomRight]) {
-        canvas.drawCircle(c, 10.0, hp);
-        canvas.drawCircle(c, 10.0, hb);
-      }
+    final hp = Paint()..color = const Color(0xFF4A90E2)..style = PaintingStyle.fill;
+    final hb = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 2.0;
 
-      final rotHandleLocal = img.rect.topCenter - const Offset(0, 36);
-      canvas.drawLine(img.rect.topCenter, rotHandleLocal,
-          Paint()..color = Colors.white..strokeWidth = 1.5);
-      canvas.drawCircle(rotHandleLocal, 12.0,
-          Paint()..color = const Color(0xFFE74C3C)..style = PaintingStyle.fill);
-      canvas.drawCircle(rotHandleLocal, 12.0, hb);
-
-      canvas.restore();
+    for (final c in [img.rect.topLeft, img.rect.topRight,
+                     img.rect.bottomLeft, img.rect.bottomRight]) {
+      canvas.drawCircle(c, 10.0, hp);
+      canvas.drawCircle(c, 10.0, hb);
     }
+
+    final rotHandleLocal = img.rect.topCenter - const Offset(0, 36);
+    canvas.drawLine(img.rect.topCenter, rotHandleLocal,
+        Paint()..color = Colors.white..strokeWidth = 1.5);
+    canvas.drawCircle(rotHandleLocal, 12.0,
+        Paint()..color = const Color(0xFFE74C3C)..style = PaintingStyle.fill);
+    canvas.drawCircle(rotHandleLocal, 12.0, hb);
+
+    canvas.restore();
   }
 
   void _drawEraseStroke(Canvas canvas, EraseStroke erase) {
@@ -302,6 +305,11 @@ class CanvasPainter extends CustomPainter {
 
     canvas.restore();
     if (layer.opacity < 1.0) canvas.restore();
+
+    // FIX: handles SIEMPRE fuera del caché — se dibujan frescos sobre todo lo demás
+    for (final img in layerImages) {
+      if (img.isSelected) _drawSelectionHandles(canvas, img);
+    }
   }
 
   // ══════════════════════════════════════════════════════════
