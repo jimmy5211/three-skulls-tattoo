@@ -3204,18 +3204,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
             return; // FIX: no dibujar stroke al deseleccionar imagen
           }
 
-          // ── Transform mode: tap en imagen = seleccionar + iniciar drag ──
+          // ── Transform mode: tap = SOLO seleccionar (sin drag) ──
+          // El drag inicia en el siguiente gesto sobre la imagen ya seleccionada
           if (_selectedImageId == null &&
               _selectionMode == SelectionMode.ninguno &&
               _transformMode == TransformMode.activo) {
             final img = _controller.imageAtPoint(cp);
             if (img != null) {
               _controller.selectCanvasImage(img.id);
-              // FIX: iniciar drag en el mismo gesto que selecciona
-              _isDraggingImage = true;
-              _lastDragCanvas = cp;
               setState(() => _selectedImageId = img.id);
-              return;
+              return; // Solo seleccionar — NO iniciar drag todavía
             }
           }
 
@@ -3295,13 +3293,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
 
           // ── Borrador sobre sello/imagen: borra del sello directamente ──
-          // Así el borrado se mueve con el sello cuando se reposiciona
-          _strokeStartTime = DateTime.now(); // para detectar dots accidentales
+          _strokeStartTime = DateTime.now();
           if (_controller.activeBrush.type == StrokeType.eraser) {
             final imgUnder = _controller.imageAtPoint(cp);
             if (imgUnder != null && imgUnder.layerId == _controller.activeLayerId) {
               _erasingImageId = imgUnder.id;
-              _controller.startEraseOnImage(imgUnder.id, cp, _controller.activeBrush.size);
+              _controller.startEraseOnImage(
+                imgUnder.id, cp,
+                _controller.activeBrush.size,
+                hardness: _controller.activeBrush.hardness, // FIX: hardness
+              );
               return;
             }
           }
@@ -3531,6 +3532,22 @@ class _CanvasScreenState extends State<CanvasScreen> {
           if (_erasingImageId != null) {
             _controller.continueEraseOnImage(_erasingImageId!, cp);
             return;
+          }
+          // FIX: si hay un sello bajo el cursor, no borrar el canvas allí
+          // Así el canvas queda limpio cuando se mueve el sello
+          if (_controller.activeBrush.type == StrokeType.eraser) {
+            final imgUnder = _controller.imageAtPoint(cp);
+            if (imgUnder != null && imgUnder.layerId == _controller.activeLayerId) {
+              // Hay un sello aquí — redirigir al sello en lugar de canvas
+              _controller.endStroke(); // terminar stroke canvas
+              _erasingImageId = imgUnder.id;
+              _controller.startEraseOnImage(
+                imgUnder.id, cp,
+                _controller.activeBrush.size,
+                hardness: _controller.activeBrush.hardness,
+              );
+              return;
+            }
           }
 
           // ── Continuar stroke / borrador ──────────────────
