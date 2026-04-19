@@ -2628,7 +2628,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
         onScaleStart: (details) {
           // ── PRIORIDAD ABSOLUTA: 2 dedos = pan/zoom ───────
           if (details.pointerCount >= 2 || _zoomMode) {
-            _controller.endStroke();
+            _controller.cancelStroke(); // FIX: cancelar (no guardar) al hacer zoom
             _isDraggingImage = false;
             _isDraggingSelection = false;
             _isResizingHandle = false;
@@ -2801,7 +2801,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           // ── PRIORIDAD: 2 dedos siempre pan/zoom ──────────
           if (details.pointerCount >= 2) {
             if (!_isScaling) {
-              _controller.endStroke();
+              _controller.cancelStroke(); // FIX: cancelar stroke al detectar 2 dedos
               _isDraggingImage = false;
               _isDraggingSelection = false;
               _isResizingHandle = false;
