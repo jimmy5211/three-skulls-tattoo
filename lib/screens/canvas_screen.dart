@@ -114,8 +114,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
   String? _erasingImageId;
   DateTime? _strokeStartTime; // para detectar dots accidentales al hacer pan
   int _activePointers = 0;
-  bool _cancelStrokeImmediately = false; // kill switch: cancela el stroke en curso
-  bool _isDrawing = false;               // true solo cuando hay stroke activo válido
+  bool _cancelStrokeImmediately = false;
+  bool _isDrawing = false;
+  Offset? _pendingStrokePoint; // punto inicial pendiente hasta confirmar 1 dedo
   Offset? _tapDownCanvasPos;
 
   // ─── TOOLTIP ─────────────────────────────────────────────────
@@ -3339,15 +3340,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
 
           // ── Dibujo / Borrador sobre canvas ────────────────────────────
+          // ⚠️ NO iniciar stroke aquí todavía — esperar onScaleUpdate
+          // para garantizar que sea 1 solo dedo (anti puntos fantasma)
           _cancelStrokeImmediately = false;
-          _isDrawing = true;
-          _controller.startStroke(cp);
+          _isDrawing = false; // se activará en onScaleUpdate si es 1 dedo
+          _pendingStrokePoint = cp; // guardar punto inicial para usarlo en update
         },
         onScaleUpdate: (details) {
-          // ── PRIORIDAD: 2 dedos siempre pan/zoom ──────────
-          if (details.pointerCount >= 2) {
+          // ── PRIORIDAD ABSOLUTA: multitouch → pan/zoom, nunca stroke ──
+          if (details.pointerCount >= 2 || _activePointers > 1) {
+            // Cancelar cualquier stroke en curso o pendiente
+            _isDrawing = false;
+            _pendingStrokePoint = null;
+            _controller.cancelStroke();
             if (!_isScaling) {
-              _controller.cancelStroke(); // FIX: cancelar stroke al detectar 2 dedos
               _isDraggingImage = false;
               _isDraggingSelection = false;
               _isResizingHandle = false;
@@ -3583,13 +3589,21 @@ class _CanvasScreenState extends State<CanvasScreen> {
             }
           }
 
-          // ── Continuar stroke / borrador ──────────────────
-          // Filtro en caliente: si 2+ dedos activos, no seguir dibujando
+          // ── Iniciar o continuar stroke (solo 1 dedo confirmado) ──
           if (_cancelStrokeImmediately || _activePointers > 1) {
             _isDrawing = false;
+            _pendingStrokePoint = null;
             _controller.cancelStroke();
             return;
           }
+
+          if (!_isDrawing && _pendingStrokePoint != null) {
+            // 🔥 Stroke nace aquí — ya sabemos que es 1 dedo
+            _isDrawing = true;
+            _controller.startStroke(_pendingStrokePoint!);
+            _pendingStrokePoint = null;
+          }
+
           if (_isDrawing) _controller.continueStroke(cp);
         },
         onScaleEnd: (details) {
