@@ -186,77 +186,35 @@ class CanvasPainter extends CustomPainter {
   void _drawEraseStroke(Canvas canvas, EraseStroke erase) {
     if (erase.points.isEmpty) return;
     final hardness = erase.hardness.clamp(0.0, 1.0);
-
-    void stamp(Offset point) {
-      if (hardness >= 0.99) {
-        // Borrado duro: círculo sólido
-        canvas.drawCircle(point, erase.radius,
-          Paint()..blendMode = BlendMode.dstOut..color = Colors.white..style = PaintingStyle.fill);
-      } else {
-        // Borrado suave: gradiente radial (igual que el borrador del canvas)
-        canvas.drawCircle(point, erase.radius, Paint()
-          ..shader = ui.Gradient.radial(point, erase.radius, [
-            Colors.white.withOpacity(1.0),
-            Colors.white.withOpacity(hardness),
-            Colors.transparent,
-          ], [0.0, hardness.clamp(0.01, 0.99), 1.0])
-          ..blendMode = BlendMode.dstOut);
-      }
-    }
-
-    if (erase.points.length == 1) {
-      stamp(erase.points.first);
-      return;
-    }
-
-    // Stamp along path for smooth erase
-    for (int i = 0; i < erase.points.length; i++) {
-      stamp(erase.points[i]);
-      if (i > 0) {
-        final dist = (erase.points[i] - erase.points[i-1]).distance;
-        final steps = (dist / (erase.radius * 0.4)).ceil().clamp(1, 8);
-        for (int s = 1; s < steps; s++) {
-          stamp(Offset.lerp(erase.points[i-1], erase.points[i], s / steps)!);
-        }
-      }
-    }
-    return;
-
-    // UNUSED - kept for reference
-    final erasePaint = Paint()
+    // Una sola operación drawPath — evita cientos de drawCircle/gradientes
+    final opacity = hardness >= 0.99 ? 1.0 : hardness.clamp(0.1, 1.0);
+    final paint = Paint()
       ..blendMode = BlendMode.dstOut
-      ..color = Colors.white
+      ..color = Colors.white.withOpacity(opacity)
       ..strokeWidth = erase.radius * 2
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
 
     if (erase.points.length == 1) {
-      canvas.drawCircle(
-        erase.points.first,
-        erase.radius,
-        Paint()
-          ..blendMode = BlendMode.dstOut
-          ..color = Colors.white
-          ..style = PaintingStyle.fill,
-      );
+      canvas.drawCircle(erase.points.first, erase.radius,
+          Paint()..blendMode = BlendMode.dstOut
+                 ..color = Colors.white.withOpacity(opacity)
+                 ..style = PaintingStyle.fill);
       return;
     }
-
     final path = Path();
     path.moveTo(erase.points.first.dx, erase.points.first.dy);
     for (int i = 1; i < erase.points.length - 1; i++) {
       final mid = Offset(
-        (erase.points[i].dx + erase.points[i + 1].dx) / 2,
-        (erase.points[i].dy + erase.points[i + 1].dy) / 2,
+        (erase.points[i].dx + erase.points[i+1].dx) / 2,
+        (erase.points[i].dy + erase.points[i+1].dy) / 2,
       );
       path.quadraticBezierTo(
-        erase.points[i].dx, erase.points[i].dy,
-        mid.dx, mid.dy,
-      );
+          erase.points[i].dx, erase.points[i].dy, mid.dx, mid.dy);
     }
     path.lineTo(erase.points.last.dx, erase.points.last.dy);
-    canvas.drawPath(path, erasePaint);
+    canvas.drawPath(path, paint);
   }
 
   void _drawCheckerboard(Canvas canvas, double w, double h) {
@@ -417,38 +375,37 @@ class CanvasPainter extends CustomPainter {
     final radius = stroke.strokeWidth.toDouble();
     final hardness = stroke.hardness.clamp(0.0, 1.0);
     final opacity = stroke.opacity.clamp(0.0, 1.0);
+    // FIX: usar path simple en lugar de gradient-per-point (causaba crash de GPU)
+    // El gradiente se aplica solo en el bake (canvas_screen._drawEraseOnCanvas)
+    final softness = hardness >= 0.99 ? 1.0 : hardness.clamp(0.1, 1.0);
+    final paint = Paint()
+      ..blendMode = BlendMode.dstOut
+      ..color = Colors.white.withOpacity(opacity * softness)
+      ..strokeWidth = radius * 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
 
-    void stamp(Offset point) {
-      canvas.drawCircle(
-        point,
-        radius,
-        Paint()
-          ..shader = ui.Gradient.radial(
-            point,
-            radius,
-            [
-              Colors.white.withOpacity(opacity),
-              Colors.white.withOpacity(hardness * opacity),
-              Colors.transparent,
-            ],
-            [0.0, hardness.clamp(0.01, 0.99), 1.0],
-          )
-          ..blendMode = BlendMode.dstOut,
+    if (stroke.points.isEmpty) return;
+    if (stroke.points.length == 1) {
+      canvas.drawCircle(stroke.points.first, radius,
+          Paint()..blendMode = BlendMode.dstOut
+                 ..color = Colors.white.withOpacity(opacity * softness)
+                 ..style = PaintingStyle.fill);
+      return;
+    }
+    final path = Path();
+    path.moveTo(stroke.points.first.dx, stroke.points.first.dy);
+    for (int i = 1; i < stroke.points.length - 1; i++) {
+      final mid = Offset(
+        (stroke.points[i].dx + stroke.points[i+1].dx) / 2,
+        (stroke.points[i].dy + stroke.points[i+1].dy) / 2,
       );
+      path.quadraticBezierTo(
+          stroke.points[i].dx, stroke.points[i].dy, mid.dx, mid.dy);
     }
-
-    void fillGap(Offset p1, Offset p2) {
-      final dist = (p2 - p1).distance;
-      final steps = (dist / (radius * 0.5)).ceil().clamp(1, 10);
-      for (int s = 1; s < steps; s++) {
-        stamp(Offset.lerp(p1, p2, s / steps)!);
-      }
-    }
-
-    for (int i = 0; i < stroke.points.length; i++) {
-      stamp(stroke.points[i]);
-      if (i > 0) fillGap(stroke.points[i - 1], stroke.points[i]);
-    }
+    path.lineTo(stroke.points.last.dx, stroke.points.last.dy);
+    canvas.drawPath(path, paint);
   }
 
   // ── DOTWORK ──
