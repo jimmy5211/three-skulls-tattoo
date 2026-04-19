@@ -112,7 +112,8 @@ class CanvasPainter extends CustomPainter {
       canvas.translate(-cx, -cy);
     }
 
-    canvas.clipRect(img.rect);
+    // FIX: eliminado canvas.clipRect(img.rect) — causaba recorte en sellos rotados.
+    // El clipRect del lienzo principal ya maneja los límites del canvas.
 
     if (img.flipX || img.flipY) {
       canvas.translate(cx, cy);
