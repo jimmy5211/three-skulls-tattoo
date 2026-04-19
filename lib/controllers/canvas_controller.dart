@@ -64,6 +64,13 @@ class CanvasController extends ChangeNotifier {
     _cacheInvalidated = true;
   }
 
+  /// FIX: marca imágenes cambiadas E invalida caché de la capa afectada
+  /// Sin esto, el caché antiguo oculta los sellos nuevos o sus cambios
+  void _invalidateImageLayer(int layerId) {
+    _imagesChanged = true;
+    invalidateLayerCache(layerId);
+  }
+
   bool get cacheInvalidated => _cacheInvalidated;
   void resetCacheFlag() => _cacheInvalidated = false;
 
@@ -520,7 +527,7 @@ class CanvasController extends ChangeNotifier {
       layerId: activeLayerId,
       insertionIndex: insertIdx,
     ));
-    _imagesChanged = true;
+    _invalidateImageLayer(activeLayerId);
     notifyListeners();
   }
 
@@ -542,12 +549,15 @@ class CanvasController extends ChangeNotifier {
       layerId: activeLayerId,
       insertionIndex: insertIdx,
     ));
-    _imagesChanged = true;
+    _invalidateImageLayer(activeLayerId);
     notifyListeners();
   }
 
   void removeCanvasImage(String id) {
-    canvasImages.removeWhere((img) => img.id == id);
+    final img = canvasImages.where((i) => i.id == id).firstOrNull;
+    final layerId = img?.layerId ?? activeLayerId;
+    canvasImages.removeWhere((i) => i.id == id);
+    _invalidateImageLayer(layerId);
     notifyListeners();
   }
 
@@ -555,7 +565,7 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].position = position;
-    _imagesChanged = true;
+    _invalidateImageLayer(canvasImages[idx].layerId);
     notifyListeners();
   }
 
@@ -564,7 +574,7 @@ class CanvasController extends ChangeNotifier {
     if (idx == -1) return;
     canvasImages[idx].position = rect.topLeft;
     canvasImages[idx].size = rect.size;
-    _imagesChanged = true;
+    _invalidateImageLayer(canvasImages[idx].layerId);
     notifyListeners();
   }
 
@@ -572,7 +582,7 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].flipX = !canvasImages[idx].flipX;
-    _imagesChanged = true;
+    _invalidateImageLayer(canvasImages[idx].layerId);
     notifyListeners();
   }
 
@@ -580,7 +590,7 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].flipY = !canvasImages[idx].flipY;
-    _imagesChanged = true;
+    _invalidateImageLayer(canvasImages[idx].layerId);
     notifyListeners();
   }
 
@@ -588,7 +598,7 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].rotation = rotation;
-    _imagesChanged = true;
+    _invalidateImageLayer(canvasImages[idx].layerId);
     notifyListeners();
   }
 
@@ -609,7 +619,7 @@ class CanvasController extends ChangeNotifier {
       flipY: old.flipY,
       insertionIndex: old.insertionIndex,
     );
-    _imagesChanged = true;
+    _invalidateImageLayer(canvasImages[idx].layerId);
     notifyListeners();
   }
 
@@ -643,6 +653,7 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].position += delta;
+    _invalidateImageLayer(canvasImages[idx].layerId);
     notifyListeners();
   }
 
@@ -704,7 +715,7 @@ class CanvasController extends ChangeNotifier {
     current.points.add(point);
     // Solo notificar cada 3 puntos para reducir repaints sin perder fluidez
     if (current.points.length % 3 == 0) {
-      _imagesChanged = true;
+      _invalidateImageLayer(canvasImages[canvasImages.indexWhere((img) => img.id == id)].layerId);
       notifyListeners();
     }
   }
@@ -717,7 +728,7 @@ class CanvasController extends ChangeNotifier {
       canvasImages[idx].eraseStrokes.add(current);
       canvasImages[idx].currentEraseStroke = null;
     }
-    _imagesChanged = true;
+    _invalidateImageLayer(canvasImages[idx].layerId);
     notifyListeners();
   }
 
@@ -726,7 +737,7 @@ class CanvasController extends ChangeNotifier {
     if (idx == -1) return;
     if (canvasImages[idx].eraseStrokes.isNotEmpty) {
       canvasImages[idx].eraseStrokes.removeLast();
-      _imagesChanged = true;
+      _invalidateImageLayer(canvasImages[idx].layerId);
       notifyListeners();
     }
   }
@@ -736,7 +747,7 @@ class CanvasController extends ChangeNotifier {
     if (idx == -1) return;
     canvasImages[idx].eraseStrokes.clear();
     canvasImages[idx].currentEraseStroke = null;
-    _imagesChanged = true;
+    _invalidateImageLayer(canvasImages[idx].layerId);
     notifyListeners();
   }
 
