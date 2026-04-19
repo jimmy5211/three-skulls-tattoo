@@ -2214,6 +2214,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       overlayIndices,
       imgModel.layerId,
     );
+    // FIX: re-seleccionar para que isSelected=true y los handles aparezcan
+    _controller.selectCanvasImage(stampId);
   }
 
   void _drawEraseOnCanvas(ui.Canvas canvas, EraseStroke erase) {
@@ -3994,9 +3996,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
                   // Acoplar: fusiona sello + strokes encima en una sola imagen
                   _selectionAction(Icons.merge_type, 'Acoplar', () {
                     _flattenStampWithCanvas(imgId);
@@ -4040,7 +4044,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     _controller.selectCanvasImage(null);
                     setState(() => _selectedImageId = null);
                   }),
-                ],
+                  ],
+                ),
               ),
               const SizedBox(height: 8),
               // Slider de opacidad
