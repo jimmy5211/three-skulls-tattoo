@@ -112,6 +112,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   // ─── BORRADOR EN IMAGEN ──────────────────────────────────
   String? _erasingImageId;
+
+  // ─── AJUSTES DEL CANVAS ──────────────────────────────────────
+  bool _showCanvasSettings = false;
+  double _panSensitivity = 1.0;       // 0.5 - 2.0
+  double _zoomSensitivity = 1.0;      // 0.5 - 2.0
+  bool _freeRotation = true;          // rotar canvas con 2 dedos
+  bool _showRuler = false;
+  String _rulerUnit = 'cm';           // 'cm' | 'mm' | 'inch'
+  int _exportDpi = 150;               // 72 | 150 | 300
+  double _maxZoom = 10.0;             // zoom máximo permitido
+  bool _showCenterGuides = false;     // guías del centro del canvas
   // Punto del CANVAS bajo el focal point al inicio del gesto (en coords canvas)
   Offset _canvasFocalPoint = Offset.zero;
 
@@ -339,6 +350,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 child: _buildZoomIndicator(),
               ),
 
+            if (_showCanvasSettings && !_isFullscreen)
+              _buildCanvasSettingsPanel(),
+
             if (_showBrushPanel && !_isFullscreen)
               _buildBrushPanelOverlay(),
 
@@ -465,6 +479,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ),
               ),
               const Spacer(),
+              _btn(Icons.tune,
+                  isActive: _showCanvasSettings,
+                  onTap: () => setState(() {
+                    _showCanvasSettings = !_showCanvasSettings;
+                    if (_showCanvasSettings) _showBrushPanel = false;
+                  })),
               _btn(Icons.add_photo_alternate_outlined,
                   onTap: _showImportImageSheet),
             ],
@@ -2143,6 +2163,385 @@ class _CanvasScreenState extends State<CanvasScreen> {
     ]);
   }
 
+  // ─── PANEL DE AJUSTES DEL CANVAS ────────────────────────────
+
+  Widget _buildCanvasSettingsPanel() {
+    final cs = _controller.canvasSize;
+    return Positioned(
+      top: _topBarHeight + 4,
+      left: _sideBarWidth + 8,
+      right: 8,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.75,
+          ),
+          decoration: BoxDecoration(
+            color: _panelColor.withOpacity(0.97),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _borderColor, width: 0.5),
+            boxShadow: [BoxShadow(
+              color: Colors.black.withOpacity(0.6),
+              blurRadius: 20, offset: const Offset(0, 6),
+            )],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 10, 10),
+                child: Row(children: [
+                  const Icon(Icons.tune, color: Color(0xFFE74C3C), size: 16),
+                  const SizedBox(width: 8),
+                  Text('AJUSTES DEL LIENZO',
+                    style: TextStyle(fontFamily: 'Raleway', fontSize: 12,
+                      fontWeight: FontWeight.bold, color: _textPrimary,
+                      letterSpacing: 0.8)),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => setState(() => _showCanvasSettings = false),
+                    child: Icon(Icons.close, color: _textSecondary, size: 18),
+                  ),
+                ]),
+              ),
+              Divider(color: _borderColor, height: 0.5),
+              // Content scrollable
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+
+                      // ── LIENZO ──────────────────────────────
+                      _settingsSection('LIENZO'),
+                      const SizedBox(height: 8),
+                      // Tamaño del canvas
+                      Text('Tamaño', style: TextStyle(fontFamily: 'Raleway',
+                        fontSize: 11, color: _textSecondary)),
+                      const SizedBox(height: 6),
+                      Wrap(spacing: 6, runSpacing: 6, children: [
+                        _canvasSizeChip('Retrato', const Size(1080, 1920)),
+                        _canvasSizeChip('Cuadrado', const Size(1080, 1080)),
+                        _canvasSizeChip('Apaisado', const Size(1920, 1080)),
+                        _canvasSizeChip('A4', const Size(794, 1123)),
+                      ]),
+                      const SizedBox(height: 12),
+                      // Fondo
+                      Text('Fondo', style: TextStyle(fontFamily: 'Raleway',
+                        fontSize: 11, color: _textSecondary)),
+                      const SizedBox(height: 6),
+                      Wrap(spacing: 6, children: [
+                        _bgColorChip('Blanco', Colors.white),
+                        _bgColorChip('Negro', const Color(0xFF1A1A1A)),
+                        _bgColorChip('Transparente', Colors.transparent),
+                      ]),
+                      const SizedBox(height: 12),
+                      // DPI exportación
+                      Text('DPI de exportación', style: TextStyle(fontFamily: 'Raleway',
+                        fontSize: 11, color: _textSecondary)),
+                      const SizedBox(height: 6),
+                      Wrap(spacing: 6, children: [
+                        _dpiChip(72),
+                        _dpiChip(150),
+                        _dpiChip(300),
+                      ]),
+
+                      const SizedBox(height: 16),
+                      Divider(color: _borderColor, height: 0.5),
+                      const SizedBox(height: 12),
+
+                      // ── NAVEGACIÓN ───────────────────────────
+                      _settingsSection('NAVEGACIÓN'),
+                      const SizedBox(height: 8),
+                      // Pan sensitivity
+                      _sensitivityRow(
+                        label: 'Sensibilidad de desplazamiento',
+                        value: _panSensitivity,
+                        min: 0.3, max: 2.0,
+                        onChanged: (v) => setState(() => _panSensitivity = v),
+                      ),
+                      const SizedBox(height: 10),
+                      // Zoom sensitivity
+                      _sensitivityRow(
+                        label: 'Sensibilidad de zoom',
+                        value: _zoomSensitivity,
+                        min: 0.3, max: 2.0,
+                        onChanged: (v) => setState(() => _zoomSensitivity = v),
+                      ),
+                      const SizedBox(height: 10),
+                      // Free rotation toggle
+                      _toggleRow(
+                        label: 'Rotación libre del canvas',
+                        subtitle: 'Permite rotar con 2 dedos',
+                        value: _freeRotation,
+                        onChanged: (v) => setState(() => _freeRotation = v),
+                      ),
+                      const SizedBox(height: 10),
+                      // Max zoom
+                      Text('Zoom máximo', style: TextStyle(fontFamily: 'Raleway',
+                        fontSize: 11, color: _textSecondary)),
+                      const SizedBox(height: 6),
+                      Wrap(spacing: 6, children: [
+                        _zoomChip(5),
+                        _zoomChip(10),
+                        _zoomChip(15),
+                        _zoomChip(20),
+                      ]),
+
+                      const SizedBox(height: 16),
+                      Divider(color: _borderColor, height: 0.5),
+                      const SizedBox(height: 12),
+
+                      // ── VISUAL ───────────────────────────────
+                      _settingsSection('VISUAL'),
+                      const SizedBox(height: 8),
+                      // Center guides
+                      _toggleRow(
+                        label: 'Guías del centro',
+                        subtitle: 'Líneas de referencia centrales',
+                        value: _showCenterGuides,
+                        onChanged: (v) => setState(() => _showCenterGuides = v),
+                      ),
+                      const SizedBox(height: 10),
+                      // Ruler
+                      _toggleRow(
+                        label: 'Regla',
+                        subtitle: 'Muestra dimensiones del diseño',
+                        value: _showRuler,
+                        onChanged: (v) => setState(() => _showRuler = v),
+                      ),
+                      if (_showRuler) ...[
+                        const SizedBox(height: 8),
+                        Text('Unidad de medida', style: TextStyle(fontFamily: 'Raleway',
+                          fontSize: 11, color: _textSecondary)),
+                        const SizedBox(height: 6),
+                        Wrap(spacing: 6, children: [
+                          _unitChip('cm'),
+                          _unitChip('mm'),
+                          _unitChip('inch'),
+                        ]),
+                      ],
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsSection(String title) => Text(title,
+    style: TextStyle(fontFamily: 'Raleway', fontSize: 10,
+      fontWeight: FontWeight.bold, color: AppTheme.accentRed,
+      letterSpacing: 1.0));
+
+  Widget _sensitivityRow({
+    required String label, required double value,
+    required double min, required double max,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(child: Text(label, style: TextStyle(fontFamily: 'Raleway',
+          fontSize: 11, color: _textPrimary))),
+        Text('${value.toStringAsFixed(1)}x',
+          style: TextStyle(fontFamily: 'Raleway', fontSize: 11,
+            color: AppTheme.accentRed, fontWeight: FontWeight.bold)),
+      ]),
+      SliderTheme(
+        data: SliderThemeData(
+          activeTrackColor: AppTheme.accentRed,
+          inactiveTrackColor: _borderColor,
+          thumbColor: AppTheme.accentRed,
+          trackHeight: 2.0,
+          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+          overlayShape: SliderComponentShape.noOverlay,
+        ),
+        child: Slider(value: value, min: min, max: max, onChanged: onChanged),
+      ),
+    ]);
+  }
+
+  Widget _toggleRow({
+    required String label, String? subtitle,
+    required bool value, required ValueChanged<bool> onChanged,
+  }) {
+    return Row(children: [
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: TextStyle(fontFamily: 'Raleway',
+          fontSize: 11, color: _textPrimary)),
+        if (subtitle != null) Text(subtitle, style: TextStyle(fontFamily: 'Raleway',
+          fontSize: 10, color: _textSecondary)),
+      ])),
+      Switch(
+        value: value,
+        onChanged: onChanged,
+        activeColor: AppTheme.accentRed,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+    ]);
+  }
+
+  Widget _canvasSizeChip(String label, Size size) {
+    final isActive = _controller.canvasSize == size;
+    return GestureDetector(
+      onTap: () => setState(() => _controller.updateCanvasSize(size)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isActive ? AppTheme.accentRed.withOpacity(0.15) : _cardColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isActive ? AppTheme.accentRed : _borderColor),
+        ),
+        child: Text(label, style: TextStyle(fontFamily: 'Raleway', fontSize: 11,
+          color: isActive ? AppTheme.accentRed : _textPrimary)),
+      ),
+    );
+  }
+
+  Widget _bgColorChip(String label, Color color) {
+    final isActive = _controller.backgroundColor == color;
+    return GestureDetector(
+      onTap: () => setState(() => _controller.setBackgroundColor(color)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isActive ? AppTheme.accentRed.withOpacity(0.15) : _cardColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isActive ? AppTheme.accentRed : _borderColor),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 12, height: 12,
+            decoration: BoxDecoration(
+              color: color == Colors.transparent ? null : color,
+              border: Border.all(color: _borderColor),
+              borderRadius: BorderRadius.circular(3),
+              image: color == Colors.transparent ? const DecorationImage(
+                image: AssetImage('assets/images/transparent_bg.png'),
+                fit: BoxFit.cover,
+              ) : null,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(label, style: TextStyle(fontFamily: 'Raleway', fontSize: 11,
+            color: isActive ? AppTheme.accentRed : _textPrimary)),
+        ]),
+      ),
+    );
+  }
+
+  Widget _dpiChip(int dpi) {
+    final isActive = _exportDpi == dpi;
+    return GestureDetector(
+      onTap: () => setState(() => _exportDpi = dpi),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isActive ? AppTheme.accentRed.withOpacity(0.15) : _cardColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isActive ? AppTheme.accentRed : _borderColor),
+        ),
+        child: Text('$dpi DPI', style: TextStyle(fontFamily: 'Raleway', fontSize: 11,
+          color: isActive ? AppTheme.accentRed : _textPrimary)),
+      ),
+    );
+  }
+
+  Widget _zoomChip(int zoom) {
+    final isActive = _maxZoom == zoom.toDouble();
+    return GestureDetector(
+      onTap: () => setState(() => _maxZoom = zoom.toDouble()),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isActive ? AppTheme.accentRed.withOpacity(0.15) : _cardColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isActive ? AppTheme.accentRed : _borderColor),
+        ),
+        child: Text('${zoom}x', style: TextStyle(fontFamily: 'Raleway', fontSize: 11,
+          color: isActive ? AppTheme.accentRed : _textPrimary)),
+      ),
+    );
+  }
+
+  Widget _unitChip(String unit) {
+    final isActive = _rulerUnit == unit;
+    return GestureDetector(
+      onTap: () => setState(() => _rulerUnit = unit),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isActive ? AppTheme.accentRed.withOpacity(0.15) : _cardColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isActive ? AppTheme.accentRed : _borderColor),
+        ),
+        child: Text(unit, style: TextStyle(fontFamily: 'Raleway', fontSize: 11,
+          color: isActive ? AppTheme.accentRed : _textPrimary)),
+      ),
+    );
+  }
+
+  // ─── REGLA DEL CANVAS ────────────────────────────────────────
+
+  /// Devuelve cuántos píxeles del canvas equivalen a 1 unidad de la regla
+  double get _canvasPxPerUnit {
+    switch (_rulerUnit) {
+      case 'mm': return _exportDpi / 25.4;
+      case 'inch': return _exportDpi.toDouble();
+      case 'cm':
+      default: return _exportDpi / 2.54;
+    }
+  }
+
+  Widget _buildRuler() {
+    if (!_showRuler) return const SizedBox.shrink();
+    const rulerSize = 20.0; // grosor de la regla en pantalla
+    return Stack(children: [
+      // Regla horizontal (arriba)
+      Positioned(
+        top: 0, left: rulerSize,
+        right: 0, height: rulerSize,
+        child: ClipRect(child: CustomPaint(
+          painter: _RulerPainter(
+            direction: Axis.horizontal,
+            scale: _scale,
+            offset: _offset.dx,
+            canvasSize: _controller.canvasSize.width,
+            pxPerUnit: _canvasPxPerUnit,
+            unit: _rulerUnit,
+          ),
+        )),
+      ),
+      // Regla vertical (izquierda)
+      Positioned(
+        top: rulerSize, left: 0,
+        bottom: 0, width: rulerSize,
+        child: ClipRect(child: CustomPaint(
+          painter: _RulerPainter(
+            direction: Axis.vertical,
+            scale: _scale,
+            offset: _offset.dy,
+            canvasSize: _controller.canvasSize.height,
+            pxPerUnit: _canvasPxPerUnit,
+            unit: _rulerUnit,
+          ),
+        )),
+      ),
+      // Esquina
+      Positioned(
+        top: 0, left: 0,
+        width: rulerSize, height: rulerSize,
+        child: Container(color: const Color(0xFF2C2C2E)),
+      ),
+    ]);
+  }
+
   /// Acopia el sello con todos los strokes del canvas que están encima.
   /// El resultado es una sola imagen movible con el sello + boceto integrados.
   Future<void> _flattenStampWithCanvas(String stampId) async {
@@ -2856,8 +3255,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
             // ── Fórmula correcta pan/zoom CON ROTACIÓN ──────
             // El punto canvas bajo los dedos siempre se queda fijo
             // Funciona correctamente aunque el lienzo esté rotado
-            final newScale = (_startScale * details.scale).clamp(0.1, 10.0);
-            final newRotation = _startRotation + details.rotation;
+            // FIX: aplicar sensibilidad de zoom y zoom máximo
+            final zoomDelta = (details.scale - 1.0) * _zoomSensitivity + 1.0;
+            final newScale = (_startScale * zoomDelta).clamp(0.1, _maxZoom);
+            // FIX: rotación libre — si está desactivada, mantener rotación actual
+            final newRotation = _freeRotation
+                ? _startRotation + details.rotation
+                : _startRotation;
             // newOffset = screenFocal - R(newRotation) * S(newScale) * canvasFocal
             final cosR = cos(newRotation);
             final sinR = sin(newRotation);
@@ -2867,9 +3271,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
               details.localFocalPoint.dx - (cfx * cosR - cfy * sinR) * newScale,
               details.localFocalPoint.dy - (cfx * sinR + cfy * cosR) * newScale,
             );
+            // FIX: aplicar sensibilidad de pan
+            final panDelta = newOffset - _offset;
             setState(() {
               _scale = newScale;
-              _offset = newOffset;
+              _offset = _offset + panDelta * _panSensitivity;
               _rotation = newRotation;
             });
             return;
@@ -3070,7 +3476,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
           _isScaling = false;
         },
-        child: AnimatedBuilder(
+        child: Stack(children: [
+          AnimatedBuilder(
           animation: _controller,
           builder: (context, child) {
             return Transform(
@@ -3087,6 +3494,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       currentMirrorStroke:
                           _controller.currentMirrorStroke,
                       showGrid: _showGrid,
+                      showCenterGuides: _showCenterGuides,
                       showSymmetryLine:
                           _controller.symmetryEnabled,
                       symmetryEnabled:
@@ -3132,6 +3540,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
             );
           },
         ),
+          // Regla fija sobre el canvas
+          if (_showRuler) _buildRuler(),
       ),
     );
   }
@@ -4631,4 +5041,120 @@ class _EraserAIBtn extends StatelessWidget {
       ),
     );
   }
+}
+
+
+// ─── RULER PAINTER ────────────────────────────────────────────────────────────
+
+class _RulerPainter extends CustomPainter {
+  final Axis direction;
+  final double scale;      // current canvas zoom
+  final double offset;     // canvas offset in this axis (screen coords)
+  final double canvasSize; // canvas dimension in this axis (canvas px)
+  final double pxPerUnit;  // canvas pixels per 1 ruler unit
+  final String unit;
+
+  const _RulerPainter({
+    required this.direction,
+    required this.scale,
+    required this.offset,
+    required this.canvasSize,
+    required this.pxPerUnit,
+    required this.unit,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bg = Paint()..color = const Color(0xFF2C2C2E);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bg);
+
+    final tickPaint = Paint()
+      ..color = const Color(0xFF8E8E93)
+      ..strokeWidth = 0.5;
+
+    final textStyle = const TextStyle(
+      color: Color(0xFF8E8E93),
+      fontSize: 7,
+      fontFamily: 'Raleway',
+    );
+
+    // Screen pixels per unit
+    final screenPxPerUnit = pxPerUnit * scale;
+
+    // Find a "nice" tick interval (1, 2, 5, 10, 20, 50...)
+    double tickInterval = 1.0;
+    while (screenPxPerUnit / tickInterval < 20) tickInterval *= 5;
+    while (screenPxPerUnit * tickInterval > 80) tickInterval /= 2;
+
+    final screenTickSize = screenPxPerUnit * tickInterval;
+    final totalScreenSize = direction == Axis.horizontal ? size.width : size.height;
+
+    // Canvas origin in screen coords
+    final origin = offset; // offset already in screen coords
+
+    // First tick position
+    final firstTick = ((-origin) / screenTickSize).floor() * screenTickSize + origin;
+
+    double pos = firstTick;
+    while (pos < totalScreenSize) {
+      final unitValue = (pos - origin) / screenPxPerUnit;
+      final isInCanvas = unitValue >= 0 && unitValue * pxPerUnit <= canvasSize;
+
+      if (isInCanvas) {
+        final tickLength = direction == Axis.horizontal ? size.height * 0.5 : size.width * 0.5;
+        if (direction == Axis.horizontal) {
+          canvas.drawLine(Offset(pos, size.height), Offset(pos, size.height - tickLength), tickPaint);
+          if (unitValue % (tickInterval * 2) < 0.01) {
+            _drawText(canvas, '${unitValue.toStringAsFixed(unitValue < 10 ? 0 : 0)}', pos + 2, 1, textStyle);
+          }
+        } else {
+          canvas.drawLine(Offset(size.width, pos), Offset(size.width - tickLength, pos), tickPaint);
+          if (unitValue % (tickInterval * 2) < 0.01) {
+            _drawTextVertical(canvas, '${unitValue.toStringAsFixed(0)}', 1, pos + 2, textStyle);
+          }
+        }
+      }
+      pos += screenTickSize;
+    }
+
+    // Canvas edge markers
+    final canvasStartScreen = origin;
+    final canvasEndScreen = origin + canvasSize * scale;
+    final edgePaint = Paint()..color = const Color(0xFFE74C3C)..strokeWidth = 1.0;
+    if (direction == Axis.horizontal) {
+      if (canvasStartScreen >= 0 && canvasStartScreen <= totalScreenSize)
+        canvas.drawLine(Offset(canvasStartScreen, 0), Offset(canvasStartScreen, size.height), edgePaint);
+      if (canvasEndScreen >= 0 && canvasEndScreen <= totalScreenSize)
+        canvas.drawLine(Offset(canvasEndScreen, 0), Offset(canvasEndScreen, size.height), edgePaint);
+    } else {
+      if (canvasStartScreen >= 0 && canvasStartScreen <= totalScreenSize)
+        canvas.drawLine(Offset(0, canvasStartScreen), Offset(size.width, canvasStartScreen), edgePaint);
+      if (canvasEndScreen >= 0 && canvasEndScreen <= totalScreenSize)
+        canvas.drawLine(Offset(0, canvasEndScreen), Offset(size.width, canvasEndScreen), edgePaint);
+    }
+  }
+
+  void _drawText(Canvas canvas, String text, double x, double y, TextStyle style) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(x, y));
+  }
+
+  void _drawTextVertical(Canvas canvas, String text, double x, double y, TextStyle style) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    canvas.save();
+    canvas.translate(x, y + tp.width);
+    canvas.rotate(-3.14159 / 2);
+    tp.paint(canvas, Offset.zero);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_RulerPainter old) =>
+    old.scale != scale || old.offset != offset || old.unit != unit;
 }
