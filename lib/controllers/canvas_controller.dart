@@ -5,6 +5,7 @@ import '../models/stroke_model.dart';
 import '../models/layer_model.dart';
 import '../models/brush_model.dart';
 import '../models/canvas_image_model.dart';
+import '../services/device_profile.dart';
 class CanvasController extends ChangeNotifier {
   List<LayerModel> layers = [];
   int activeLayerId = 0;
@@ -76,6 +77,11 @@ class CanvasController extends ChangeNotifier {
 
   ui.Picture? getLayerCache(int layerId) => _layerCache[layerId];
   void setLayerCache(int layerId, ui.Picture picture) {
+    // FIX: limitar caché a 4 capas para ahorrar RAM
+    if (_layerCache.length >= DeviceProfile.instance.maxCachedLayers && !_layerCache.containsKey(layerId)) {
+      final oldest = _layerCache.keys.first;
+      _layerCache.remove(oldest);
+    }
     _layerCache[layerId] = picture;
   }
 
@@ -143,7 +149,7 @@ class CanvasController extends ChangeNotifier {
 
     if (currentStroke!.points.isNotEmpty) {
       final lastPoint = currentStroke!.points.last;
-      final minDist = activeBrush.size * 0.15;
+      final minDist = activeBrush.size * DeviceProfile.instance.minDistMultiplier;
       if ((point - lastPoint).distance < minDist) return;
     }
 
@@ -189,9 +195,10 @@ class CanvasController extends ChangeNotifier {
 
     if (layerIndex != -1) {
       final tolerance = activeBrush.size * 0.1;
+      final p = DeviceProfile.instance;
       final simplifiedPoints = _simplifyPoints(
         currentStroke!.points,
-        tolerance.clamp(0.5, 3.0),
+        tolerance.clamp(p.simplifyMin, p.simplifyMax),
       );
 
       final simplifiedStroke = StrokeModel(
@@ -287,7 +294,7 @@ class CanvasController extends ChangeNotifier {
     _imageUndoHistory.add(_snapshotImages());
     _redoHistory.clear();
     _imageRedoHistory.clear();
-    if (_undoHistory.length > 30) {
+    if (_undoHistory.length > DeviceProfile.instance.maxUndoSteps) {
       _undoHistory.removeAt(0);
       if (_imageUndoHistory.isNotEmpty) _imageUndoHistory.removeAt(0);
     }
@@ -764,7 +771,7 @@ class CanvasController extends ChangeNotifier {
     if ((last - point).distance < minDist) return;
     current.points.add(point);
     // Solo notificar cada 3 puntos para reducir repaints sin perder fluidez
-    if (current.points.length % 3 == 0) {
+    if (current.points.length % DeviceProfile.instance.eraseRepaintEvery == 0) {
       _invalidateImageLayer(canvasImages[canvasImages.indexWhere((img) => img.id == id)].layerId);
       notifyListeners();
     }
