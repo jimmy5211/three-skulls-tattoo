@@ -5176,11 +5176,19 @@ class _RulerPainter extends CustomPainter {
 
     // Screen pixels per unit
     final screenPxPerUnit = pxPerUnit * scale;
+    if (screenPxPerUnit <= 0) return;
 
-    // Find a "nice" tick interval (1, 2, 5, 10, 20, 50...)
+    // Find a "nice" tick interval — guarded against infinite loop
+    // Target: screen ticks between 20px and 80px apart
     double tickInterval = 1.0;
-    while (screenPxPerUnit / tickInterval < 20) tickInterval *= 5;
-    while (screenPxPerUnit * tickInterval > 80) tickInterval /= 2;
+    // If ticks are too dense, increase interval (×2 steps: 1,2,5,10,20,50...)
+    final niceSteps = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0];
+    for (final step in niceSteps) {
+      tickInterval = step;
+      if (screenPxPerUnit * tickInterval >= 15) break;
+    }
+    // Safety: if still too small, cap it
+    if (screenPxPerUnit * tickInterval < 5) return;
 
     final screenTickSize = screenPxPerUnit * tickInterval;
     final totalScreenSize = direction == Axis.horizontal ? size.width : size.height;
@@ -5200,12 +5208,12 @@ class _RulerPainter extends CustomPainter {
         final tickLength = direction == Axis.horizontal ? size.height * 0.5 : size.width * 0.5;
         if (direction == Axis.horizontal) {
           canvas.drawLine(Offset(pos, size.height), Offset(pos, size.height - tickLength), tickPaint);
-          if (unitValue % (tickInterval * 2) < 0.01) {
+          if ((unitValue / tickInterval).round() % 2 == 0) {
             _drawText(canvas, '${unitValue.toStringAsFixed(unitValue < 10 ? 0 : 0)}', pos + 2, 1, textStyle);
           }
         } else {
           canvas.drawLine(Offset(size.width, pos), Offset(size.width - tickLength, pos), tickPaint);
-          if (unitValue % (tickInterval * 2) < 0.01) {
+          if ((unitValue / tickInterval).round() % 2 == 0) {
             _drawTextVertical(canvas, '${unitValue.toStringAsFixed(0)}', 1, pos + 2, textStyle);
           }
         }
