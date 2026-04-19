@@ -256,6 +256,10 @@ class CanvasPainter extends CustomPainter {
         canvas.drawPicture(cached);
         canvas.restore();
         if (layer.opacity < 1.0) canvas.restore();
+        // FIX: dibujar handles ANTES del return — el early return los saltaba
+        for (final img in layerImages) {
+          if (img.isSelected) _drawSelectionHandles(canvas, img);
+        }
         return;
       }
     }
