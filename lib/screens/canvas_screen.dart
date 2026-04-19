@@ -114,6 +114,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   String? _erasingImageId;
   DateTime? _strokeStartTime; // para detectar dots accidentales al hacer pan
   int _activePointers = 0;     // FIX: contador real de dedos en pantalla
+  Offset? _tapDownCanvasPos;   // posición del dedo al bajar (para transform tap)
 
   // ─── TOOLTIP ─────────────────────────────────────────────────
   String? _tooltipText;
@@ -274,6 +275,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
           children: [
             _buildCanvas(),
 
+            // Regla — detrás de todos los paneles UI (z-order correcto)
+            if (_showRuler && !_isFullscreen && !_showLayers)
+              _buildRuler(),
+
             if (!_isFullscreen)
               Positioned(
                 left: 0,
@@ -356,10 +361,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 bottom: 12,
                 child: _buildZoomIndicator(),
               ),
-
-            // Regla — overlay fijo en pantalla, fuera de la transformación del canvas
-            if (_showRuler && !_isFullscreen)
-              _buildRuler(),
 
             // Tooltip overlay
             if (_tooltipText != null)
@@ -2606,7 +2607,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             painter: _RulerPainter(
               direction: Axis.horizontal,
               scale: _scale,
-              offset: _offset.dx - leftOffset,
+              offset: _offset.dx - leftOffset - rulerSize, // FIX: account for ruler thickness
               canvasSize: _controller.canvasSize.width,
               pxPerUnit: _canvasPxPerUnit,
               unit: _rulerUnit,
@@ -2620,7 +2621,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             painter: _RulerPainter(
               direction: Axis.vertical,
               scale: _scale,
-              offset: _offset.dy - topOffset,
+              offset: _offset.dy - topOffset - rulerSize, // FIX: account for ruler thickness
               canvasSize: _controller.canvasSize.height,
               pxPerUnit: _canvasPxPerUnit,
               unit: _rulerUnit,
@@ -2713,29 +2714,32 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   void _drawEraseOnCanvas(ui.Canvas canvas, EraseStroke erase) {
     if (erase.points.isEmpty) return;
-    final p = Paint()
-      ..blendMode = BlendMode.dstOut
-      ..color = Colors.white
-      ..strokeWidth = erase.radius * 2
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-    if (erase.points.length == 1) {
-      canvas.drawCircle(erase.points.first, erase.radius,
-          Paint()..blendMode = BlendMode.dstOut..color = Colors.white..style = PaintingStyle.fill);
-      return;
+    final hardness = erase.hardness.clamp(0.0, 1.0);
+    // FIX: usar hardness igual que el borrador del canvas (gradiente radial)
+    void stamp(Offset point) {
+      if (hardness >= 0.99) {
+        canvas.drawCircle(point, erase.radius,
+            Paint()..blendMode = BlendMode.dstOut..color = Colors.white..style = PaintingStyle.fill);
+      } else {
+        canvas.drawCircle(point, erase.radius, Paint()
+          ..shader = ui.Gradient.radial(point, erase.radius, [
+            Colors.white.withOpacity(1.0),
+            Colors.white.withOpacity(hardness),
+            Colors.transparent,
+          ], [0.0, hardness.clamp(0.01, 0.99), 1.0])
+          ..blendMode = BlendMode.dstOut);
+      }
     }
-    final path = ui.Path();
-    path.moveTo(erase.points.first.dx, erase.points.first.dy);
-    for (int i = 1; i < erase.points.length - 1; i++) {
-      final mid = Offset(
-        (erase.points[i].dx + erase.points[i + 1].dx) / 2,
-        (erase.points[i].dy + erase.points[i + 1].dy) / 2,
-      );
-      path.quadraticBezierTo(erase.points[i].dx, erase.points[i].dy, mid.dx, mid.dy);
+    for (int i = 0; i < erase.points.length; i++) {
+      stamp(erase.points[i]);
+      if (i > 0) {
+        final dist = (erase.points[i] - erase.points[i-1]).distance;
+        final steps = (dist / (erase.radius * 0.4)).ceil().clamp(1, 8);
+        for (int s = 1; s < steps; s++) {
+          stamp(Offset.lerp(erase.points[i-1], erase.points[i], s / steps)!);
+        }
+      }
     }
-    path.lineTo(erase.points.last.dx, erase.points.last.dy);
-    canvas.drawPath(path, p);
   }
 
   void _drawStrokeOnCanvas(ui.Canvas canvas, StrokeModel stroke) {
@@ -3109,6 +3113,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
         onPointerCancel: (_) => _activePointers--,
         child: GestureDetector(
         behavior: HitTestBehavior.opaque,
+        onTapDown: (details) {
+          // Guardar posición exacta del tap para transform mode
+          _tapDownCanvasPos = _screenToCanvas(details.localPosition);
+        },
         onTap: () {
           if (_showBrushPanel) setState(() => _showBrushPanel = false);
           if (_showSelectionOptions) setState(() => _showSelectionOptions = false);
@@ -3120,10 +3128,28 @@ class _CanvasScreenState extends State<CanvasScreen> {
             Offset.zero,
           );
 
-          // FIX: en transform mode, onTap NO deselecciona.
-          // La selección/deselección la maneja onScaleStart para evitar
-          // que onTap deshaga inmediatamente lo que onScaleStart acaba de seleccionar.
-          if (_transformMode == TransformMode.activo) return;
+          // FIX: en transform mode, tap selecciona/deselecciona imagen
+          if (_transformMode == TransformMode.activo) {
+            final tapPos = _tapDownCanvasPos;
+            if (tapPos != null) {
+              // Si hay imagen en ese punto, seleccionarla
+              final img = _controller.imageAtPoint(tapPos);
+              if (img != null) {
+                if (_selectedImageId != img.id) {
+                  _controller.selectCanvasImage(img.id);
+                  setState(() => _selectedImageId = img.id);
+                }
+                // Si ya estaba seleccionada, no hacer nada (mantener selección)
+                return;
+              }
+              // Tap fuera de imagen → deseleccionar
+              if (_selectedImageId != null) {
+                _controller.selectCanvasImage(null);
+                setState(() => _selectedImageId = null);
+              }
+            }
+            return;
+          }
 
           if (_selectedImageId != null) {
             setState(() {
@@ -3594,9 +3620,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _controller.endEraseOnImage(_erasingImageId!);
               setState(() => _erasingImageId = null);
             } else {
-              // FIX: si hay 2+ dedos activos, el onScaleEnd es falso → cancelar
               _strokeStartTime = null;
-              if (_activePointers >= 2) {
+              // FIX dots: cancelar si 2+ dedos O si stroke es < 3px (toque accidental)
+              final stroke = _controller.currentStroke;
+              final isTinyDot = stroke != null &&
+                  stroke.points.length <= 2 &&
+                  (stroke.points.length < 2 ||
+                   (stroke.points.last - stroke.points.first).distance < 3.0);
+              if (_activePointers >= 2 || isTinyDot) {
                 _controller.cancelStroke();
               } else {
                 _controller.endStroke();
