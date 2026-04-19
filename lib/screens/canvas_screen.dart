@@ -1101,6 +1101,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
               const SizedBox(height: 8),
               GestureDetector(
                 onTap: () => setState(() {
+                  // FIX: desactivar modo sello al tocar borrador
+                  _stampMode = false;
+                  _activeStamp = null;
+                  _activeStampImage = null;
                   if (isEraser) {
                     final normal = _brushes.firstWhere(
                       (b) => b.type != StrokeType.eraser,
@@ -2195,6 +2199,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
       onTap: () {
         _controller.setActiveBrush(brush);
         setState(() {
+          // FIX: desactivar modo sello al seleccionar un pincel
+          _stampMode = false;
+          _activeStamp = null;
+          _activeStampImage = null;
           _showBrushPanel = false;
           _selectedCategory = null;
           _searchQuery = '';
