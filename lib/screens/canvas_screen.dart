@@ -625,6 +625,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildBrushBtn() {
     return GestureDetector(
+      onLongPressStart: (d) => _showTooltip('Pinceles', d.globalPosition),
       onTap: () => setState(() {
         _showBrushPanel = !_showBrushPanel;
         if (_showBrushPanel) {
@@ -682,6 +683,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget _buildSelectionBtn() {
     final isActive = _selectionMode != SelectionMode.ninguno;
     return GestureDetector(
+      onLongPressStart: (d) => _showTooltip('Selección', d.globalPosition),
       onTap: () => setState(() {
         _showSelectionOptions = !_showSelectionOptions;
         if (_showSelectionOptions) {
@@ -721,6 +723,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget _buildTransformBtn() {
     final isActive = _transformMode == TransformMode.activo;
     return GestureDetector(
+      onLongPressStart: (d) => _showTooltip('Mover / Transformar', d.globalPosition),
       onTap: () => setState(() {
         if (isActive) {
           _transformMode = TransformMode.ninguno;
@@ -761,6 +764,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // ─── BOTÓN SMUDGE ─────────────────────────────────────────
   Widget _buildSmudgeBtn() {
     return GestureDetector(
+      onLongPressStart: (d) => _showTooltip('Modo mano', d.globalPosition),
       onTap: () => setState(() {
         _smudgeMode = !_smudgeMode;
         if (_smudgeMode) {
@@ -1081,6 +1085,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildLayersBtn() {
     return GestureDetector(
+      onLongPressStart: (d) => _showTooltip('Capas', d.globalPosition),
       onTap: () => setState(() {
         _showLayers = !_showLayers;
         if (_showLayers) {
@@ -1146,6 +1151,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildColorBtn() {
     return GestureDetector(
+      onLongPressStart: (d) => _showTooltip('Color', d.globalPosition),
       onTap: () => setState(() {
         _showColors = !_showColors;
         if (_showColors) {
@@ -1206,6 +1212,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               // ─── BORRADOR ───────────────────────
               const SizedBox(height: 8),
               GestureDetector(
+                onLongPressStart: (d) => _showTooltip('Borrador', d.globalPosition),
                 onTap: () => setState(() {
                   // FIX: desactivar sello y transform mode al tocar borrador
                   _stampMode = false;
@@ -1263,6 +1270,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               // ─── RESIZE CANVAS ──────────────────
               const SizedBox(height: 6),
               GestureDetector(
+                onLongPressStart: (d) => _showTooltip('Redimensionar lienzo', d.globalPosition),
                 onTap: () => _showResizeCanvasDialog(),
                 child: Container(
                   width: 38,
@@ -1280,6 +1288,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               // ─── RESET ROTACIÓN ─────────────────
               const SizedBox(height: 6),
               GestureDetector(
+                onLongPressStart: (d) => _showTooltip('Restablecer rotación', d.globalPosition),
                 onTap: () =>
                     setState(() => _rotation = 0.0),
                 child: Container(
@@ -3741,6 +3750,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildZoomIndicator() {
     return GestureDetector(
+      onLongPressStart: (d) => _showTooltip('Restablecer zoom', d.globalPosition),
       onTap: () => setState(() {
         final cW = _controller.canvasSize.width;
         final cH = _controller.canvasSize.height;
@@ -3780,6 +3790,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildFullscreenButton() {
     return GestureDetector(
+      onLongPressStart: (d) => _showTooltip('Pantalla completa', d.globalPosition),
       onTap: () =>
           setState(() => _isFullscreen = !_isFullscreen),
       child: Container(
