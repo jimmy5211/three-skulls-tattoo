@@ -3554,6 +3554,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
         ),
           // Regla fija sobre el canvas
           if (_showRuler) _buildRuler(),
+        ]),
       ),
     );
   }
