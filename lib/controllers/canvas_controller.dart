@@ -105,16 +105,18 @@ class CanvasController extends ChangeNotifier {
     return result;
   }
 
-  void startStroke(Offset point) {
+  void startStroke(Offset point, {double viewScale = 1.0}) {
     if (activeLayer.isLocked) return;
     _saveToHistory();
+    // viewScale: divide tamaño para que el trazo sea independiente del zoom
+    final strokeW = activeBrush.size / viewScale;
 
     currentStroke = StrokeModel(
       points: [point],
       color: activeBrush.type == StrokeType.eraser
           ? Colors.white
           : activeColor,
-      strokeWidth: activeBrush.size,
+      strokeWidth: strokeW,
       opacity: activeBrush.opacity,
       type: activeBrush.type,
       layerId: activeLayerId,
@@ -129,7 +131,7 @@ class CanvasController extends ChangeNotifier {
         color: activeBrush.type == StrokeType.eraser
             ? Colors.white
             : activeColor,
-        strokeWidth: activeBrush.size,
+        strokeWidth: strokeW,
         opacity: activeBrush.type == StrokeType.eraser
             ? 1.0
             : activeBrush.opacity,
