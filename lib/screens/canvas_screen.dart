@@ -20,6 +20,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
 import '../models/stamp_model.dart';
+import '../services/device_profile.dart';
 import 'package:flutter/services.dart';
 
 enum BrushPanelTab { todos, descargados, creados, sellos }
@@ -1533,7 +1534,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
         color: Colors.transparent,
         child: Container(
           width: _isLandscape ? 360 : 300,
-          height: MediaQuery.of(context).size.height * 0.82,
+          // FIX: limitar altura al espacio disponible bajo la top bar
+          height: (MediaQuery.of(context).size.height - _topBarHeight - 24)
+              .clamp(280.0, MediaQuery.of(context).size.height * 0.82),
           decoration: BoxDecoration(
             color: _cardColor,
             borderRadius: BorderRadius.circular(18),
@@ -2276,7 +2279,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
     try {
       final data = await rootBundle.load(stamp.assetPath);
       final codec = await ui.instantiateImageCodec(
-        data.buffer.asUint8List(), targetWidth: 512, targetHeight: 512,
+        data.buffer.asUint8List(),
+        targetWidth: DeviceProfile.instance.stampLoadSize,
+        targetHeight: DeviceProfile.instance.stampLoadSize,
       );
       final frame = await codec.getNextFrame();
       setState(() {
