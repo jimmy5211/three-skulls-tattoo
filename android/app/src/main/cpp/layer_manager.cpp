@@ -253,11 +253,26 @@ void LayerManager::composite(GLuint destFBO, GLuint destTexture,
         glBindFramebuffer(GL_FRAMEBUFFER, accumFBO);
     }
 
-    // ── 4. Copiar resultado final a destTexture ───────────────
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, accumFBO);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destFBO);
-    glBlitFramebuffer(0, 0, destW, destH, 0, 0, destW, destH,
-                      GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    // ── 4. Copiar resultado final a destino ──────────────────
+    if (destFBO == 0) {
+        // Destino es el framebuffer por defecto (WindowSurface)
+        // glBlitFramebuffer funciona con FBO 0 como draw target
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, accumFBO);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        // Flip Y: OpenGL tiene Y=0 abajo, la pantalla tiene Y=0 arriba
+        glBlitFramebuffer(0, 0, destW, destH,
+                          0, destH, destW, 0,   // destY flippeado
+                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    } else {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, accumFBO);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destFBO);
+        if (destTexture != 0) {
+            glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                   GL_TEXTURE_2D, destTexture, 0);
+        }
+        glBlitFramebuffer(0, 0, destW, destH, 0, 0, destW, destH,
+                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    }
 
     // ── 5. Cleanup temporal ───────────────────────────────────
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

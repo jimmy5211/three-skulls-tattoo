@@ -98,18 +98,25 @@ struct DrawingEngine::Impl {
     }
 
     bool makeCurrent() {
-        // El GL thread de Kotlin mantiene el contexto activo.
-        // Solo verificamos que el contexto sigue siendo válido.
+        // El GL thread de Kotlin mantiene el contexto y la WindowSurface activos.
+        // Verificar que hay un contexto válido en este thread.
         EGLContext ctx = eglGetCurrentContext();
         if (ctx == EGL_NO_CONTEXT) {
-            LOGE("makeCurrent: no context active on GL thread");
+            LOGE("makeCurrent: no EGL context on this thread");
+            return false;
+        }
+        // Verificar que hay una surface activa (la WindowSurface)
+        EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
+        if (surf == EGL_NO_SURFACE) {
+            LOGE("makeCurrent: no EGL surface on this thread");
             return false;
         }
         return true;
     }
 
     void doneCurrent() {
-        // No-op: Kotlin gestiona el ciclo de vida del contexto
+        // No-op: Kotlin gestiona EGL
+        // eglSwapBuffers se llama desde Kotlin después de render()
     }
 };
 
@@ -151,38 +158,19 @@ bool DrawingEngine::init(EGLDisplay display, EGLContext sharedContext,
     // makeCurrent es trivial porque ya estamos en el contexto correcto
     // Solo verificamos que podemos usar el contexto
 
-    // ── Output texture & FBO ──────────────────────────────────
-    impl_->outputTexture = targetTextureId;
-    LOGI("Setting up FBO with texture=%d canvas=%dx%d",
-         targetTextureId, cfg.canvasWidth, cfg.canvasHeight);
+    // ── Output render target = FBO 0 (la WindowSurface de Kotlin) ──
+    // No usamos FBO custom ni textura custom.
+    // Kotlin crea una EGL WindowSurface del SurfaceTexture de Flutter.
+    // El motor C++ renderiza al framebuffer 0 que ES esa window surface.
+    // eglSwapBuffers (llamado desde Kotlin) actualiza el Texture widget.
+    impl_->outputTexture = 0; // no se usa
+    impl_->outputFBO     = 0; // framebuffer 0 = window surface
+    LOGI("Using WindowSurface (FBO 0) — canvas=%dx%d",
+         cfg.canvasWidth, cfg.canvasHeight);
 
-    // Verificar GL errors antes de FBO
+    // Verificar que tenemos un contexto GL activo
     GLenum glErr = glGetError();
-    if (glErr != GL_NO_ERROR) {
-        LOGE("GL error before FBO: 0x%X", glErr);
-    }
-
-    // Verificar que la textura es válida
-    if (!glIsTexture(targetTextureId)) {
-        LOGE("Texture %d is not valid", targetTextureId);
-        // Intentar continuar — a veces glIsTexture falla aunque la textura exista
-    }
-
-    glGenFramebuffers(1, &impl_->outputFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, impl_->outputFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D, targetTextureId, 0);
-
-    GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    if (fboStatus != GL_FRAMEBUFFER_COMPLETE) {
-        LOGE("Output FBO status=0x%X (not complete=0x%X) — continuing anyway",
-             fboStatus, GL_FRAMEBUFFER_COMPLETE);
-        // No retornar false — el FBO puede funcionar a pesar del status en HiOS
-    } else {
-        LOGI("Output FBO complete OK");
-    }
+    LOGI("GL context active, initial error: 0x%X", glErr);
 
     // ── Subsistemas ───────────────────────────────────────────
     impl_->layerMgr  = std::make_unique<LayerManager>(cfg.canvasWidth, cfg.canvasHeight);
@@ -208,15 +196,18 @@ void DrawingEngine::render() {
     if (!impl_->makeCurrent()) return;
 
     glViewport(0, 0, impl_->cfg.canvasWidth, impl_->cfg.canvasHeight);
+
+    // Renderizar al framebuffer 0 (WindowSurface de Kotlin)
+    // Kotlin llamará eglSwapBuffers después de este render()
     impl_->layerMgr->composite(
-        impl_->outputFBO, impl_->outputTexture,
+        0,   // destFBO = 0 = framebuffer por defecto = WindowSurface
+        0,   // destTexture = no usado cuando destFBO = 0
         impl_->cfg.canvasWidth, impl_->cfg.canvasHeight,
         impl_->background
     );
     glFlush();
     impl_->doneCurrent();
-
-    if (onFrameReady) onFrameReady();
+    // No llamar onFrameReady — Kotlin hace eglSwapBuffers que actualiza Flutter
 }
 
 // ── Stroke lifecycle ────────────────────────────────────────────────────
@@ -461,8 +452,8 @@ void DrawingEngine::destroy() {
         if (impl_->outputFBO) { glDeleteFramebuffers(1, &impl_->outputFBO); }
         impl_->doneCurrent();
     }
-    // No destruir contexto ni superficie — son propiedad de Kotlin
-    // Solo limpiar recursos GL que creamos nosotros
+    // Recursos EGL (contexto, superficie) son propiedad de Kotlin — no destruir
+    // Solo limpiar recursos GL (FBOs, textures, shaders) que creamos nosotros
     impl_.reset();
     ready_ = false;
     LOGI("DrawingEngine destroyed");
