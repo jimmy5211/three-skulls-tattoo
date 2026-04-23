@@ -26,6 +26,18 @@ jobs:
           flutter-version: '3.19.0'
           channel: 'stable'
 
+      # ── NDK + CMake para el motor C++ ──────────────────────────────
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c           # NDK 25.2.9519653 (LTS estable)
+          add-to-path: true
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v1
+        with:
+          cmake-version: '3.22.1'
+
       - name: Setup Keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/three-skulls.jks
@@ -78,6 +90,9 @@ jobs:
 
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
+        env:
+          # Asegurar que NDK es encontrado por Gradle
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
 
       - name: Verify APK signature
         run: |
@@ -92,6 +107,7 @@ jobs:
           body: |
             ## 💀 Three Skulls Tattoo
             ### Versión 1.0.${{ github.run_number }}
+            Motor C++/OpenGL ES 3.1 — Fase 1
           files: build/app/outputs/flutter-apk/app-release.apk
           draft: false
           prerelease: false
@@ -104,10 +120,10 @@ jobs:
             https://api.jsonbin.io/v3/b/69b8b65eaa77b81da9ef4f41 \
             -H 'Content-Type: application/json' \
             -H 'X-Master-Key: ${{ secrets.JSONBIN_API_KEY }}' \
-            -d "{"version": "1.0.${{ github.run_number }}", "versionCode": $((1000 + ${{ github.run_number }})), "downloadUrl": "https://github.com/jimmy5211/three-skulls-tattoo/releases/download/v1.0.${{ github.run_number }}/app-release.apk", "mandatory": false, "releaseNotes": $NOTES}"
+            -d "{\"version\": \"1.0.${{ github.run_number }}\", \"versionCode\": $((1000 + ${{ github.run_number }})), \"downloadUrl\": \"https://github.com/jimmy5211/three-skulls-tattoo/releases/download/v1.0.${{ github.run_number }}/app-release.apk\", \"mandatory\": false, \"releaseNotes\": $NOTES}"
 
       - name: Send FCM push notification
-        continue-on-error: true  # No romper el build si falla
+        continue-on-error: true
         env:
           FCM_SA_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
           RUN_NUMBER: ${{ github.run_number }}
