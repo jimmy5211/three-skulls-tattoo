@@ -1,6 +1,5 @@
 package com.threeskullstattoo.app
 
-import android.graphics.SurfaceTexture
 import android.opengl.EGL14
 import android.opengl.GLES30
 import android.os.Handler
@@ -9,40 +8,37 @@ import android.util.Log
 import io.flutter.view.TextureRegistry
 
 /**
- * Puente entre Kotlin y el motor C++ de dibujo.
- *
- * Flujo:
- * 1. Flutter crea un Texture widget con textureId
- * 2. Esta clase inicializa EGL en un thread dedicado
- * 3. El motor C++ recibe el EGLContext compartido y el textureId
- * 4. Al terminar un stroke, C++ llama onFrameReady → markFrameAvailable
- * 5. Flutter muestra el frame actualizado automáticamente
+ * Puente Kotlin ↔ C++ motor de dibujo.
+ * Las funciones públicas (sin prefijo) corren en el GL thread.
+ * Las funciones JNI (prefijo jni) son las declaraciones extern "C" del C++.
  */
 object DrawingEngineJNI {
 
     private const val TAG = "TSK_KT"
 
-    // ── GL Thread ──────────────────────────────────────────────────────
-    private val glThread = HandlerThread("TSK-GL-Thread").also { it.start() }
+    // ── GL Thread dedicado ────────────────────────────────────────────
+    private val glThread = HandlerThread("TSK-GL").also { it.start() }
     private val glHandler = Handler(glThread.looper)
 
-    // ── EGL ────────────────────────────────────────────────────────────
+    // ── EGL state ─────────────────────────────────────────────────────
     private var eglDisplay = EGL14.EGL_NO_DISPLAY
     private var eglContext = EGL14.EGL_NO_CONTEXT
     private var eglSurface = EGL14.EGL_NO_SURFACE
 
-    // ── Flutter Texture ────────────────────────────────────────────────
-    private var flutterTexture: TextureRegistry.SurfaceTextureEntry? = null
-    private var surfaceTexture: SurfaceTexture? = null
-    private var glTexture: Int = 0
+    // ── Flutter Texture ───────────────────────────────────────────────
+    private var textureEntry: TextureRegistry.SurfaceTextureEntry? = null
+    private var glTextureId: Int = 0
     var textureId: Long = -1L
         private set
 
-    // ── State ──────────────────────────────────────────────────────────
-    private var initialized = false
+    var initialized = false
+        private set
+
     var onFrameAvailable: (() -> Unit)? = null
 
-    // ── Setup principal ────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════
+    // SETUP
+    // ═══════════════════════════════════════════════════════════════
 
     fun setup(
         textureRegistry: TextureRegistry,
@@ -51,80 +47,57 @@ object DrawingEngineJNI {
         onReady: (textureId: Long) -> Unit
     ) {
         glHandler.post {
-            // 1. Crear EGL display + context
-            if (!initEGL()) {
-                Log.e(TAG, "EGL init failed")
-                return@post
-            }
+            if (!initEGL()) { Log.e(TAG, "EGL init failed"); return@post }
 
-            // 2. Registrar texture en Flutter
+            // Registrar texture en Flutter
             val entry = textureRegistry.createSurfaceTexture()
-            flutterTexture = entry
-            surfaceTexture = entry.surfaceTexture()
+            textureEntry = entry
             textureId = entry.id()
 
-            // 3. Obtener GL texture ID del SurfaceTexture
-            // SurfaceTexture.getExternalTextureId() no existe directamente,
-            // necesitamos crear un GL_TEXTURE_EXTERNAL_OES
-            val texIds = IntArray(1)
-            GLES30.glGenTextures(1, texIds, 0)
-            glTexture = texIds[0]
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, glTexture)
-            GLES30.glTexImage2D(
-                GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA,
-                canvasW, canvasH, 0,
-                GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null
-            )
+            // Crear GL texture 2D para el canvas
+            val ids = IntArray(1)
+            GLES30.glGenTextures(1, ids, 0)
+            glTextureId = ids[0]
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, glTextureId)
+            GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA,
+                canvasW, canvasH, 0, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
 
-            // 4. Inicializar motor C++
-            val eglDisplayPtr = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
-            val ok = nativeInit(
-                eglDisplayPtr.nativeHandle,
-                eglContext.nativeHandle,
-                canvasW, canvasH, glTexture,
+            // Obtener handles EGL para pasar al C++
+            val dispHandle = EGL14.eglGetCurrentDisplay().nativeHandle
+            val ctxHandle  = EGL14.eglGetCurrentContext().nativeHandle
+
+            val ok = jniInit(
+                dispHandle, ctxHandle,
+                canvasW, canvasH, glTextureId,
                 canvasW, canvasH, maxUndoSteps
             )
-
             initialized = ok
+            Log.i(TAG, "DrawingEngine init: $ok  textureId=$textureId")
+
             if (ok) {
-                Log.i(TAG, "DrawingEngine ready, textureId=$textureId")
-                // Notificar Flutter en el main thread
-                Handler(android.os.Looper.getMainLooper()).post {
-                    onReady(textureId)
-                }
-            } else {
-                Log.e(TAG, "nativeInit failed")
+                Handler(android.os.Looper.getMainLooper()).post { onReady(textureId) }
             }
         }
     }
 
-    // ── Frame callback ─────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════
+    // PUBLIC API — corren en GL thread
+    // ═══════════════════════════════════════════════════════════════
 
-    /**
-     * Llamado desde C++ cuando hay un frame listo.
-     * Marca el SurfaceTexture para que Flutter actualice el widget.
-     */
-    @JvmStatic
-    fun onFrameReady() {
-        surfaceTexture?.updateTexImage()
-        flutterTexture?.surfaceTexture()?.let {
-            // markFrameAvailable no es accesible directamente en Flutter embedding
-            // En su lugar usamos el listener del SurfaceTexture
-        }
-        onFrameAvailable?.invoke()
-    }
+    fun render()       = glHandler.post { if (initialized) jniRender() }
+    fun destroy()      { glHandler.post { jniDestroy(); destroyEGL(); initialized = false } }
 
-    // ── Stroke commands ────────────────────────────────────────────────
+    // ── Stroke ──────────────────────────────────────────────────────
 
     fun beginStroke(
         layerId: Int, x: Float, y: Float, pressure: Float,
         size: Float, opacity: Float, hardness: Float, spacing: Float,
         isEraser: Boolean, brushTexId: Int, colorARGB: Int
     ) = glHandler.post {
-        if (initialized) beginStroke(
+        if (initialized) jniBeginStroke(
             layerId, x, y, pressure,
             size, opacity, hardness, spacing,
             isEraser, brushTexId, colorARGB
@@ -132,96 +105,68 @@ object DrawingEngineJNI {
     }
 
     fun addPoint(x: Float, y: Float, pressure: Float = 1f) =
-        glHandler.post { if (initialized) addPoint(x, y, pressure) }
+        glHandler.post { if (initialized) jniAddPoint(x, y, pressure) }
 
-    fun endStroke() =
-        glHandler.post { if (initialized) endStroke() }
+    fun endStroke()    = glHandler.post { if (initialized) jniEndStroke() }
+    fun cancelStroke() = glHandler.post { if (initialized) jniCancelStroke() }
 
-    fun cancelStroke() =
-        glHandler.post { if (initialized) cancelStroke() }
+    // ── History ──────────────────────────────────────────────────────
 
-    // ── History ────────────────────────────────────────────────────────
+    fun undo()     = glHandler.post { if (initialized) jniUndo() }
+    fun redo()     = glHandler.post { if (initialized) jniRedo() }
+    fun canUndo(): Boolean = initialized && jniCanUndo()
+    fun canRedo(): Boolean = initialized && jniCanRedo()
 
-    fun undo() = glHandler.post { if (initialized) undo() }
-    fun redo() = glHandler.post { if (initialized) redo() }
-    fun canUndo() = if (initialized) canUndo() else false
-    fun canRedo() = if (initialized) canRedo() else false
-
-    // ── Layers ─────────────────────────────────────────────────────────
+    // ── Layers ───────────────────────────────────────────────────────
 
     fun addLayer(name: String): Int =
-        if (initialized) addLayer(name) else -1
+        if (initialized) jniAddLayer(name) else -1
 
-    fun removeLayer(id: Int) =
-        glHandler.post { if (initialized) removeLayer(id) }
+    fun removeLayer(id: Int)            = glHandler.post { if (initialized) jniRemoveLayer(id) }
+    fun setActiveLayer(id: Int)         = glHandler.post { if (initialized) jniSetActiveLayer(id) }
+    fun setLayerOpacity(id: Int, o: Float) = glHandler.post { if (initialized) jniSetLayerOpacity(id, o) }
+    fun setLayerVisible(id: Int, v: Boolean) = glHandler.post { if (initialized) jniSetLayerVisible(id, v) }
+    fun clearLayer(id: Int)             = glHandler.post { if (initialized) jniClearLayer(id) }
 
-    fun setActiveLayer(id: Int) =
-        glHandler.post { if (initialized) setActiveLayer(id) }
+    // ── Canvas ───────────────────────────────────────────────────────
 
-    fun setLayerOpacity(id: Int, opacity: Float) =
-        glHandler.post { if (initialized) setLayerOpacity(id, opacity) }
+    fun setBackground(colorARGB: Int)   = glHandler.post { if (initialized) jniSetBackground(colorARGB) }
+    fun setCanvasSize(w: Int, h: Int)   = glHandler.post { if (initialized) jniSetCanvasSize(w, h) }
 
-    fun setLayerVisible(id: Int, visible: Boolean) =
-        glHandler.post { if (initialized) setLayerVisible(id, visible) }
+    // ── Export ───────────────────────────────────────────────────────
 
-    fun clearLayer(id: Int) =
-        glHandler.post { if (initialized) clearLayer(id) }
+    fun exportPixels(): ByteArray? = if (initialized) jniExportPixels() else null
 
-    // ── Canvas ─────────────────────────────────────────────────────────
+    // ── Brush textures ───────────────────────────────────────────────
 
-    fun setBackground(colorARGB: Int) =
-        glHandler.post { if (initialized) setBackground(colorARGB) }
+    fun loadBrushTexture(data: ByteArray, w: Int, h: Int): Int =
+        if (initialized) jniLoadBrushTexture(data, w, h) else -1
 
-    fun setCanvasSize(w: Int, h: Int) =
-        glHandler.post { if (initialized) setCanvasSize(w, h) }
+    fun unloadBrushTexture(id: Int) =
+        glHandler.post { if (initialized) jniUnloadBrushTexture(id) }
 
-    // ── Export ─────────────────────────────────────────────────────────
-
-    fun exportPixels(): ByteArray? =
-        if (initialized) exportPixels() else null
-
-    // ── Cleanup ────────────────────────────────────────────────────────
-
-    fun destroy() {
-        glHandler.post {
-            nativeDestroy()
-            destroyEGL()
-            initialized = false
-        }
-    }
-
-    // ── EGL helpers ────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════
+    // EGL helpers
+    // ═══════════════════════════════════════════════════════════════
 
     private fun initEGL(): Boolean {
         eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
-        if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
-            Log.e(TAG, "eglGetDisplay failed")
-            return false
-        }
+        if (eglDisplay == EGL14.EGL_NO_DISPLAY) return false
 
-        val version = IntArray(2)
-        if (!EGL14.eglInitialize(eglDisplay, version, 0, version, 1)) {
-            Log.e(TAG, "eglInitialize failed")
-            return false
-        }
+        val ver = IntArray(2)
+        if (!EGL14.eglInitialize(eglDisplay, ver, 0, ver, 1)) return false
 
-        val configAttribs = intArrayOf(
+        val cfgAttribs = intArrayOf(
             EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES3_BIT_KHR,
             EGL14.EGL_SURFACE_TYPE,    EGL14.EGL_PBUFFER_BIT,
-            EGL14.EGL_RED_SIZE,   8,
-            EGL14.EGL_GREEN_SIZE, 8,
-            EGL14.EGL_BLUE_SIZE,  8,
-            EGL14.EGL_ALPHA_SIZE, 8,
+            EGL14.EGL_RED_SIZE,   8, EGL14.EGL_GREEN_SIZE, 8,
+            EGL14.EGL_BLUE_SIZE,  8, EGL14.EGL_ALPHA_SIZE, 8,
             EGL14.EGL_NONE
         )
-
         val configs = arrayOfNulls<android.opengl.EGLConfig>(1)
-        val numConfigs = IntArray(1)
-        if (!EGL14.eglChooseConfig(eglDisplay, configAttribs, 0,
-                configs, 0, 1, numConfigs, 0) || numConfigs[0] == 0) {
-            Log.e(TAG, "eglChooseConfig failed")
+        val n = IntArray(1)
+        if (!EGL14.eglChooseConfig(eglDisplay, cfgAttribs, 0, configs, 0, 1, n, 0) || n[0] == 0)
             return false
-        }
 
         val ctxAttribs = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE)
         eglContext = EGL14.eglCreateContext(eglDisplay, configs[0], EGL14.EGL_NO_CONTEXT, ctxAttribs, 0)
@@ -232,25 +177,19 @@ object DrawingEngineJNI {
 
         val pbAttribs = intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE)
         eglSurface = EGL14.eglCreatePbufferSurface(eglDisplay, configs[0], pbAttribs, 0)
-        if (eglSurface == EGL14.EGL_NO_SURFACE) {
-            Log.e(TAG, "eglCreatePbufferSurface failed")
-            return false
-        }
+        if (eglSurface == EGL14.EGL_NO_SURFACE) return false
 
-        if (!EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) {
-            Log.e(TAG, "eglMakeCurrent failed")
-            return false
-        }
+        if (!EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) return false
 
-        Log.i(TAG, "EGL initialized: OpenGL ES ${GLES30.glGetString(GLES30.GL_VERSION)}")
+        Log.i(TAG, "EGL OK: ${GLES30.glGetString(GLES30.GL_VERSION)}")
         return true
     }
 
     private fun destroyEGL() {
         if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
             EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
-            if (eglSurface != EGL14.EGL_NO_SURFACE)  EGL14.eglDestroySurface(eglDisplay, eglSurface)
-            if (eglContext != EGL14.EGL_NO_CONTEXT)  EGL14.eglDestroyContext(eglDisplay, eglContext)
+            if (eglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, eglSurface)
+            if (eglContext != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(eglDisplay, eglContext)
             EGL14.eglTerminate(eglDisplay)
         }
         eglDisplay = EGL14.EGL_NO_DISPLAY
@@ -258,35 +197,38 @@ object DrawingEngineJNI {
         eglSurface = EGL14.EGL_NO_SURFACE
     }
 
-    // ── JNI declarations (implementadas en jni_bridge.cpp) ─────────────
+    // ═══════════════════════════════════════════════════════════════
+    // JNI DECLARATIONS — prefijo "jni" para evitar ambigüedad
+    // Implementadas en jni_bridge.cpp como JNINAME(jniXxx)
+    // ═══════════════════════════════════════════════════════════════
 
     init { System.loadLibrary("three_skulls_engine") }
 
-    @JvmStatic external fun nativeInit(eglDisplay: Long, sharedContext: Long, width: Int, height: Int, textureId: Int, canvasW: Int, canvasH: Int, maxUndo: Int): Boolean
-    @JvmStatic external fun nativeDestroy()
-    @JvmStatic external fun nativeRender()
+    @JvmStatic private external fun jniInit(eglDisplay: Long, sharedCtx: Long, w: Int, h: Int, texId: Int, canvasW: Int, canvasH: Int, maxUndo: Int): Boolean
+    @JvmStatic private external fun jniDestroy()
+    @JvmStatic private external fun jniRender()
 
-    @JvmStatic external fun beginStroke(layerId: Int, x: Float, y: Float, pressure: Float, size: Float, opacity: Float, hardness: Float, spacing: Float, isEraser: Boolean, brushTexId: Int, colorARGB: Int)
-    @JvmStatic external fun addPoint(x: Float, y: Float, pressure: Float)
-    @JvmStatic external fun endStroke()
-    @JvmStatic external fun cancelStroke()
+    @JvmStatic private external fun jniBeginStroke(layerId: Int, x: Float, y: Float, pressure: Float, size: Float, opacity: Float, hardness: Float, spacing: Float, isEraser: Boolean, brushTexId: Int, colorARGB: Int)
+    @JvmStatic private external fun jniAddPoint(x: Float, y: Float, pressure: Float)
+    @JvmStatic private external fun jniEndStroke()
+    @JvmStatic private external fun jniCancelStroke()
 
-    @JvmStatic external fun undo()
-    @JvmStatic external fun redo()
-    @JvmStatic external fun canUndo(): Boolean
-    @JvmStatic external fun canRedo(): Boolean
+    @JvmStatic private external fun jniUndo()
+    @JvmStatic private external fun jniRedo()
+    @JvmStatic private external fun jniCanUndo(): Boolean
+    @JvmStatic private external fun jniCanRedo(): Boolean
 
-    @JvmStatic external fun addLayer(name: String): Int
-    @JvmStatic external fun removeLayer(id: Int)
-    @JvmStatic external fun setActiveLayer(id: Int)
-    @JvmStatic external fun setLayerOpacity(id: Int, opacity: Float)
-    @JvmStatic external fun setLayerVisible(id: Int, visible: Boolean)
-    @JvmStatic external fun clearLayer(id: Int)
+    @JvmStatic private external fun jniAddLayer(name: String): Int
+    @JvmStatic private external fun jniRemoveLayer(id: Int)
+    @JvmStatic private external fun jniSetActiveLayer(id: Int)
+    @JvmStatic private external fun jniSetLayerOpacity(id: Int, opacity: Float)
+    @JvmStatic private external fun jniSetLayerVisible(id: Int, visible: Boolean)
+    @JvmStatic private external fun jniClearLayer(id: Int)
 
-    @JvmStatic external fun setBackground(colorARGB: Int)
-    @JvmStatic external fun setCanvasSize(w: Int, h: Int)
+    @JvmStatic private external fun jniSetBackground(colorARGB: Int)
+    @JvmStatic private external fun jniSetCanvasSize(w: Int, h: Int)
 
-    @JvmStatic external fun exportPixels(): ByteArray?
-    @JvmStatic external fun loadBrushTexture(data: ByteArray, w: Int, h: Int): Int
-    @JvmStatic external fun unloadBrushTexture(id: Int)
+    @JvmStatic private external fun jniExportPixels(): ByteArray?
+    @JvmStatic private external fun jniLoadBrushTexture(data: ByteArray, w: Int, h: Int): Int
+    @JvmStatic private external fun jniUnloadBrushTexture(id: Int)
 }
