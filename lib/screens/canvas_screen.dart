@@ -157,7 +157,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // ── NATIVE ENGINE (Fase 2) ──────────────────────────────────────
   late NativeCanvasBridge _bridge;
   bool _nativeReady = false;
-  // Mapa de layerId Dart → layerId nativo C++
+  String _nativeInitError = 'unknown';
   final Map<int, int> _nativeLayerIds = {};
 
   @override
@@ -241,8 +241,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
       if (mounted) setState(() => _nativeReady = true);
       debugPrint('[NativeEngine] ✅ Motor C++/OpenGL listo');
     } catch (e) {
+      _nativeInitError = e.toString();
       debugPrint('[NativeEngine] ⚠️ Fallback Dart: \$e');
-      _nativeReady = false; // app continúa con renderer Dart
+      _nativeReady = false;
     }
   }
 
@@ -836,12 +837,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
   void _showRendererInfo() {
     final msg = _nativeReady
         ? 'Motor C++/OpenGL ES activo\n'
-          'Texture ID: ${_bridge.textureId}\n'
-          'Capas nativas: ${_nativeLayerIds.length}\n'
+          'Texture ID: \${_bridge.textureId}\n'
+          'Capas nativas: \${_nativeLayerIds.length}\n'
           'Estado: RENDERIZANDO EN GPU'
         : 'Motor Dart activo (fallback)\n'
-          'El motor C++ no pudo inicializar.\n'
-          'Revisa los logs de Android.';
+          'Error C++: \$_nativeInitError\n'
+          '(La app funciona con renderer Dart)';
 
     showDialog(
       context: context,
