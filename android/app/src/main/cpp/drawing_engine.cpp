@@ -98,11 +98,18 @@ struct DrawingEngine::Impl {
     }
 
     bool makeCurrent() {
-        return eglMakeCurrent(eglDisplay, ownSurface, ownSurface, ownContext) == EGL_TRUE;
+        // El GL thread de Kotlin mantiene el contexto activo.
+        // Solo verificamos que el contexto sigue siendo válido.
+        EGLContext ctx = eglGetCurrentContext();
+        if (ctx == EGL_NO_CONTEXT) {
+            LOGE("makeCurrent: no context active on GL thread");
+            return false;
+        }
+        return true;
     }
 
     void doneCurrent() {
-        eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        // No-op: Kotlin gestiona el ciclo de vida del contexto
     }
 };
 
@@ -119,56 +126,30 @@ bool DrawingEngine::init(EGLDisplay display, EGLContext sharedContext,
                           int width, int height, GLuint targetTextureId,
                           const EngineConfig& cfg) {
     impl_ = std::make_unique<Impl>();
-    impl_->cfg      = cfg;
-    impl_->viewW    = width;
-    impl_->viewH    = height;
+    impl_->cfg        = cfg;
+    impl_->viewW      = width;
+    impl_->viewH      = height;
     impl_->eglDisplay = display;
-    impl_->eglContext = sharedContext;
+    impl_->eglContext = sharedContext; // contexto de Kotlin (ya activo en GL thread)
     impl_->maxUndoSteps = cfg.maxUndoSteps;
 
-    // ── Crear nuestro propio contexto EGL compartido ──────────
-    EGLint ctxAttribs[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
-    impl_->ownContext = eglCreateContext(display, eglGetCurrentConfig(display) == EGL_NO_CONFIG_KHR
-        ? nullptr : eglGetCurrentConfig(display),
-        sharedContext, ctxAttribs);
+    // ── Estrategia: reusar el contexto EGL ya activo de Kotlin ────────
+    // Kotlin ya creó un EGL context y lo hizo current en el GL thread.
+    // En lugar de crear otro contexto compartido (propenso a crashes),
+    // usamos el mismo contexto — todo corre en el mismo GL thread.
+    impl_->ownContext = sharedContext;   // mismo contexto
+    impl_->ownSurface = eglGetCurrentSurface(EGL_DRAW); // superficie ya activa
 
-    if (impl_->ownContext == EGL_NO_CONTEXT) {
-        // fallback: intentar sin config específica
-        EGLint cfgAttribs[] = {
-            EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
-            EGL_SURFACE_TYPE,    EGL_PBUFFER_BIT,
-            EGL_RED_SIZE,   8, EGL_GREEN_SIZE, 8,
-            EGL_BLUE_SIZE,  8, EGL_ALPHA_SIZE, 8,
-            EGL_NONE
-        };
-        EGLConfig cfg_egl; EGLint n;
-        eglChooseConfig(display, cfgAttribs, &cfg_egl, 1, &n);
-        impl_->ownContext = eglCreateContext(display, cfg_egl, sharedContext, ctxAttribs);
-        if (impl_->ownContext == EGL_NO_CONTEXT) {
-            LOGE("Failed to create EGL context: %d", eglGetError());
-            return false;
-        }
-    }
-
-    // ── PBuffer surface (offscreen) ───────────────────────────
-    EGLint pbAttribs[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
-    EGLConfig eglCfg; EGLint n;
-    EGLint cfgAttribs[] = {
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
-        EGL_SURFACE_TYPE,    EGL_PBUFFER_BIT,
-        EGL_NONE
-    };
-    eglChooseConfig(display, cfgAttribs, &eglCfg, 1, &n);
-    impl_->ownSurface = eglCreatePbufferSurface(display, eglCfg, pbAttribs);
-    if (impl_->ownSurface == EGL_NO_SURFACE) {
-        LOGE("Failed to create PBuffer surface");
-    }
-
-    // ── Activar contexto ──────────────────────────────────────
-    if (!impl_->makeCurrent()) {
-        LOGE("Failed to make EGL context current");
+    // Verificar que hay un contexto activo
+    EGLContext currentCtx = eglGetCurrentContext();
+    if (currentCtx == EGL_NO_CONTEXT) {
+        LOGE("No EGL context is current on this thread");
         return false;
     }
+    LOGI("Reusing Kotlin EGL context: %p", (void*)currentCtx);
+
+    // makeCurrent es trivial porque ya estamos en el contexto correcto
+    // Solo verificamos que podemos usar el contexto
 
     // ── Output texture & FBO ──────────────────────────────────
     impl_->outputTexture = targetTextureId;
@@ -460,10 +441,8 @@ void DrawingEngine::destroy() {
         if (impl_->outputFBO) { glDeleteFramebuffers(1, &impl_->outputFBO); }
         impl_->doneCurrent();
     }
-    if (impl_->ownContext != EGL_NO_CONTEXT)
-        eglDestroyContext(impl_->eglDisplay, impl_->ownContext);
-    if (impl_->ownSurface != EGL_NO_SURFACE)
-        eglDestroySurface(impl_->eglDisplay, impl_->ownSurface);
+    // No destruir contexto ni superficie — son propiedad de Kotlin
+    // Solo limpiar recursos GL que creamos nosotros
     impl_.reset();
     ready_ = false;
     LOGI("DrawingEngine destroyed");
