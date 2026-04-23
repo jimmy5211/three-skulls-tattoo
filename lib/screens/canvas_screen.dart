@@ -5,6 +5,7 @@ import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
+import '../services/native_canvas_bridge.dart';
 import '../controllers/canvas_controller.dart';
 import '../widgets/canvas_painter.dart';
 import '../widgets/layer_panel.dart';
@@ -153,10 +154,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
   static const Color _textPrimary = Color(0xFFFFFFFF);
   static const Color _textSecondary = Color(0xFF8E8E93);
 
+  // ── NATIVE ENGINE (Fase 2) ──────────────────────────────────────
+  late NativeCanvasBridge _bridge;
+  bool _nativeReady = false;
+  // Mapa de layerId Dart → layerId nativo C++
+  final Map<int, int> _nativeLayerIds = {};
+
   @override
   void initState() {
     super.initState();
     _controller = CanvasController();
+    _controller.addListener(_syncLayerOpacities);
+    _initNativeEngine();
     _brushes = BrushModel.defaultBrushes();
 
     final p = widget.designParams;
@@ -171,6 +180,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
       final wPx = p['widthPx'] as int? ?? 1080;
       final hPx = p['heightPx'] as int? ?? 1920;
       _controller.updateCanvasSize(Size(wPx.toDouble(), hPx.toDouble()));
+      // Fase 2: redimensionar canvas nativo cuando está listo
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _bridgeCall(() => _bridge.setCanvasSize(wPx, hPx));
+      });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         Future.delayed(const Duration(milliseconds: 100), () {
@@ -194,8 +207,63 @@ class _CanvasScreenState extends State<CanvasScreen> {
       });
     }
   }
+  // ── Sync listener: opacidad de capas ─────────────────────────
+  double _lastSyncedOpacity = -1;
+  void _syncLayerOpacities() {
+    if (!_nativeReady) return;
+    for (final layer in _controller.layers) {
+      final nId = _nativeLayerIds[layer.id];
+      if (nId == null) continue;
+      // Solo enviar si cambió (evitar flood de calls)
+      _bridgeCall(() => _bridge.setLayerOpacity(nId, layer.opacity));
+    }
+  }
+
+  // ── Init motor nativo ──────────────────────────────────────────
+  Future<void> _initNativeEngine() async {
+    try {
+      _bridge = NativeCanvasBridge();
+      final cw = _controller.canvasSize.width.toInt();
+      final ch = _controller.canvasSize.height.toInt();
+
+      await _bridge.init(canvasW: cw, canvasH: ch, maxUndo: 20);
+
+      // Sincronizar capa inicial
+      for (final layer in _controller.layers) {
+        final nativeId = await _bridge.addLayer(name: layer.name);
+        _nativeLayerIds[layer.id] = nativeId;
+      }
+      // Activar capa activa
+      final nativeActive = _nativeLayerIds[_controller.activeLayerId];
+      if (nativeActive != null) await _bridge.setActiveLayer(nativeActive);
+
+      // Fondo
+      await _bridge.setBackground(_controller.backgroundColor);
+
+      if (mounted) setState(() => _nativeReady = true);
+    } catch (e) {
+      debugPrint('[NativeEngine] Init failed: \$e — fallback to Dart renderer');
+      // Si falla, la app sigue funcionando con el renderer Dart
+    }
+  }
+
+  // ── Helpers de sincronización ───────────────────────────────────
+
+  /// Convierte layerId Dart → layerId nativo
+  int _nativeLayer(int dartLayerId) =>
+      _nativeLayerIds[dartLayerId] ?? 0;
+
+  /// Llama al bridge si está listo, sin bloquear
+  void _bridgeCall(Future<void> Function() fn) {
+    if (_nativeReady) fn().catchError((e) {
+      debugPrint('[NativeEngine] \$e');
+    });
+  }
+
   @override
   void dispose() {
+    _controller.removeListener(_syncLayerOpacities);
+    if (_nativeReady) _bridge.destroy();
     _brushScrollController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -321,17 +389,79 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   builder: (context, child) => LayerPanel(
                     layers: _controller.layers,
                     activeLayerId: _controller.activeLayerId,
-                    onLayerSelected: _controller.setActiveLayer,
-                    onLayerVisibilityToggled:
-                        _controller.toggleLayerVisibility,
-                    onLayerDeleted: _controller.removeLayer,
-                    onLayerAdded: _controller.addLayer,
+                    onLayerSelected: (id) {
+                      _controller.setActiveLayer(id);
+                      final nId = _nativeLayerIds[id];
+                      if (nId != null) _bridgeCall(() => _bridge.setActiveLayer(nId));
+                    },
+                    onLayerVisibilityToggled: (id) {
+                      _controller.toggleLayerVisibility(id);
+                      final nId = _nativeLayerIds[id];
+                      if (nId != null) {
+                        final visible = _controller.layers
+                            .firstWhere((l) => l.id == id,
+                                orElse: () => _controller.layers.first)
+                            .isVisible;
+                        _bridgeCall(() => _bridge.setLayerVisible(nId, visible));
+                      }
+                    },
+                    onLayerDeleted: (id) {
+                      final nId = _nativeLayerIds.remove(id);
+                      _controller.removeLayer(id);
+                      if (nId != null) _bridgeCall(() => _bridge.removeLayer(nId));
+                    },
+                    onLayerAdded: () async {
+                      _controller.addLayer();
+                      // Sincronizar nueva capa con motor nativo
+                      final newLayer = _controller.layers.last;
+                      if (_nativeReady) {
+                        final nId = await _bridge.addLayer(name: newLayer.name);
+                        _nativeLayerIds[newLayer.id] = nId;
+                        await _bridge.setActiveLayer(nId);
+                      }
+                    },
                     onClose: () =>
                         setState(() => _showLayers = false),
-                    onLayerDuplicated: _controller.duplicateLayer,
-                    onLayerMergedDown: _controller.mergeDownLayer,
+                    onLayerDuplicated: (id) async {
+                      _controller.duplicateLayer(id);
+                      // Capa duplicada → nueva capa al final
+                      final newLayer = _controller.layers.last;
+                      if (_nativeReady) {
+                        final nId = await _bridge.addLayer(name: newLayer.name);
+                        _nativeLayerIds[newLayer.id] = nId;
+                      }
+                    },
+                    onLayerMergedDown: (id) {
+                      // Merge: combinar capas — en motor nativo se borra la de arriba
+                      final srcNId = _nativeLayerIds[id];
+                      _controller.mergeDownLayer(id);
+                      if (srcNId != null) {
+                        _nativeLayerIds.remove(id);
+                        _bridgeCall(() => _bridge.removeLayer(srcNId));
+                      }
+                    },
                     onLayerLocked: _controller.lockLayer,
-                    onLayersFlatten: _controller.flattenLayers,
+                    onLayersFlatten: () {
+                      // Flatten: conservar solo la capa base
+                      _controller.flattenLayers();
+                      if (_nativeReady) {
+                        // Eliminar todas menos la primera
+                        final toRemove = Map<int, int>.from(_nativeLayerIds);
+                        _nativeLayerIds.clear();
+                        if (_controller.layers.isNotEmpty) {
+                          final base = _controller.layers.first;
+                          // Reutilizar primer nativeId
+                          final firstNId = toRemove.values.isNotEmpty
+                              ? toRemove.values.first : -1;
+                          if (firstNId >= 0) {
+                            _nativeLayerIds[base.id] = firstNId;
+                            for (final nId in toRemove.values.skip(1)) {
+                              _bridgeCall(() => _bridge.removeLayer(nId));
+                            }
+                          }
+                        }
+                      }
+                    },
                   ),
                 ),
               ),
@@ -485,8 +615,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
               const SizedBox(width: 4),
               _btn(Icons.arrow_back_ios,
                   onTap: () => context.go('/home')),
-              _btn(Icons.undo, onTap: _controller.undo),
-              _btn(Icons.redo, onTap: _controller.redo),
+              _btn(Icons.undo, tooltip: 'Deshacer', onTap: () { _controller.undo(); _bridgeCall(() => _bridge.undo()); }),
+              _btn(Icons.redo, tooltip: 'Rehacer', onTap: () { _controller.redo(); _bridgeCall(() => _bridge.redo()); }),
               _btn(
                 _zoomMode ? Icons.edit_outlined : Icons.zoom_in,
                 isActive: _zoomMode,
@@ -2565,7 +2695,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget _canvasSizeChip(String label, Size size) {
     final isActive = _controller.canvasSize == size;
     return GestureDetector(
-      onTap: () => setState(() => _controller.updateCanvasSize(size)),
+      onTap: () {
+        setState(() => _controller.updateCanvasSize(size));
+        _bridgeCall(() => _bridge.setCanvasSize(size.width.toInt(), size.height.toInt()));
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
@@ -2582,7 +2715,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget _bgColorChip(String label, Color color) {
     final isActive = _controller.backgroundColor == color;
     return GestureDetector(
-      onTap: () => setState(() => _controller.setBackgroundColor(color)),
+      onTap: () { setState(() => _controller.setBackgroundColor(color)); _bridgeCall(() => _bridge.setBackground(color)); },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
@@ -3538,6 +3671,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _pendingStrokePoint = null;
             _pendingPoints.clear();
             _controller.cancelStroke();
+            _bridgeCall(() => _bridge.cancelStroke());
             if (!_isScaling) {
               _isDraggingImage = false;
               _isDraggingSelection = false;
@@ -3799,14 +3933,28 @@ class _CanvasScreenState extends State<CanvasScreen> {
               // 🔥 Stroke nace aquí — 3+ puntos con 1 dedo = intención real
               _isDrawing = true;
               _controller.startStroke(_pendingPoints.first, viewScale: _scale);
+              // ── Fase 2: enviar al motor nativo ──
+              final _brush = _controller.activeBrush;
+              _bridgeCall(() => _bridge.beginStroke(
+                layerId:   _nativeLayer(_controller.activeLayerId),
+                x: _pendingPoints.first.dx, y: _pendingPoints.first.dy,
+                size:      _brush.size / _scale,
+                opacity:   _brush.opacity,
+                hardness:  _brush.hardness,
+                spacing:   0.15,
+                isEraser:  _brush.type == StrokeType.eraser,
+                color:     _controller.activeColor,
+              ));
               for (final p in _pendingPoints.skip(1)) {
                 _controller.continueStroke(p);
+                _bridgeCall(() => _bridge.addPoint(p.dx, p.dy));
               }
               _pendingPoints.clear();
               _pendingStrokePoint = null;
             }
           } else {
             _controller.continueStroke(cp);
+            _bridgeCall(() => _bridge.addPoint(cp.dx, cp.dy));
           }
         },
         onScaleEnd: (details) {
@@ -3861,6 +4009,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 _cancelStrokeImmediately = false;
                 _pendingPoints.clear();
                 _controller.cancelStroke();
+                _bridgeCall(() => _bridge.cancelStroke());
               } else {
                 // Delayed commit: esperar microtask para que _activePointers se actualice
                 Future.microtask(() {
@@ -3872,8 +4021,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       _activePointers <= 1;
                   if (isValid) {
                     _controller.endStroke();
+                    _bridgeCall(() => _bridge.endStroke());
                   } else {
                     _controller.cancelStroke();
+                    _bridgeCall(() => _bridge.cancelStroke());
                   }
                 });
               }
@@ -3882,6 +4033,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           _isScaling = false;
         },
         child: Stack(children: [
+          // ── RENDERIZADO: nativo (GPU) o Dart (fallback) ────────────
           AnimatedBuilder(
           animation: _controller,
           builder: (context, child) {
@@ -3892,29 +4044,42 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ..scale(_scale),
               child: Stack(
                 children: [
-                  CustomPaint(
-                    painter: CanvasPainter(
-                      layers: _controller.layers,
-                      currentStroke: _controller.currentStroke,
-                      currentMirrorStroke:
-                          _controller.currentMirrorStroke,
-                      showGrid: _showGrid,
-                      showCenterGuides: _showCenterGuides,
-                      showSymmetryLine:
-                          _controller.symmetryEnabled,
-                      symmetryEnabled:
-                          _controller.symmetryEnabled,
-                      activeLayerId: _controller.activeLayerId,
-                      controller: _controller,
-                      backgroundColor:
-                          _controller.backgroundColor,
+
+                  // ── Fase 2: Motor C++/OpenGL ES via Texture widget ──
+                  if (_nativeReady && _bridge.textureId != null)
+                    SizedBox(
+                      width:  _controller.canvasSize.width,
+                      height: _controller.canvasSize.height,
+                      child: RepaintBoundary(
+                        child: Texture(textureId: _bridge.textureId!),
+                      ),
+                    )
+                  else
+                    // ── Fallback: renderer Dart mientras carga el motor ─
+                    CustomPaint(
+                      painter: CanvasPainter(
+                        layers: _controller.layers,
+                        currentStroke: _controller.currentStroke,
+                        currentMirrorStroke:
+                            _controller.currentMirrorStroke,
+                        showGrid: _showGrid,
+                        showCenterGuides: _showCenterGuides,
+                        showSymmetryLine:
+                            _controller.symmetryEnabled,
+                        symmetryEnabled:
+                            _controller.symmetryEnabled,
+                        activeLayerId: _controller.activeLayerId,
+                        controller: _controller,
+                        backgroundColor:
+                            _controller.backgroundColor,
+                      ),
+                      size: Size(
+                        _controller.canvasSize.width,
+                        _controller.canvasSize.height,
+                      ),
                     ),
-                    size: Size(
-                      _controller.canvasSize.width,
-                      _controller.canvasSize.height,
-                    ),
-                  ),
-                  // Overlay de selección
+
+                  // ── Overlay de selección (CPU — sin cambios) ──────
                   if (_selectionMode != SelectionMode.ninguno)
                     CustomPaint(
                       painter: _SelectionOverlayPainter(
@@ -3929,8 +4094,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                             _controller.selectedStrokeIndices,
                         finalizedMode: _finalizedMode,
                         selectionAngle: _selectionAngle,
-                        // OBB: bounds fijos capturados al inicio de la rotación
-                        // evitan que el bbox se expanda durante el giro
                         obbBounds: _activeResizeHandle == 8
                             ? _resizeStartBounds
                             : null,
@@ -4570,26 +4733,50 @@ class _CanvasScreenState extends State<CanvasScreen> {
         );
       }
 
-      // Dibujar todas las capas usando el painter
-      final painter = CanvasPainter(
-        layers: _controller.layers,
-        controller: _controller,
-        backgroundColor: transparent && format == 'png'
-            ? Colors.transparent
-            : (_controller.backgroundColor == Colors.transparent
-                ? Colors.white
-                : _controller.backgroundColor),
-        currentStroke: null,
-        currentMirrorStroke: null,
-        activeLayerId: _controller.activeLayerId,
-        showGrid: false,
-        symmetryEnabled: false,
-        showSymmetryLine: false,
-      );
-      painter.paint(exportCanvas, Size(w.toDouble(), h.toDouble()));
+      ui.Image image;
 
-      final picture = recorder.endRecording();
-      final image = await picture.toImage(w, h);
+      // ── Fase 2: exportar desde motor nativo cuando está disponible ──
+      if (_nativeReady) {
+        final pixels = await _bridge.exportPixels();
+        if (pixels != null && pixels.isNotEmpty) {
+          // Recibimos RGBA raw del motor C++
+          final codec = await ui.ImmutableBuffer.fromUint8List(pixels);
+          final descriptor = await ui.ImageDescriptor.raw(
+            codec,
+            width: w, height: h,
+            pixelFormat: ui.PixelFormat.rgba8888,
+          );
+          final frameCodec = await descriptor.instantiateCodec();
+          final frame = await frameCodec.getNextFrame();
+          image = frame.image;
+        } else {
+          // Fallback si exportPixels falla
+          final painter = CanvasPainter(
+            layers: _controller.layers, controller: _controller,
+            backgroundColor: transparent && format == 'png' ? Colors.transparent
+                : (_controller.backgroundColor == Colors.transparent ? Colors.white : _controller.backgroundColor),
+            currentStroke: null, currentMirrorStroke: null,
+            activeLayerId: _controller.activeLayerId,
+            showGrid: false, symmetryEnabled: false, showSymmetryLine: false,
+          );
+          painter.paint(exportCanvas, Size(w.toDouble(), h.toDouble()));
+          final picture = recorder.endRecording();
+          image = await picture.toImage(w, h);
+        }
+      } else {
+        // ── Fallback: renderer Dart ──────────────────────────────────
+        final painter = CanvasPainter(
+          layers: _controller.layers, controller: _controller,
+          backgroundColor: transparent && format == 'png' ? Colors.transparent
+              : (_controller.backgroundColor == Colors.transparent ? Colors.white : _controller.backgroundColor),
+          currentStroke: null, currentMirrorStroke: null,
+          activeLayerId: _controller.activeLayerId,
+          showGrid: false, symmetryEnabled: false, showSymmetryLine: false,
+        );
+        painter.paint(exportCanvas, Size(w.toDouble(), h.toDouble()));
+        final picture = recorder.endRecording();
+        image = await picture.toImage(w, h);
+      }
       final byteData = await image.toByteData(
         format: format == 'png'
             ? ui.ImageByteFormat.png
