@@ -98,6 +98,11 @@ class MainActivity : FlutterActivity() {
 
                 "exportPixels"   -> result.success(DrawingEngineJNI.exportPixels())
 
+                "getLastError"   -> result.success(
+                    if (DrawingEngineJNI.initialized) DrawingEngineJNI.getLastError()
+                    else DrawingEngineJNI.getLastError()
+                )
+
                 "loadBrushTexture" -> {
                     val data = call.argument<ByteArray>("data")!!
                     val w    = call.argument<Int>("w")!!

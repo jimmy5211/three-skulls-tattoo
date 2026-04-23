@@ -189,6 +189,9 @@ object DrawingEngineJNI {
         if (initialized) jniLoadBrushTexture(data, w, h) else -1
     fun unloadBrushTexture(id: Int) = glHandler.post { if (initialized) jniUnloadBrushTexture(id) }
 
+    /** Retorna el último error del motor C++ para diagnóstico */
+    fun getLastError(): String = try { jniGetLastError() } catch (t: Throwable) { "jni_error: $t" }
+
     // ═══════════════════════════════════════════════════════════
     // EGL helpers
     // ═══════════════════════════════════════════════════════════
@@ -278,4 +281,5 @@ object DrawingEngineJNI {
     @JvmStatic private external fun jniExportPixels(): ByteArray?
     @JvmStatic private external fun jniLoadBrushTexture(data: ByteArray, w: Int, h: Int): Int
     @JvmStatic private external fun jniUnloadBrushTexture(id: Int)
+    @JvmStatic private external fun jniGetLastError(): String
 }
