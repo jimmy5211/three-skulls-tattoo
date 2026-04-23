@@ -226,12 +226,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       final cw = _controller.canvasSize.width.toInt();
       final ch = _controller.canvasSize.height.toInt();
 
-      // Timeout: 5s máximo — si el motor C++ falla, usar fallback Dart
-      await Future.any([
-        _bridge.init(canvasW: cw, canvasH: ch, maxUndo: 20),
-        Future.delayed(const Duration(seconds: 5))
-            .then((_) => throw TimeoutException('Native engine timeout')),
-      ]);
+      // onReady siempre se llama (con -1 si falla) — sin timeout necesario
+      await _bridge.init(canvasW: cw, canvasH: ch, maxUndo: 20);
 
       // Sincronizar capa inicial
       for (final layer in _controller.layers) {
