@@ -47,8 +47,13 @@ object DrawingEngineJNI {
         maxUndoSteps: Int = 20,
         onReady: (textureId: Long) -> Unit
     ) {
+        if (!nativeLibLoaded) {
+            Log.e(TAG, "Native library not loaded, skipping setup")
+            return
+        }
         glHandler.post {
-            if (!initEGL()) { Log.e(TAG, "EGL init failed"); return@post }
+            try {
+                if (!initEGL()) { Log.e(TAG, "EGL init failed"); return@post }
 
             // Registrar texture en Flutter
             val entry = textureRegistry.createSurfaceTexture()
@@ -66,20 +71,36 @@ object DrawingEngineJNI {
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
 
-            // Obtener handles EGL para pasar al C++
-            val dispHandle = EGL14.eglGetCurrentDisplay().nativeHandle
-            val ctxHandle  = EGL14.eglGetCurrentContext().nativeHandle
+            // Pasar el display y contexto actual al motor C++
+            // El motor C++ reutilizará el mismo contexto (ya activo en este thread)
+            val display = EGL14.eglGetCurrentDisplay()
+            val context = EGL14.eglGetCurrentContext()
+            
+            if (display == EGL14.EGL_NO_DISPLAY || context == EGL14.EGL_NO_CONTEXT) {
+                Log.e(TAG, "No active EGL context on GL thread — cannot init native engine")
+                initialized = false
+                return@post
+            }
 
-            val ok = jniInit(
-                dispHandle, ctxHandle,
-                canvasW, canvasH, glTextureId,
-                canvasW, canvasH, maxUndoSteps
-            )
+            val ok = try {
+                jniInit(
+                    display.nativeHandle, context.nativeHandle,
+                    canvasW, canvasH, glTextureId,
+                    canvasW, canvasH, maxUndoSteps
+                )
+            } catch (t: Throwable) {
+                Log.e(TAG, "jniInit threw: $t")
+                false
+            }
             initialized = ok
             Log.i(TAG, "DrawingEngine init: $ok  textureId=$textureId")
 
             if (ok) {
                 Handler(android.os.Looper.getMainLooper()).post { onReady(textureId) }
+            }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Native engine setup crashed: $t")
+                initialized = false
             }
         }
     }
@@ -203,7 +224,14 @@ object DrawingEngineJNI {
     // Implementadas en jni_bridge.cpp como JNINAME(jniXxx)
     // ═══════════════════════════════════════════════════════════════
 
-    init { System.loadLibrary("three_skulls_engine") }
+    private val nativeLibLoaded: Boolean = try {
+        System.loadLibrary("three_skulls_engine")
+        Log.i("TSK_KT", "Native library loaded OK")
+        true
+    } catch (t: Throwable) {
+        Log.e("TSK_KT", "Failed to load native library: $t")
+        false
+    }
 
     @JvmStatic private external fun jniInit(eglDisplay: Long, sharedCtx: Long, w: Int, h: Int, texId: Int, canvasW: Int, canvasH: Int, maxUndo: Int): Boolean
     @JvmStatic private external fun jniDestroy()
