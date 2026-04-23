@@ -240,10 +240,8 @@ class CanvasPainter extends CustomPainter {
     final rect = Rect.fromLTWH(
         0, 0, controller.canvasSize.width, controller.canvasSize.height);
 
-    final layerImages = controller.canvasImages
-        .where((img) => img.layerId == layer.id)
-        .toList()
-      ..sort((a, b) => a.insertionIndex.compareTo(b.insertionIndex));
+    // FIX: usar cache de imágenes ordenadas (no sort() por frame)
+    final layerImages = controller.getSortedImagesForLayer(layer.id);
 
     final isActiveLayer = layer.id == activeLayerId;
     final hasCurrentStroke = isActiveLayer && currentStroke != null;
@@ -270,22 +268,11 @@ class CanvasPainter extends CustomPainter {
     }
 
     final strokes = layer.strokes;
-    int imgIdx = 0;
-    for (int i = 0; i < strokes.length; i++) {
-      while (imgIdx < layerImages.length &&
-          layerImages[imgIdx].insertionIndex <= i) {
-        _drawCanvasImage(canvas, layerImages[imgIdx]);
-        imgIdx++;
-      }
-      _drawStroke(canvas, strokes[i]);
-    }
-    while (imgIdx < layerImages.length) {
-      _drawCanvasImage(canvas, layerImages[imgIdx]);
-      imgIdx++;
-    }
 
-    // ── GUARDAR EN CACHÉ si no hay stroke activo ──
-    if (!hasCurrentStroke && layer.strokes.isNotEmpty) {
+    // FIX CRÍTICO: render UNA sola vez
+    // Si no hay stroke activo → grabar en Picture Y usar esa Picture para mostrar
+    // Antes: dibujaba 2 veces (una a canvas, una a recorder) = doble trabajo
+    if (!hasCurrentStroke && strokes.isNotEmpty) {
       final recorder = ui.PictureRecorder();
       final cacheCanvas = Canvas(recorder, rect);
       int ci = 0;
@@ -301,10 +288,26 @@ class CanvasPainter extends CustomPainter {
         _drawCanvasImage(cacheCanvas, layerImages[ci]);
         ci++;
       }
-      controller.setLayerCache(layer.id, recorder.endRecording());
-    }
-
-    if (hasCurrentStroke) {
+      final picture = recorder.endRecording();
+      controller.setLayerCache(layer.id, picture);
+      canvas.drawPicture(picture); // usar la misma picture para mostrar
+    } else if (!hasCurrentStroke) {
+      // capa vacía sin strokes — no hay nada que dibujar
+    } else {
+      // Stroke activo — dibujar todo + stroke actual
+      int imgIdx = 0;
+      for (int i = 0; i < strokes.length; i++) {
+        while (imgIdx < layerImages.length &&
+            layerImages[imgIdx].insertionIndex <= i) {
+          _drawCanvasImage(canvas, layerImages[imgIdx]);
+          imgIdx++;
+        }
+        _drawStroke(canvas, strokes[i]);
+      }
+      while (imgIdx < layerImages.length) {
+        _drawCanvasImage(canvas, layerImages[imgIdx]);
+        imgIdx++;
+      }
       _drawStroke(canvas, currentStroke!);
       if (currentMirrorStroke != null) {
         _drawStroke(canvas, currentMirrorStroke!);
@@ -520,17 +523,14 @@ class CanvasPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(CanvasPainter oldDelegate) {
+    // FIX: O(1) checks — sin iterar strokes
     if (oldDelegate.currentStroke != currentStroke) return true;
     if (oldDelegate.currentMirrorStroke != currentMirrorStroke) return true;
+    // version counter cubre: endStroke, undo, redo, layer ops
+    if (oldDelegate.controller.paintVersion != controller.paintVersion) return true;
     if (oldDelegate.showGrid != showGrid) return true;
     if (oldDelegate.showCenterGuides != showCenterGuides) return true;
-    if (oldDelegate.symmetryEnabled != symmetryEnabled) return true;
-    if (oldDelegate.showSymmetryLine != showSymmetryLine) return true;
     if (oldDelegate.activeLayerId != activeLayerId) return true;
-    if (oldDelegate.layers.length != layers.length) return true;
-    for (int i = 0; i < layers.length; i++) {
-      if (oldDelegate.layers[i].strokes.length != layers[i].strokes.length) return true;
-    }
     if (oldDelegate.backgroundColor != backgroundColor) return true;
     if (controller.imagesChanged) {
       controller.resetImagesChanged();
