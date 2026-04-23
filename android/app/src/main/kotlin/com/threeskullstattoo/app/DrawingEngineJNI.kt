@@ -65,7 +65,8 @@ object DrawingEngineJNI {
             GLES30.glGenTextures(1, ids, 0)
             glTextureId = ids[0]
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, glTextureId)
-            GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA,
+            // GL_RGBA8 (sized internal format) es necesario para FBO en OpenGL ES 3.0
+            GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8,
                 canvasW, canvasH, 0, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
@@ -95,12 +96,15 @@ object DrawingEngineJNI {
             initialized = ok
             Log.i(TAG, "DrawingEngine init: $ok  textureId=$textureId")
 
-            if (ok) {
-                Handler(android.os.Looper.getMainLooper()).post { onReady(textureId) }
-            }
+            // SIEMPRE notificar — si ok=false el Dart recibe -1 y usa fallback
+            val idToReturn = if (ok) textureId else -1L
+            Handler(android.os.Looper.getMainLooper()).post { onReady(idToReturn) }
+
             } catch (t: Throwable) {
                 Log.e(TAG, "Native engine setup crashed: $t")
                 initialized = false
+                // Notificar fallo para que Dart no quede en timeout
+                Handler(android.os.Looper.getMainLooper()).post { onReady(-1L) }
             }
         }
     }
