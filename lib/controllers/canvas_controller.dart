@@ -446,17 +446,16 @@ class CanvasController extends ChangeNotifier {
 
   void setBrushSize(double size) {
     activeBrush = activeBrush.copyWith(size: size);
-    notifyListeners();
+    // No notifyListeners — solo afecta el próximo stroke, no el render actual
+    // Evita flood de repaints del canvas al mover el slider
   }
 
   void setBrushOpacity(double opacity) {
     activeBrush = activeBrush.copyWith(opacity: opacity);
-    notifyListeners();
   }
 
   void setBrushHardness(double hardness) {
     activeBrush = activeBrush.copyWith(hardness: hardness.clamp(0.0, 1.0));
-    notifyListeners();
   }
 
   void toggleSymmetry() {
@@ -578,11 +577,10 @@ class CanvasController extends ChangeNotifier {
 
   /// Acopia sello: reemplaza su imagen con la versión fusionada
   /// y elimina los strokes del canvas que quedaron integrados.
-  /// Reemplaza la imagen con versión con borrados horneados (eraseStrokes vacío).
-  /// Libera memoria acumulada de trazos de borrador.
+  /// Reemplaza la imagen con versión horneada y libera memoria.
   void replaceCanvasImageBaked(String id, ui.Image bakedImage) {
     final idx = canvasImages.indexWhere((img) => img.id == id);
-    if (idx == -1) return;
+    if (idx == -1) { bakedImage.dispose(); return; }
     final old = canvasImages[idx];
     canvasImages[idx] = CanvasImageModel(
       id: old.id,
@@ -590,14 +588,24 @@ class CanvasController extends ChangeNotifier {
       position: old.position,
       size: old.size,
       layerId: old.layerId,
-      opacity: 1.0, // opacidad ya está horneada en la imagen
+      opacity: 1.0,
       rotation: old.rotation,
       flipX: old.flipX,
       flipY: old.flipY,
       insertionIndex: old.insertionIndex,
-      eraseStrokes: [], // limpiar → memoria liberada
+      eraseStrokes: [],
     );
     _invalidateImageLayer(old.layerId);
+    notifyListeners();
+  }
+
+  /// Fuerza limpieza de eraseStrokes sin bake (fallback cuando falla toImageSync)
+  void clearEraseStrokesForced(String id) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    canvasImages[idx].eraseStrokes.clear();
+    canvasImages[idx].currentEraseStroke = null;
+    _invalidateImageLayer(canvasImages[idx].layerId);
     notifyListeners();
   }
 
