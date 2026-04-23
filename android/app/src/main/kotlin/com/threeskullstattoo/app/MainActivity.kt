@@ -37,15 +37,11 @@ class MainActivity : FlutterActivity() {
                         canvasW = canvasW,
                         canvasH = canvasH,
                         maxUndoSteps = maxUndo,
-                        onReady = { textureId ->
-                            // Frame callback → notificar Flutter
-                            DrawingEngineJNI.onFrameAvailable = {
-                                runOnUiThread {
-                                    // El Texture widget se actualiza automáticamente
-                                    // cuando el SurfaceTexture hace updateTexImage()
-                                }
-                            }
-                            result.success(textureId)
+                        onReady = { id ->
+                            // id >= 0 = motor C++ activo, id = -1 = fallback Dart
+                            // El Texture widget se actualiza automáticamente via
+                            // eglSwapBuffers → SurfaceTexture → Flutter Texture
+                            result.success(id)
                         }
                     )
                 }
