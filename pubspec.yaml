@@ -76,22 +76,9 @@ flutter:
   assets:
     - assets/images/
     - assets/fonts/
-    # 🖌️ BRUSH TIPS (PNG por categoría)
-    - assets/brushes/basicos/
-    - assets/brushes/caligrafia/
-    - assets/brushes/aerografo/
-    - assets/brushes/texturas/
-    - assets/brushes/abstractos/
-    - assets/brushes/carboncillo/
-    - assets/brushes/elementos/
+    # 🖌️ BRUSH TIPS — solo incluir carpetas que tienen archivos subidos al repo
     - assets/brushes/aerosoles/
-    - assets/brushes/retoque/
-    - assets/brushes/luminancia/
-    - assets/brushes/industriales/
-    - assets/brushes/organicos/
-    - assets/brushes/agua/
-    - assets/brushes/importado/
-    # 🎭 SELLOS (stamps por categoría)
+    # 🎭 SELLOS — solo carpetas con archivos subidos
     - assets/stamps/abstractos/
     - assets/stamps/elementos/
     - assets/stamps/industriales/
