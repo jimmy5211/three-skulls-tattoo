@@ -36,8 +36,9 @@ class NativeCanvasBridge {
       'canvasH': canvasH,
       'maxUndo': maxUndo,
     });
+    // id == -1 significa que el motor C++ falló pero reportó correctamente
     if (id == null || id < 0) {
-      throw Exception('NativeCanvasBridge: init failed');
+      throw Exception('NativeCanvasBridge: motor C++ no disponible (id=$id)');
     }
     textureId = id;
     _ready = true;
