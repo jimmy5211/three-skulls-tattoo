@@ -208,6 +208,47 @@ class CanvasController extends ChangeNotifier {
   }
 
   // FIX: cancelar stroke sin guardarlo en historial
+
+  /// Acoplar sello: reemplaza el sello con una imagen fusionada
+  /// y elimina los strokes del canvas que estaban encima.
+  void flattenStamp(String stampId, ui.Image flatImage,
+      List<int> overlayStrokeIndices, int layerId) {
+    final idx = canvasImages.indexWhere((img) => img.id == stampId);
+    if (idx == -1) { flatImage.dispose(); return; }
+    final old = canvasImages[idx];
+
+    // Reemplazar imagen del sello con la imagen fusionada
+    canvasImages[idx] = CanvasImageModel(
+      id: old.id,
+      image: flatImage,
+      position: old.position,
+      size: old.size,
+      layerId: old.layerId,
+      opacity: 1.0,
+      rotation: old.rotation,
+      flipX: old.flipX,
+      flipY: old.flipY,
+      insertionIndex: old.insertionIndex,
+      eraseStrokes: [],
+    );
+
+    // Eliminar strokes acoplados de la capa
+    final lIdx = layers.indexWhere((l) => l.id == layerId);
+    if (lIdx != -1 && overlayStrokeIndices.isNotEmpty) {
+      final strokes = List<StrokeModel>.from(layers[lIdx].strokes);
+      // Eliminar de mayor a menor para no desplazar índices
+      final sorted = overlayStrokeIndices.toList()..sort((a, b) => b.compareTo(a));
+      for (final i in sorted) {
+        if (i < strokes.length) strokes.removeAt(i);
+      }
+      layers[lIdx] = layers[lIdx].copyWith(strokes: strokes);
+      invalidateLayerCache(layerId);
+    }
+
+    _markImagesDirty();
+    notifyListeners();
+  }
+
   void cancelStroke() {
     if (currentStroke == null) return;
     // Revertir el _saveToHistory() que se hizo en startStroke
@@ -743,12 +784,13 @@ class CanvasController extends ChangeNotifier {
 
   // ─── BORRADOR EN IMAGEN ──────────────────────────────────
 
-  void startEraseOnImage(String id, Offset point, double radius) {
+  void startEraseOnImage(String id, Offset point, double radius, {double hardness = 1.0}) {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].currentEraseStroke = EraseStroke(
       points: [point],
       radius: radius,
+      hardness: hardness,
     );
     notifyListeners();
   }
