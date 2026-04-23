@@ -5,7 +5,6 @@ import '../models/stroke_model.dart';
 import '../models/layer_model.dart';
 import '../models/brush_model.dart';
 import '../models/canvas_image_model.dart';
-import '../services/device_profile.dart';
 class CanvasController extends ChangeNotifier {
   List<LayerModel> layers = [];
   int activeLayerId = 0;
@@ -15,9 +14,6 @@ class CanvasController extends ChangeNotifier {
   StrokeModel? currentMirrorStroke;
   List<List<LayerModel>> _undoHistory = [];
   List<List<LayerModel>> _redoHistory = [];
-  // Historial paralelo para canvasImages (sellos e imágenes)
-  List<List<CanvasImageModel>> _imageUndoHistory = [];
-  List<List<CanvasImageModel>> _imageRedoHistory = [];
   bool symmetryEnabled = false;
   SymmetryType symmetryType = SymmetryType.horizontal;
   Color backgroundColor = Colors.transparent;
@@ -25,6 +21,26 @@ class CanvasController extends ChangeNotifier {
   // ─── IMÁGENES EN CANVAS ──────────────────────────────────
   List<CanvasImageModel> canvasImages = [];
   CanvasImageModel? _selectedImage;
+
+  // FIX: cache de imágenes ordenadas por capa para evitar sort() en cada frame
+  final Map<int, List<CanvasImageModel>> _sortedImagesCache = {};
+  bool _imagesSortDirty = true;
+
+  List<CanvasImageModel> getSortedImagesForLayer(int layerId) {
+    if (_imagesSortDirty || !_sortedImagesCache.containsKey(layerId)) {
+      _sortedImagesCache[layerId] = canvasImages
+          .where((img) => img.layerId == layerId)
+          .toList()
+          ..sort((a, b) => a.insertionIndex.compareTo(b.insertionIndex));
+      _imagesSortDirty = false;
+    }
+    return _sortedImagesCache[layerId]!;
+  }
+
+  void _markImagesDirty() {
+    _imagesSortDirty = true;
+    _imagesChanged = true;
+  }
 
   // FIX: Separar tamaño del lienzo real del tamaño de pantalla
   // screenSize = tamaño de la pantalla (se actualiza automáticamente)
@@ -39,6 +55,15 @@ class CanvasController extends ChangeNotifier {
   bool _imagesChanged = false;
   bool get imagesChanged => _imagesChanged;
   void resetImagesChanged() => _imagesChanged = false;
+
+  // FIX: version counter para shouldRepaint O(1) — evita iterar strokes
+  int _paintVersion = 0;
+  int get paintVersion => _paintVersion;
+  void _bumpVersion() => _paintVersion++;
+
+  // FIX: brush changes no necesitan notifyListeners (el canvas no cambia)
+  // Solo el preview del pincel necesita saber — usa ValueNotifier en screen
+  bool _brushChangedSilent = false;
 
   CanvasController() {
     _initLayers();
@@ -65,23 +90,11 @@ class CanvasController extends ChangeNotifier {
     _cacheInvalidated = true;
   }
 
-  /// FIX: marca imágenes cambiadas E invalida caché de la capa afectada
-  /// Sin esto, el caché antiguo oculta los sellos nuevos o sus cambios
-  void _invalidateImageLayer(int layerId) {
-    _imagesChanged = true;
-    invalidateLayerCache(layerId);
-  }
-
   bool get cacheInvalidated => _cacheInvalidated;
   void resetCacheFlag() => _cacheInvalidated = false;
 
   ui.Picture? getLayerCache(int layerId) => _layerCache[layerId];
   void setLayerCache(int layerId, ui.Picture picture) {
-    // FIX: limitar caché a 4 capas para ahorrar RAM
-    if (_layerCache.length >= DeviceProfile.instance.maxCachedLayers && !_layerCache.containsKey(layerId)) {
-      final oldest = _layerCache.keys.first;
-      _layerCache.remove(oldest);
-    }
     _layerCache[layerId] = picture;
   }
 
@@ -108,7 +121,8 @@ class CanvasController extends ChangeNotifier {
   void startStroke(Offset point, {double viewScale = 1.0}) {
     if (activeLayer.isLocked) return;
     _saveToHistory();
-    // viewScale: divide tamaño para que el trazo sea independiente del zoom
+    _bumpVersion();
+    // FIX: tamaño del pincel independiente del zoom
     final strokeW = activeBrush.size / viewScale;
 
     currentStroke = StrokeModel(
@@ -151,21 +165,25 @@ class CanvasController extends ChangeNotifier {
 
     if (currentStroke!.points.isNotEmpty) {
       final lastPoint = currentStroke!.points.last;
-      final minDist = activeBrush.size * DeviceProfile.instance.minDistMultiplier;
+      final minDist = activeBrush.size * 0.15;
       if ((point - lastPoint).distance < minDist) return;
     }
 
-    final newPoints =
-        List<Offset>.from(currentStroke!.points)..add(point);
+    // FIX CRÍTICO: mutar la lista en lugar de copiarla en cada punto
+    // Antes: List<Offset>.from() = O(n) por cada punto → GC catastrophico
+    // Ahora: .add() directo = O(1) por cada punto
+    currentStroke!.points.add(point);
 
+    // Dummy assignment to trigger mirror update below - no new StrokeModel
+    final _cs = currentStroke!;
     currentStroke = StrokeModel(
-      points: newPoints,
-      color: currentStroke!.color,
-      strokeWidth: currentStroke!.strokeWidth,
-      opacity: currentStroke!.opacity,
-      type: currentStroke!.type,
+      points: _cs.points, // misma lista, sin copiar
+      color: _cs.color,
+      strokeWidth: _cs.strokeWidth,
+      opacity: _cs.opacity,
+      type: _cs.type,
       layerId: activeLayerId,
-      hardness: currentStroke!.hardness,
+      hardness: _cs.hardness,
       brushId: currentStroke!.brushId,
     );
 
@@ -191,16 +209,16 @@ class CanvasController extends ChangeNotifier {
 
   void endStroke() {
     if (currentStroke == null) return;
+    _bumpVersion();
 
     final layerIndex =
         layers.indexWhere((l) => l.id == activeLayerId);
 
     if (layerIndex != -1) {
       final tolerance = activeBrush.size * 0.1;
-      final p = DeviceProfile.instance;
       final simplifiedPoints = _simplifyPoints(
         currentStroke!.points,
-        tolerance.clamp(p.simplifyMin, p.simplifyMax),
+        tolerance.clamp(0.5, 3.0),
       );
 
       final simplifiedStroke = StrokeModel(
@@ -257,78 +275,43 @@ class CanvasController extends ChangeNotifier {
     }
   }
 
-  // Snapshot de canvasImages para historial (comparte referencia ui.Image)
-  List<CanvasImageModel> _snapshotImages() => canvasImages.map((img) =>
-    CanvasImageModel(
-      id: img.id,
-      image: img.image,
-      position: img.position,
-      size: img.size,
-      layerId: img.layerId,
-      opacity: img.opacity,
-      rotation: img.rotation,
-      flipX: img.flipX,
-      flipY: img.flipY,
-      insertionIndex: img.insertionIndex,
-      eraseStrokes: List<EraseStroke>.from(img.eraseStrokes),
-    )).toList();
-
-  /// Cancela el stroke actual SIN guardarlo (usado al hacer zoom con 2 dedos).
-  /// También revierte el _saveToHistory() que se hizo en startStroke.
-  void cancelStroke() {
-    if (currentStroke == null) return;
-    currentStroke = null;
-    currentMirrorStroke = null;
-    // Revertir el _saveToHistory() que se llamó en startStroke
-    if (_undoHistory.isNotEmpty) {
-      _undoHistory.removeLast();
-      if (_imageUndoHistory.isNotEmpty) _imageUndoHistory.removeLast();
-    }
-    notifyListeners();
-  }
-
   void _saveToHistory() {
     _undoHistory.add(
-      layers.map((l) => l.copyWith(
-        strokes: List<StrokeModel>.from(l.strokes),
-      )).toList(),
+      layers
+          .map((l) => l.copyWith(
+                strokes: List<StrokeModel>.from(l.strokes),
+              ))
+          .toList(),
     );
-    _imageUndoHistory.add(_snapshotImages());
     _redoHistory.clear();
-    _imageRedoHistory.clear();
-    if (_undoHistory.length > DeviceProfile.instance.maxUndoSteps) {
+    if (_undoHistory.length > 30) {
       _undoHistory.removeAt(0);
-      if (_imageUndoHistory.isNotEmpty) _imageUndoHistory.removeAt(0);
     }
   }
 
   void undo() {
     if (_undoHistory.isEmpty) return;
-    _redoHistory.add(layers.map((l) => l.copyWith(
-      strokes: List<StrokeModel>.from(l.strokes),
-    )).toList());
-    _imageRedoHistory.add(_snapshotImages());
+    _bumpVersion();
+    _redoHistory.add(layers
+        .map((l) => l.copyWith(
+              strokes: List<StrokeModel>.from(l.strokes),
+            ))
+        .toList());
     layers = _undoHistory.removeLast();
-    if (_imageUndoHistory.isNotEmpty) {
-      canvasImages = _imageUndoHistory.removeLast();
-    }
     invalidateAllCache();
-    _imagesChanged = true;
     notifyListeners();
   }
 
   void redo() {
     if (_redoHistory.isEmpty) return;
-    _undoHistory.add(layers.map((l) => l.copyWith(
-      strokes: List<StrokeModel>.from(l.strokes),
-    )).toList());
-    _imageUndoHistory.add(_snapshotImages());
+    _bumpVersion();
+    _undoHistory.add(layers
+        .map((l) => l.copyWith(
+              strokes: List<StrokeModel>.from(l.strokes),
+            ))
+        .toList());
     layers = _redoHistory.removeLast();
-    if (_imageRedoHistory.isNotEmpty) {
-      canvasImages = _imageRedoHistory.removeLast();
-    }
     invalidateAllCache();
-    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -400,6 +383,39 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Reemplaza imagen con versión horneada (eraseStrokes vaciados).
+  void replaceCanvasImageBaked(String id, ui.Image bakedImage) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) { bakedImage.dispose(); return; }
+    final old = canvasImages[idx];
+    canvasImages[idx] = CanvasImageModel(
+      id: old.id,
+      image: bakedImage,
+      position: old.position,
+      size: old.size,
+      layerId: old.layerId,
+      opacity: 1.0,
+      rotation: old.rotation,
+      flipX: old.flipX,
+      flipY: old.flipY,
+      insertionIndex: old.insertionIndex,
+      eraseStrokes: [],
+    );
+    _markImagesDirty();
+    _invalidateImageLayer(old.layerId);
+    notifyListeners();
+  }
+
+  void clearEraseStrokesForced(String id) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    canvasImages[idx].eraseStrokes.clear();
+    canvasImages[idx].currentEraseStroke = null;
+    _markImagesDirty();
+    _invalidateImageLayer(canvasImages[idx].layerId);
+    notifyListeners();
+  }
+
   void flattenLayers() {
     if (layers.length <= 1) return;
     _saveToHistory();
@@ -446,16 +462,20 @@ class CanvasController extends ChangeNotifier {
 
   void setBrushSize(double size) {
     activeBrush = activeBrush.copyWith(size: size);
-    // No notifyListeners — solo afecta el próximo stroke, no el render actual
-    // Evita flood de repaints del canvas al mover el slider
+    // FIX: no notifyListeners — el canvas no cambia, solo el preview
+    _brushChangedSilent = true;
   }
 
   void setBrushOpacity(double opacity) {
     activeBrush = activeBrush.copyWith(opacity: opacity);
+    // FIX: no notifyListeners — el canvas no cambia
+    _brushChangedSilent = true;
   }
 
   void setBrushHardness(double hardness) {
     activeBrush = activeBrush.copyWith(hardness: hardness.clamp(0.0, 1.0));
+    // FIX: no notifyListeners
+    _brushChangedSilent = true;
   }
 
   void toggleSymmetry() {
@@ -549,17 +569,13 @@ class CanvasController extends ChangeNotifier {
       layerId: activeLayerId,
       insertionIndex: insertIdx,
     ));
-    _invalidateImageLayer(activeLayerId);
+    _markImagesDirty();
     notifyListeners();
   }
 
   void placeStampAtPosition(ui.Image image, Offset canvasPoint, double stampSize) {
-    _saveToHistory(); // FIX: sello colocado es deshacer-able
     final half = stampSize / 2;
-    // FIX: clamp para que el sello no salga del canvas
-    final px = (canvasPoint.dx - half).clamp(0.0, (canvasSize.width - stampSize).clamp(0.0, canvasSize.width));
-    final py = (canvasPoint.dy - half).clamp(0.0, (canvasSize.height - stampSize).clamp(0.0, canvasSize.height));
-    final pos = Offset(px, py);
+    final pos = Offset(canvasPoint.dx - half, canvasPoint.dy - half);
     final activeLayer = layers.firstWhere(
       (l) => l.id == activeLayerId, orElse: () => layers.first);
     final insertIdx = activeLayer.strokes.length;
@@ -571,83 +587,12 @@ class CanvasController extends ChangeNotifier {
       layerId: activeLayerId,
       insertionIndex: insertIdx,
     ));
-    _invalidateImageLayer(activeLayerId);
-    notifyListeners();
-  }
-
-  /// Acopia sello: reemplaza su imagen con la versión fusionada
-  /// y elimina los strokes del canvas que quedaron integrados.
-  /// Reemplaza la imagen con versión horneada y libera memoria.
-  void replaceCanvasImageBaked(String id, ui.Image bakedImage) {
-    final idx = canvasImages.indexWhere((img) => img.id == id);
-    if (idx == -1) { bakedImage.dispose(); return; }
-    final old = canvasImages[idx];
-    canvasImages[idx] = CanvasImageModel(
-      id: old.id,
-      image: bakedImage,
-      position: old.position,
-      size: old.size,
-      layerId: old.layerId,
-      opacity: 1.0,
-      rotation: old.rotation,
-      flipX: old.flipX,
-      flipY: old.flipY,
-      insertionIndex: old.insertionIndex,
-      eraseStrokes: [],
-    );
-    _invalidateImageLayer(old.layerId);
-    notifyListeners();
-  }
-
-  /// Fuerza limpieza de eraseStrokes sin bake (fallback cuando falla toImageSync)
-  void clearEraseStrokesForced(String id) {
-    final idx = canvasImages.indexWhere((img) => img.id == id);
-    if (idx == -1) return;
-    canvasImages[idx].eraseStrokes.clear();
-    canvasImages[idx].currentEraseStroke = null;
-    _invalidateImageLayer(canvasImages[idx].layerId);
-    notifyListeners();
-  }
-
-  void flattenStamp(String stampId, ui.Image flatImage, List<int> strokeIndicesToRemove, int layerId) {
-    _saveToHistory();
-    // Reemplazar imagen del sello
-    final idx = canvasImages.indexWhere((img) => img.id == stampId);
-    if (idx != -1) {
-      final old = canvasImages[idx];
-      canvasImages[idx] = CanvasImageModel(
-        id: old.id,
-        image: flatImage,
-        position: old.position,
-        size: old.size,
-        layerId: old.layerId,
-        opacity: old.opacity,
-        rotation: old.rotation,
-        flipX: old.flipX,
-        flipY: old.flipY,
-        insertionIndex: old.insertionIndex,
-      );
-    }
-    // Eliminar strokes acoplados de la capa
-    final lIdx = layers.indexWhere((l) => l.id == layerId);
-    if (lIdx != -1 && strokeIndicesToRemove.isNotEmpty) {
-      final toRemove = Set<int>.from(strokeIndicesToRemove);
-      final newStrokes = [
-        for (int i = 0; i < layers[lIdx].strokes.length; i++)
-          if (!toRemove.contains(i)) layers[lIdx].strokes[i]
-      ];
-      layers[lIdx] = layers[lIdx].copyWith(strokes: newStrokes);
-    }
-    _invalidateImageLayer(layerId);
-    invalidateLayerCache(layerId);
+    _imagesChanged = true;
     notifyListeners();
   }
 
   void removeCanvasImage(String id) {
-    final img = canvasImages.where((i) => i.id == id).firstOrNull;
-    final layerId = img?.layerId ?? activeLayerId;
-    canvasImages.removeWhere((i) => i.id == id);
-    _invalidateImageLayer(layerId);
+    canvasImages.removeWhere((img) => img.id == id);
     notifyListeners();
   }
 
@@ -655,8 +600,8 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].position = position;
-    _invalidateImageLayer(canvasImages[idx].layerId);
-    notifyListeners();
+    _imagesChanged = true;
+    notifyListeners(); // necesario para ver el arrastre en tiempo real
   }
 
   void setCanvasImageRect(String id, Rect rect) {
@@ -664,7 +609,7 @@ class CanvasController extends ChangeNotifier {
     if (idx == -1) return;
     canvasImages[idx].position = rect.topLeft;
     canvasImages[idx].size = rect.size;
-    _invalidateImageLayer(canvasImages[idx].layerId);
+    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -672,7 +617,7 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].flipX = !canvasImages[idx].flipX;
-    _invalidateImageLayer(canvasImages[idx].layerId);
+    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -680,7 +625,7 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].flipY = !canvasImages[idx].flipY;
-    _invalidateImageLayer(canvasImages[idx].layerId);
+    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -688,7 +633,7 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].rotation = rotation;
-    _invalidateImageLayer(canvasImages[idx].layerId);
+    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -709,7 +654,7 @@ class CanvasController extends ChangeNotifier {
       flipY: old.flipY,
       insertionIndex: old.insertionIndex,
     );
-    _invalidateImageLayer(canvasImages[idx].layerId);
+    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -743,7 +688,6 @@ class CanvasController extends ChangeNotifier {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].position += delta;
-    _invalidateImageLayer(canvasImages[idx].layerId);
     notifyListeners();
   }
 
@@ -755,7 +699,6 @@ class CanvasController extends ChangeNotifier {
         ? null
         : canvasImages.firstWhere((img) => img.id == id,
             orElse: () => canvasImages.first);
-    _imagesChanged = true; // FIX: forzar repaint para mostrar/ocultar handles
     notifyListeners();
   }
 
@@ -783,13 +726,12 @@ class CanvasController extends ChangeNotifier {
 
   // ─── BORRADOR EN IMAGEN ──────────────────────────────────
 
-  void startEraseOnImage(String id, Offset point, double radius, {double hardness = 1.0}) {
+  void startEraseOnImage(String id, Offset point, double radius) {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
     canvasImages[idx].currentEraseStroke = EraseStroke(
       points: [point],
       radius: radius,
-      hardness: hardness,
     );
     notifyListeners();
   }
@@ -799,15 +741,15 @@ class CanvasController extends ChangeNotifier {
     if (idx == -1) return;
     final current = canvasImages[idx].currentEraseStroke;
     if (current == null) return;
+    if (current.points.length >= 200) return; // safety
     final last = current.points.last;
+    // Distancia mínima: 30% del radio o 4px mínimo para suavidad
     final minDist = max(current.radius * 0.3, 4.0);
     if ((last - point).distance < minDist) return;
-    // Safety: limitar puntos por stroke para evitar crash de memoria
-    if (current.points.length >= 300) return;
     current.points.add(point);
     // Solo notificar cada 3 puntos para reducir repaints sin perder fluidez
-    if (current.points.length % DeviceProfile.instance.eraseRepaintEvery == 0) {
-      _invalidateImageLayer(canvasImages[canvasImages.indexWhere((img) => img.id == id)].layerId);
+    if (current.points.length % 3 == 0) {
+      _imagesChanged = true;
       notifyListeners();
     }
   }
@@ -820,7 +762,7 @@ class CanvasController extends ChangeNotifier {
       canvasImages[idx].eraseStrokes.add(current);
       canvasImages[idx].currentEraseStroke = null;
     }
-    _invalidateImageLayer(canvasImages[idx].layerId);
+    _imagesChanged = true;
     notifyListeners();
   }
 
@@ -829,7 +771,7 @@ class CanvasController extends ChangeNotifier {
     if (idx == -1) return;
     if (canvasImages[idx].eraseStrokes.isNotEmpty) {
       canvasImages[idx].eraseStrokes.removeLast();
-      _invalidateImageLayer(canvasImages[idx].layerId);
+      _imagesChanged = true;
       notifyListeners();
     }
   }
@@ -839,7 +781,7 @@ class CanvasController extends ChangeNotifier {
     if (idx == -1) return;
     canvasImages[idx].eraseStrokes.clear();
     canvasImages[idx].currentEraseStroke = null;
-    _invalidateImageLayer(canvasImages[idx].layerId);
+    _imagesChanged = true;
     notifyListeners();
   }
 
