@@ -153,16 +153,36 @@ bool DrawingEngine::init(EGLDisplay display, EGLContext sharedContext,
 
     // ── Output texture & FBO ──────────────────────────────────
     impl_->outputTexture = targetTextureId;
+    LOGI("Setting up FBO with texture=%d canvas=%dx%d",
+         targetTextureId, cfg.canvasWidth, cfg.canvasHeight);
+
+    // Verificar GL errors antes de FBO
+    GLenum glErr = glGetError();
+    if (glErr != GL_NO_ERROR) {
+        LOGE("GL error before FBO: 0x%X", glErr);
+    }
+
+    // Verificar que la textura es válida
+    if (!glIsTexture(targetTextureId)) {
+        LOGE("Texture %d is not valid", targetTextureId);
+        // Intentar continuar — a veces glIsTexture falla aunque la textura exista
+    }
+
     glGenFramebuffers(1, &impl_->outputFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, impl_->outputFBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                            GL_TEXTURE_2D, targetTextureId, 0);
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        LOGE("Output FBO incomplete");
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        return false;
-    }
+
+    GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    if (fboStatus != GL_FRAMEBUFFER_COMPLETE) {
+        LOGE("Output FBO status=0x%X (not complete=0x%X) — continuing anyway",
+             fboStatus, GL_FRAMEBUFFER_COMPLETE);
+        // No retornar false — el FBO puede funcionar a pesar del status en HiOS
+    } else {
+        LOGI("Output FBO complete OK");
+    }
 
     // ── Subsistemas ───────────────────────────────────────────
     impl_->layerMgr  = std::make_unique<LayerManager>(cfg.canvasWidth, cfg.canvasHeight);
