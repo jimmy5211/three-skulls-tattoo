@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 class StrokeModel {
+  // FIX: mutable growable list — permite mutación in-place en continueStroke
   final List<Offset> points;
   final Color color;
   final double strokeWidth;
