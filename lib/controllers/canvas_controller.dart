@@ -207,6 +207,23 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // FIX: cancelar stroke sin guardarlo en historial
+  void cancelStroke() {
+    if (currentStroke == null) return;
+    // Revertir el _saveToHistory() que se hizo en startStroke
+    if (_undoHistory.isNotEmpty) {
+      layers = _undoHistory.removeLast();
+    }
+    currentStroke = null;
+    currentMirrorStroke = null;
+    // no notifyListeners — el canvas no cambió visualmente
+  }
+
+  // Invalidar caché de la capa que contiene una imagen
+  void _invalidateImageLayer(int layerId) {
+    invalidateLayerCache(layerId);
+  }
+
   void endStroke() {
     if (currentStroke == null) return;
     _bumpVersion();
