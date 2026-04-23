@@ -841,7 +841,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           'Capas nativas: \${_nativeLayerIds.length}\n'
           'Estado: RENDERIZANDO EN GPU'
         : 'Motor Dart activo (fallback)\n'
-          'Error C++: \$_nativeInitError\n'
+          'Error: $_nativeInitError\n'
           '(La app funciona con renderer Dart)';
 
     showDialog(
