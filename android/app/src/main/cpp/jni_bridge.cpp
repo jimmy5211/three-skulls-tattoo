@@ -177,4 +177,9 @@ JNINAME(jniUnloadBrushTexture)(JNIEnv*, jclass, jint id) {
     DrawingEngine::get().unloadBrushTexture(id);
 }
 
+JNIEXPORT jstring JNICALL
+JNINAME(jniGetLastError)(JNIEnv* env, jclass) {
+    return env->NewStringUTF(DrawingEngine::getLastError());
+}
+
 } // extern "C"

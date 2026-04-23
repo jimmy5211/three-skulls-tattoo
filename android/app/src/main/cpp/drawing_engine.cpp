@@ -60,11 +60,14 @@ struct Command {
 
 // ── Impl (detalles privados del engine) ────────────────────────────────
 
+// Error string global para diagnóstico
+static std::string g_lastError = "no error";
+
 struct DrawingEngine::Impl {
     EGLDisplay   eglDisplay = EGL_NO_DISPLAY;
     EGLContext   eglContext = EGL_NO_CONTEXT;
-    EGLContext   ownContext = EGL_NO_CONTEXT; // nuestro propio context compartido
-    EGLSurface   ownSurface= EGL_NO_SURFACE; // pbuffer surface
+    EGLContext   ownContext = EGL_NO_CONTEXT;
+    EGLSurface   ownSurface= EGL_NO_SURFACE;
 
     EngineConfig cfg;
     int          viewW = 0, viewH = 0;
@@ -98,17 +101,16 @@ struct DrawingEngine::Impl {
     }
 
     bool makeCurrent() {
-        // El GL thread de Kotlin mantiene el contexto y la WindowSurface activos.
-        // Verificar que hay un contexto válido en este thread.
         EGLContext ctx = eglGetCurrentContext();
         if (ctx == EGL_NO_CONTEXT) {
-            LOGE("makeCurrent: no EGL context on this thread");
+            g_lastError = "no_egl_context";
+            LOGE("makeCurrent: no EGL context");
             return false;
         }
-        // Verificar que hay una surface activa (la WindowSurface)
         EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
         if (surf == EGL_NO_SURFACE) {
-            LOGE("makeCurrent: no EGL surface on this thread");
+            g_lastError = "no_egl_surface";
+            LOGE("makeCurrent: no EGL surface");
             return false;
         }
         return true;
@@ -126,6 +128,13 @@ DrawingEngine& DrawingEngine::get() {
     static DrawingEngine instance;
     return instance;
 }
+
+// Accesible desde JNI para reportar el último error al Flutter
+const char* DrawingEngine::getLastError() {
+    return g_lastError.c_str();
+}
+
+#define INIT_FAIL(msg) do {     g_lastError = std::string(msg);     LOGE("INIT_FAIL: %s", msg);     return false; } while(0)
 
 // ── Init ───────────────────────────────────────────────────────────────
 
@@ -176,8 +185,8 @@ bool DrawingEngine::init(EGLDisplay display, EGLContext sharedContext,
     impl_->layerMgr  = std::make_unique<LayerManager>(cfg.canvasWidth, cfg.canvasHeight);
     impl_->strokeEng = std::make_unique<StrokeEngine>();
 
-    if (!impl_->layerMgr->init())  { LOGE("LayerManager init failed");  return false; }
-    if (!impl_->strokeEng->init()) { LOGE("StrokeEngine init failed"); return false; }
+    if (!impl_->layerMgr->init())  { g_lastError = "layer_manager_init_failed"; LOGE("LayerManager init failed"); return false; }
+    if (!impl_->strokeEng->init()) { g_lastError = "stroke_engine_init_failed"; LOGE("StrokeEngine init failed"); return false; }
 
     // Crear capa inicial
     impl_->layerMgr->createLayer("Layer 1");
