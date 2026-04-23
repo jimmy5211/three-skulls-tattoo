@@ -226,24 +226,27 @@ class _CanvasScreenState extends State<CanvasScreen> {
       final cw = _controller.canvasSize.width.toInt();
       final ch = _controller.canvasSize.height.toInt();
 
-      await _bridge.init(canvasW: cw, canvasH: ch, maxUndo: 20);
+      // Timeout: 5s máximo — si el motor C++ falla, usar fallback Dart
+      await Future.any([
+        _bridge.init(canvasW: cw, canvasH: ch, maxUndo: 20),
+        Future.delayed(const Duration(seconds: 5))
+            .then((_) => throw TimeoutException('Native engine timeout')),
+      ]);
 
       // Sincronizar capa inicial
       for (final layer in _controller.layers) {
         final nativeId = await _bridge.addLayer(name: layer.name);
         _nativeLayerIds[layer.id] = nativeId;
       }
-      // Activar capa activa
       final nativeActive = _nativeLayerIds[_controller.activeLayerId];
       if (nativeActive != null) await _bridge.setActiveLayer(nativeActive);
-
-      // Fondo
       await _bridge.setBackground(_controller.backgroundColor);
 
       if (mounted) setState(() => _nativeReady = true);
+      debugPrint('[NativeEngine] ✅ Motor C++/OpenGL listo');
     } catch (e) {
-      debugPrint('[NativeEngine] Init failed: \$e — fallback to Dart renderer');
-      // Si falla, la app sigue funcionando con el renderer Dart
+      debugPrint('[NativeEngine] ⚠️ Fallback Dart: \$e');
+      _nativeReady = false; // app continúa con renderer Dart
     }
   }
 
@@ -504,6 +507,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
             // Tooltip overlay
             if (_tooltipText != null)
               _buildTooltipOverlay(),
+
+            // ── DEBUG: Indicador de renderer (quitar en producción) ──
+            if (!_isFullscreen)
+              _buildRendererBadge(),
 
             // Brush size preview (ValueNotifier — sin setState)
             _buildBrushPreview(),
@@ -785,6 +792,80 @@ class _CanvasScreenState extends State<CanvasScreen> {
           ),
         );
       },
+    );
+  }
+
+  // ── Indicador de renderer activo ─────────────────────────────
+  Widget _buildRendererBadge() {
+    return Positioned(
+      bottom: 60,
+      right: 8,
+      child: GestureDetector(
+        onTap: () => _showRendererInfo(),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: _nativeReady
+                ? const Color(0xFF1A7F3C).withOpacity(0.92)
+                : const Color(0xFF8B4513).withOpacity(0.92),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: _nativeReady ? Colors.greenAccent : Colors.orange,
+              width: 1,
+            ),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(
+              _nativeReady ? Icons.memory : Icons.brush,
+              color: Colors.white, size: 10,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              _nativeReady
+                  ? 'GPU C++  tex:${_bridge.textureId ?? "?"}'
+                  : 'CPU Dart',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 9,
+                fontFamily: 'Raleway',
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  void _showRendererInfo() {
+    final msg = _nativeReady
+        ? 'Motor C++/OpenGL ES activo\n'
+          'Texture ID: ${_bridge.textureId}\n'
+          'Capas nativas: ${_nativeLayerIds.length}\n'
+          'Estado: RENDERIZANDO EN GPU'
+        : 'Motor Dart activo (fallback)\n'
+          'El motor C++ no pudo inicializar.\n'
+          'Revisa los logs de Android.';
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1C1E),
+        title: Text(
+          _nativeReady ? '⚡ Motor GPU' : '🖌️ Motor CPU',
+          style: const TextStyle(color: Colors.white, fontFamily: 'Raleway'),
+        ),
+        content: Text(
+          msg,
+          style: const TextStyle(color: Colors.white70, fontFamily: 'Raleway', fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK', style: TextStyle(color: Color(0xFFE74C3C))),
+          ),
+        ],
+      ),
     );
   }
 
