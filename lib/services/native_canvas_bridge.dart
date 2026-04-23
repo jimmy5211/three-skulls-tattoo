@@ -142,6 +142,15 @@ class NativeCanvasBridge {
   // ── Export ─────────────────────────────────────────────────────────
 
   /// Devuelve los píxeles RGBA del canvas compuesto.
+  /// Error del último intento de init (para diagnóstico)
+  Future<String> getLastError() async {
+    try {
+      return await _ch.invokeMethod<String>('getLastError') ?? 'no_error';
+    } catch (e) {
+      return 'bridge_error: $e';
+    }
+  }
+
   Future<Uint8List?> exportPixels() async {
     final bytes = await _ch.invokeMethod<Uint8List>('exportPixels');
     return bytes;
