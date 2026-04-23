@@ -9,7 +9,7 @@
 
 using namespace tsk;
 
-// Macro para simplificar los nombres JNI
+// Prefijo jni en nombre Kotlin → función C++ con jni prefix
 #define JNINAME(name) Java_com_threeskullstattoo_app_DrawingEngineJNI_##name
 
 extern "C" {
@@ -17,46 +17,43 @@ extern "C" {
 // ── Init / Destroy ─────────────────────────────────────────────────────
 
 JNIEXPORT jboolean JNICALL
-JNINAME(nativeInit)(JNIEnv*, jclass,
-                    jlong eglDisplay, jlong sharedContext,
-                    jint width, jint height, jint textureId,
-                    jint canvasW, jint canvasH, jint maxUndo) {
+JNINAME(jniInit)(JNIEnv*, jclass,
+                 jlong eglDisplay, jlong sharedContext,
+                 jint width, jint height, jint textureId,
+                 jint canvasW, jint canvasH, jint maxUndo) {
     EngineConfig cfg;
     cfg.canvasWidth  = canvasW;
     cfg.canvasHeight = canvasH;
     cfg.maxUndoSteps = maxUndo;
 
-    auto& eng = DrawingEngine::get();
-    eng.onFrameReady = nullptr; // será seteado desde Kotlin
-
-    bool ok = eng.init(
+    bool ok = DrawingEngine::get().init(
         (EGLDisplay)(intptr_t)eglDisplay,
         (EGLContext)(intptr_t)sharedContext,
         width, height, (GLuint)textureId, cfg
     );
-    LOGI("nativeInit: %s", ok ? "OK" : "FAIL");
+    LOGI("jniInit: %s  canvas=%dx%d", ok ? "OK" : "FAIL", canvasW, canvasH);
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
-JNINAME(nativeDestroy)(JNIEnv*, jclass) {
+JNINAME(jniDestroy)(JNIEnv*, jclass) {
     DrawingEngine::get().destroy();
 }
 
 JNIEXPORT void JNICALL
-JNINAME(nativeRender)(JNIEnv*, jclass) {
+JNINAME(jniRender)(JNIEnv*, jclass) {
     DrawingEngine::get().render();
 }
 
 // ── Stroke ─────────────────────────────────────────────────────────────
 
 JNIEXPORT void JNICALL
-JNINAME(beginStroke)(JNIEnv*, jclass,
-                     jint layerId,
-                     jfloat x, jfloat y, jfloat pressure,
-                     jfloat size, jfloat opacity, jfloat hardness,
-                     jfloat spacing, jboolean isEraser, jint brushTexId,
-                     jint colorARGB) {
+JNINAME(jniBeginStroke)(JNIEnv*, jclass,
+                        jint layerId,
+                        jfloat x, jfloat y, jfloat pressure,
+                        jfloat size, jfloat opacity, jfloat hardness,
+                        jfloat spacing, jboolean isEraser, jint brushTexId,
+                        jint colorARGB) {
     Point p{x, y, pressure};
     BrushParams brush;
     brush.size     = size;
@@ -70,47 +67,43 @@ JNINAME(beginStroke)(JNIEnv*, jclass,
 }
 
 JNIEXPORT void JNICALL
-JNINAME(addPoint)(JNIEnv*, jclass,
-                  jfloat x, jfloat y, jfloat pressure) {
+JNINAME(jniAddPoint)(JNIEnv*, jclass,
+                     jfloat x, jfloat y, jfloat pressure) {
     DrawingEngine::get().addPoint({x, y, pressure});
 }
 
 JNIEXPORT void JNICALL
-JNINAME(endStroke)(JNIEnv*, jclass) {
+JNINAME(jniEndStroke)(JNIEnv*, jclass) {
     DrawingEngine::get().endStroke();
 }
 
 JNIEXPORT void JNICALL
-JNINAME(cancelStroke)(JNIEnv*, jclass) {
+JNINAME(jniCancelStroke)(JNIEnv*, jclass) {
     DrawingEngine::get().cancelStroke();
 }
 
-// ── Historial ──────────────────────────────────────────────────────────
+// ── History ────────────────────────────────────────────────────────────
 
 JNIEXPORT void JNICALL
-JNINAME(undo)(JNIEnv*, jclass) {
-    DrawingEngine::get().undo();
-}
+JNINAME(jniUndo)(JNIEnv*, jclass) { DrawingEngine::get().undo(); }
 
 JNIEXPORT void JNICALL
-JNINAME(redo)(JNIEnv*, jclass) {
-    DrawingEngine::get().redo();
-}
+JNINAME(jniRedo)(JNIEnv*, jclass) { DrawingEngine::get().redo(); }
 
 JNIEXPORT jboolean JNICALL
-JNINAME(canUndo)(JNIEnv*, jclass) {
+JNINAME(jniCanUndo)(JNIEnv*, jclass) {
     return DrawingEngine::get().canUndo() ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
-JNINAME(canRedo)(JNIEnv*, jclass) {
+JNINAME(jniCanRedo)(JNIEnv*, jclass) {
     return DrawingEngine::get().canRedo() ? JNI_TRUE : JNI_FALSE;
 }
 
-// ── Capas ──────────────────────────────────────────────────────────────
+// ── Layers ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL
-JNINAME(addLayer)(JNIEnv* env, jclass, jstring jname) {
+JNINAME(jniAddLayer)(JNIEnv* env, jclass, jstring jname) {
     const char* name = env->GetStringUTFChars(jname, nullptr);
     int id = DrawingEngine::get().addLayer(name ? name : "");
     if (name) env->ReleaseStringUTFChars(jname, name);
@@ -118,46 +111,46 @@ JNINAME(addLayer)(JNIEnv* env, jclass, jstring jname) {
 }
 
 JNIEXPORT void JNICALL
-JNINAME(removeLayer)(JNIEnv*, jclass, jint id) {
+JNINAME(jniRemoveLayer)(JNIEnv*, jclass, jint id) {
     DrawingEngine::get().removeLayer(id);
 }
 
 JNIEXPORT void JNICALL
-JNINAME(setActiveLayer)(JNIEnv*, jclass, jint id) {
+JNINAME(jniSetActiveLayer)(JNIEnv*, jclass, jint id) {
     DrawingEngine::get().setActiveLayer(id);
 }
 
 JNIEXPORT void JNICALL
-JNINAME(setLayerOpacity)(JNIEnv*, jclass, jint id, jfloat opacity) {
+JNINAME(jniSetLayerOpacity)(JNIEnv*, jclass, jint id, jfloat opacity) {
     DrawingEngine::get().setLayerOpacity(id, opacity);
 }
 
 JNIEXPORT void JNICALL
-JNINAME(setLayerVisible)(JNIEnv*, jclass, jint id, jboolean visible) {
+JNINAME(jniSetLayerVisible)(JNIEnv*, jclass, jint id, jboolean visible) {
     DrawingEngine::get().setLayerVisible(id, (bool)visible);
 }
 
 JNIEXPORT void JNICALL
-JNINAME(clearLayer)(JNIEnv*, jclass, jint id) {
+JNINAME(jniClearLayer)(JNIEnv*, jclass, jint id) {
     DrawingEngine::get().clearLayer(id);
 }
 
 // ── Canvas ─────────────────────────────────────────────────────────────
 
 JNIEXPORT void JNICALL
-JNINAME(setBackground)(JNIEnv*, jclass, jint colorARGB) {
+JNINAME(jniSetBackground)(JNIEnv*, jclass, jint colorARGB) {
     DrawingEngine::get().setBackground(Color::fromARGB((uint32_t)colorARGB));
 }
 
 JNIEXPORT void JNICALL
-JNINAME(setCanvasSize)(JNIEnv*, jclass, jint w, jint h) {
+JNINAME(jniSetCanvasSize)(JNIEnv*, jclass, jint w, jint h) {
     DrawingEngine::get().setCanvasSize(w, h);
 }
 
 // ── Export ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jbyteArray JNICALL
-JNINAME(exportPixels)(JNIEnv* env, jclass) {
+JNINAME(jniExportPixels)(JNIEnv* env, jclass) {
     int w = 0, h = 0;
     auto pixels = DrawingEngine::get().exportPixels(&w, &h);
     if (pixels.empty()) return nullptr;
@@ -170,8 +163,8 @@ JNINAME(exportPixels)(JNIEnv* env, jclass) {
 // ── Brush textures ──────────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL
-JNINAME(loadBrushTexture)(JNIEnv* env, jclass,
-                           jbyteArray data, jint w, jint h) {
+JNINAME(jniLoadBrushTexture)(JNIEnv* env, jclass,
+                              jbyteArray data, jint w, jint h) {
     jsize len = env->GetArrayLength(data);
     std::vector<uint8_t> buf(len);
     env->GetByteArrayRegion(data, 0, len,
@@ -180,7 +173,7 @@ JNINAME(loadBrushTexture)(JNIEnv* env, jclass,
 }
 
 JNIEXPORT void JNICALL
-JNINAME(unloadBrushTexture)(JNIEnv*, jclass, jint id) {
+JNINAME(jniUnloadBrushTexture)(JNIEnv*, jclass, jint id) {
     DrawingEngine::get().unloadBrushTexture(id);
 }
 
