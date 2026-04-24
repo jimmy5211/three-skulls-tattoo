@@ -230,10 +230,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
       // onReady siempre se llama (con -1 si falla) — sin timeout necesario
       await _bridge.init(canvasW: cw, canvasH: ch, maxUndo: 20);
 
-      // Sincronizar capa inicial
-      for (final layer in _controller.layers) {
-        final nativeId = await _bridge.addLayer(name: layer.name);
-        _nativeLayerIds[layer.id] = nativeId;
+      // FIX: initWithCode ya crea la capa 0 en C++ en el GL thread.
+      // addLayer() desde main thread no tiene contexto GL y retorna -1.
+     // Mapeamos directo: capa Dart i → capa nativa i.
+      for (int i = 0; i < _controller.layers.length; i++) {
+       _nativeLayerIds[_controller.layers[i].id] = i;
       }
       final nativeActive = _nativeLayerIds[_controller.activeLayerId];
       if (nativeActive != null) await _bridge.setActiveLayer(nativeActive);
