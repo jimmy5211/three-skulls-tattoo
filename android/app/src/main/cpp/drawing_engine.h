@@ -6,6 +6,7 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <string>
 
 namespace tsk {
 
@@ -79,7 +80,6 @@ public:
     void resize(int width, int height);
     void destroy();
     bool isReady() const { return ready_; }
-    static const char* getLastError();  // diagnóstico
 
     // ── Renderizado ────────────────────────────────────────────
     // Composita todas las capas y actualiza el texture para Flutter
