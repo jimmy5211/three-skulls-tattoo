@@ -215,12 +215,6 @@ int DrawingEngine::initWithCode(EGLDisplay display, EGLContext sharedContext,
 
     impl_ = std::make_unique<Impl>();
     impl_->cfg        = cfg;
-    // FIX DPR: width/height son las dimensiones FISICAS del WindowSurface (canvasW * density),
-    // pasadas desde Kotlin. Son confiables porque Kotlin las calcula con displayMetrics.density
-    // y llama setDefaultBufferSize(physW, physH) antes de crear el EGL surface.
-    // NO usar glGetIntegerv(GL_VIEWPORT) aqui — hereda el viewport del pbuffer 1x1.
-    impl_->viewW      = width;
-    impl_->viewH      = height;
     impl_->eglDisplay = display;
     impl_->eglContext = sharedContext;
     impl_->maxUndoSteps = cfg.maxUndoSteps;
@@ -261,27 +255,16 @@ void DrawingEngine::render() {
     if (!ready_) return;
     if (!impl_->makeCurrent()) return;
 
-    // FIX DPR: eglQuerySurface retorna las dimensiones fisicas reales del EGL surface.
-    // Kotlin llamo setDefaultBufferSize(physW,physH) antes de crear el surface,
-    // por lo que eglQuerySurface retorna physW/physH correctamente.
-    // cfg.canvasWidth/Height = 1080/1920 (logico) — correcto para layer FBOs y shader.
-    EGLint eglW = 0, eglH = 0;
-    EGLDisplay disp = eglGetCurrentDisplay();
-    EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
-    eglQuerySurface(disp, surf, EGL_WIDTH,  &eglW);
-    eglQuerySurface(disp, surf, EGL_HEIGHT, &eglH);
-    int surfW = (eglW > 0) ? (int)eglW : impl_->cfg.canvasWidth;
-    int surfH = (eglH > 0) ? (int)eglH : impl_->cfg.canvasHeight;
-    LOGI("render: eglSurf=%dx%d canvas=%dx%d", surfW, surfH,
-         impl_->cfg.canvasWidth, impl_->cfg.canvasHeight);
-
-    glViewport(0, 0, surfW, surfH);
+    // SIMPLE: renderizar en canvas resolution (1080x1920).
+    // setDefaultBufferSize(canvasW, canvasH) — Flutter escala el Texture widget.
+    int cW = impl_->cfg.canvasWidth;
+    int cH = impl_->cfg.canvasHeight;
+    glViewport(0, 0, cW, cH);
 
     impl_->layerMgr->composite(
         0, 0,
-        impl_->cfg.canvasWidth, impl_->cfg.canvasHeight,
-        impl_->background,
-        surfW, surfH
+        cW, cH,
+        impl_->background
     );
     glFlush();
     impl_->doneCurrent();
