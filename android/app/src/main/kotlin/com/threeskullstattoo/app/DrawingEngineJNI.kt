@@ -68,9 +68,21 @@ object DrawingEngineJNI {
         textureId    = entry.id()
         val st = entry.surfaceTexture()
         surfaceTex   = st
-        st.setDefaultBufferSize(canvasW, canvasH)
-        Log.i(TAG, "SurfaceTexture created on main thread: id=$textureId canvas=${canvasW}x${canvasH}")
+
+        // FIX DPR: usar dimensiones FÍSICAS para el buffer del SurfaceTexture.
+        // canvasW/H son píxeles LÓGICOS de Flutter. En dispositivos con DPR > 1
+        // (ej. DPR=2 → physW = canvasW*2), el buffer lógico solo llena 1/4 de la
+        // surface física → strokes aparecen en la esquina superior izquierda.
+        val density = android.content.res.Resources.getSystem().displayMetrics.density
+        val physW = (canvasW * density).toInt()
+        val physH = (canvasH * density).toInt()
+        st.setDefaultBufferSize(physW, physH)
+        Log.i(TAG, "SurfaceTexture: logical=${canvasW}x${canvasH} density=$density physical=${physW}x${physH}")
         _lastSetupError = "surface_texture_ok_starting_gl_thread"
+
+        // Capturar physW/physH para uso en el GL thread (val, inmutable)
+        val physWFinal = physW
+        val physHFinal = physH
 
         glHandler.post {
             try {
@@ -114,7 +126,10 @@ object DrawingEngineJNI {
                 val ctxHandle  = EGL14.eglGetCurrentContext().nativeHandle
 
                 val errCode = try {
-                    jniInit(dispHandle, ctxHandle, canvasW, canvasH, 0,
+                    // FIX DPR: physW/physH son las dimensiones físicas del WindowSurface.
+                    // C++ las usa como viewW/viewH para el viewport final al FBO 0.
+                    // canvasW/canvasH (lógico) se usan para las layer FBOs y shaders.
+                    jniInit(dispHandle, ctxHandle, physWFinal, physHFinal, 0,
                             canvasW, canvasH, maxUndoSteps)
                 } catch (t: Throwable) {
                     _lastSetupError = "jni_init_threw: $t"
