@@ -129,6 +129,9 @@ DrawingEngine& DrawingEngine::get() {
     return instance;
 }
 
+// FIX: destructor definido en .cpp — Impl debe estar completo al destruir
+DrawingEngine::~DrawingEngine() { destroy(); }
+
 // Accesible desde JNI para reportar el último error al Flutter
 const char* DrawingEngine::getLastError() {
     return g_lastError.c_str();
