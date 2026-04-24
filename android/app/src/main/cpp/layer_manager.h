@@ -7,17 +7,6 @@
 
 namespace tsk {
 
-enum class BlendMode : int {
-    Normal     = 0,
-    Multiply   = 1,
-    Screen     = 2,
-    Overlay    = 3,
-    HardLight  = 4,
-    SoftLight  = 5,
-    ColorDodge = 6,
-    ColorBurn  = 7,
-};
-
 struct Layer {
     int     id      = -1;
     std::string name;
