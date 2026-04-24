@@ -114,9 +114,51 @@ bool LayerManager::init() {
 void LayerManager::destroy() {
     for (auto& l : layers_) destroyLayerFBO(*l);
     layers_.clear();
+    destroyCompositeFBOs();
     if (compositeProgram_) { glDeleteProgram(compositeProgram_); compositeProgram_ = 0; }
     if (quadVBO_) { glDeleteBuffers(1, &quadVBO_); quadVBO_ = 0; }
     if (quadVAO_) { glDeleteVertexArrays(1, &quadVAO_); quadVAO_ = 0; }
+}
+
+// PERF FIX: crear FBOs cacheados una sola vez en lugar de cada frame.
+bool LayerManager::initCompositeFBOs(int w, int h) {
+    if (cachedFBOW_ == w && cachedFBOH_ == h &&
+        accumFBO_ != 0 && pingFBO_ != 0) return true; // ya OK
+
+    destroyCompositeFBOs();
+
+    auto makeFBO = [](GLuint& fbo, GLuint& tex, int w, int h) -> bool {
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, tex, 0);
+        GLenum st = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return st == GL_FRAMEBUFFER_COMPLETE;
+    };
+
+    if (!makeFBO(accumFBO_, accumTex_, w, h)) return false;
+    if (!makeFBO(pingFBO_,  pingTex_,  w, h)) return false;
+
+    cachedFBOW_ = w;
+    cachedFBOH_ = h;
+    LOGI("Composite FBOs cached: %dx%d", w, h);
+    return true;
+}
+
+void LayerManager::destroyCompositeFBOs() {
+    if (accumFBO_) { glDeleteFramebuffers(1, &accumFBO_); accumFBO_ = 0; }
+    if (accumTex_) { glDeleteTextures(1,    &accumTex_);  accumTex_ = 0; }
+    if (pingFBO_)  { glDeleteFramebuffers(1, &pingFBO_);  pingFBO_  = 0; }
+    if (pingTex_)  { glDeleteTextures(1,    &pingTex_);   pingTex_  = 0; }
+    cachedFBOW_ = cachedFBOH_ = 0;
 }
 
 int LayerManager::createLayer(const std::string& name) {
@@ -214,27 +256,16 @@ void LayerManager::composite(GLuint destFBO, GLuint destTexture,
                               int surfW, int surfH) {
     if (surfW <= 0) surfW = destW;
     if (surfH <= 0) surfH = destH;
-    // ── 1. Crear FBO temporal para acumular ───────────────────
-    GLuint accumFBO = 0, accumTex = 0;
-    glGenFramebuffers(1, &accumFBO);
-    glGenTextures(1, &accumTex);
-    glBindTexture(GL_TEXTURE_2D, accumTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, destW, destH, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    // PERF FIX: reusar FBOs cacheados en lugar de crear/destruir cada frame.
+    if (!initCompositeFBOs(destW, destH)) { LOGE("composite: FBO cache failed"); return; }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, accumFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D, accumTex, 0);
+    // -- 1. Limpiar accumFBO con el fondo
+    glBindFramebuffer(GL_FRAMEBUFFER, accumFBO_);
     glViewport(0, 0, destW, destH);
-
-    // ── 2. Fondo ──────────────────────────────────────────────
     glClearColor(background.r, background.g, background.b, background.a);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // ── 3. Compositar capas ───────────────────────────────────
+    // -- 2. Compositar capas
     glUseProgram(compositeProgram_);
     glBindVertexArray(quadVAO_);
     glDisable(GL_DEPTH_TEST);
@@ -244,47 +275,25 @@ void LayerManager::composite(GLuint destFBO, GLuint destTexture,
     GLint uOpa  = glGetUniformLocation(compositeProgram_, "u_opacity");
     GLint uBlnd = glGetUniformLocation(compositeProgram_, "u_blendMode");
 
-    // FBO auxiliar para ping-pong entre capas
-    GLuint pingFBO = 0, pingTex = 0;
-    glGenFramebuffers(1, &pingFBO);
-    glGenTextures(1, &pingTex);
-    glBindTexture(GL_TEXTURE_2D, pingTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, destW, destH, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glBindFramebuffer(GL_FRAMEBUFFER, pingFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D, pingTex, 0);
-
-    GLuint currentAccum = accumTex;
-    GLuint currentFBO   = accumFBO;
-    GLuint nextAccum    = pingTex;
-    GLuint nextFBO      = pingFBO;
+    GLuint currentAccum = accumTex_;
+    GLuint currentFBO   = accumFBO_;
+    GLuint nextAccum    = pingTex_;
+    GLuint nextFBO      = pingFBO_;
 
     for (auto& layerPtr : layers_) {
         auto& layer = *layerPtr;
         if (!layer.visible || !layer.isValid()) continue;
-
-        // Render src+dst → nextFBO
         glBindFramebuffer(GL_FRAMEBUFFER, nextFBO);
         glViewport(0, 0, destW, destH);
-
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, layer.texture);
         glUniform1i(uSrc, 0);
-
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, currentAccum);
         glUniform1i(uDst, 1);
-
         glUniform1f(uOpa,  layer.opacity);
         glUniform1i(uBlnd, static_cast<int>(layer.blendMode));
-
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-        // Swap ping-pong
         std::swap(currentAccum, nextAccum);
         std::swap(currentFBO,   nextFBO);
     }
@@ -292,34 +301,22 @@ void LayerManager::composite(GLuint destFBO, GLuint destTexture,
     glBindVertexArray(0);
     glActiveTexture(GL_TEXTURE0);
 
-    // ── 4. Copiar resultado final al destino ──────────────────
+    // -- 3. Blit resultado al destino
     glBindFramebuffer(GL_READ_FRAMEBUFFER, currentFBO);
-
     if (destFBO == 0) {
-        // FIX DPR: blit destino al WindowSurface usa surfW/surfH (físico).
-        // destW/destH = canvas lógico (1080x1920).
-        // surfW/surfH = canvas físico (1080*DPR x 1920*DPR).
-        // glBlitFramebuffer escala automáticamente lógico → físico.
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-        glBlitFramebuffer(0, 0, destW, destH,
-                          0, 0, surfW, surfH,
+        glBlitFramebuffer(0, 0, destW, destH, 0, 0, surfW, surfH,
                           GL_COLOR_BUFFER_BIT, GL_LINEAR);
     } else {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destFBO);
-        if (destTexture != 0) {
+        if (destTexture != 0)
             glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                    GL_TEXTURE_2D, destTexture, 0);
-        }
         glBlitFramebuffer(0, 0, destW, destH, 0, 0, destW, destH,
                           GL_COLOR_BUFFER_BIT, GL_LINEAR);
     }
-
-    // ── 5. Cleanup ────────────────────────────────────────────
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDeleteFramebuffers(1, &accumFBO);
-    glDeleteFramebuffers(1, &pingFBO);
-    glDeleteTextures(1, &accumTex);
-    glDeleteTextures(1, &pingTex);
+    // NO borrar FBOs -- estan cacheados
 }
 
 void LayerManager::resize(int newW, int newH) {
