@@ -99,27 +99,32 @@ object DrawingEngineJNI {
                 val dispHandle = EGL14.eglGetCurrentDisplay().nativeHandle
                 val ctxHandle  = EGL14.eglGetCurrentContext().nativeHandle
 
-                val ok = try {
+                // jniInit returns: 0=ok, 1=no_ctx, 2=no_surf, 3=layer_mgr, 4=stroke, -1=exception
+                val errCode = try {
                     jniInit(dispHandle, ctxHandle, canvasW, canvasH, 0,
                             canvasW, canvasH, maxUndoSteps)
                 } catch (t: Throwable) {
-                    Log.e(TAG, "jniInit threw: $t"); false
+                    Log.e(TAG, "jniInit threw: $t"); -1
                 }
 
-                Log.i(TAG, "jniInit result: $ok  textureId=$textureId")
-                initialized = ok
+                val errName = when(errCode) {
+                    0  -> "SUCCESS"
+                    1  -> "NO_EGL_CONTEXT"
+                    2  -> "NO_EGL_SURFACE"
+                    3  -> "LAYER_MGR_INIT_FAILED"
+                    4  -> "STROKE_ENGINE_INIT_FAILED"
+                    else -> "UNKNOWN($errCode)"
+                }
+                Log.i(TAG, "jniInit: $errName  textureId=$textureId")
 
+                val ok = errCode == 0
                 if (!ok) {
-                    // Log detail para Crashlytics via Android (se captura automáticamente)
-                    Log.e(TAG, "=== NATIVE ENGINE INIT FAILED ===")
-                    Log.e(TAG, "EGL Display: $eglDisplay")
-                    Log.e(TAG, "EGL Context: $eglContext")  
-                    Log.e(TAG, "Window Surface: $windowSurface")
+                    Log.e(TAG, "=== C++ ENGINE FAILED: $errName ===")
                     Log.e(TAG, "Canvas: ${canvasW}x${canvasH}")
-                    Log.e(TAG, "GL_VERSION: ${GLES30.glGetString(GLES30.GL_VERSION)}")
-                    Log.e(TAG, "GL_RENDERER: ${GLES30.glGetString(GLES30.GL_RENDERER)}")
-                    Log.e(TAG, "================================")
+                    Log.e(TAG, "GL: ${GLES30.glGetString(GLES30.GL_VERSION)}")
+                    Log.e(TAG, "Renderer: ${GLES30.glGetString(GLES30.GL_RENDERER)}")
                 }
+                initialized = ok
 
                 notifyMain(if (ok) textureId else -1L, onReady)
 
@@ -201,8 +206,7 @@ object DrawingEngineJNI {
         if (initialized) jniLoadBrushTexture(data, w, h) else -1
     fun unloadBrushTexture(id: Int) = glHandler.post { if (initialized) jniUnloadBrushTexture(id) }
 
-    /** Retorna el último error del motor C++ para diagnóstico */
-    fun getLastError(): String = try { jniGetLastError() } catch (t: Throwable) { "jni_error: $t" }
+    fun getLastError(): String = if (initialized) "ok" else "init_failed"
 
     // ═══════════════════════════════════════════════════════════
     // EGL helpers
@@ -271,7 +275,7 @@ object DrawingEngineJNI {
         System.loadLibrary("three_skulls_engine"); true
     } catch (t: Throwable) { Log.e(TAG, "loadLibrary failed: $t"); false }
 
-    @JvmStatic private external fun jniInit(eglDisplay: Long, sharedCtx: Long, w: Int, h: Int, texId: Int, canvasW: Int, canvasH: Int, maxUndo: Int): Boolean
+    @JvmStatic private external fun jniInit(eglDisplay: Long, sharedCtx: Long, w: Int, h: Int, texId: Int, canvasW: Int, canvasH: Int, maxUndo: Int): Int
     @JvmStatic private external fun jniDestroy()
     @JvmStatic private external fun jniRender()
     @JvmStatic private external fun jniBeginStroke(layerId: Int, x: Float, y: Float, pressure: Float, size: Float, opacity: Float, hardness: Float, spacing: Float, isEraser: Boolean, brushTexId: Int, colorARGB: Int)
@@ -293,5 +297,4 @@ object DrawingEngineJNI {
     @JvmStatic private external fun jniExportPixels(): ByteArray?
     @JvmStatic private external fun jniLoadBrushTexture(data: ByteArray, w: Int, h: Int): Int
     @JvmStatic private external fun jniUnloadBrushTexture(id: Int)
-    @JvmStatic private external fun jniGetLastError(): String
 }
