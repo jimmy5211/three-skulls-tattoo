@@ -129,7 +129,11 @@ object DrawingEngineJNI {
                     // FIX DPR: physW/physH son las dimensiones físicas del WindowSurface.
                     // C++ las usa como viewW/viewH para el viewport final al FBO 0.
                     // canvasW/canvasH (lógico) se usan para las layer FBOs y shaders.
-                    jniInit(dispHandle, ctxHandle, physWFinal, physHFinal, 0,
+                    // FIX: w/h deben ser canvasW/canvasH (logico).
+                    // jni_bridge.cpp usa w/h para cfg.canvasWidth/Height.
+                    // physW/physH ya estan en el EGL surface via setDefaultBufferSize.
+                    // render() obtiene las dimensiones fisicas via eglQuerySurface.
+                    jniInit(dispHandle, ctxHandle, canvasW, canvasH, 0,
                             canvasW, canvasH, maxUndoSteps)
                 } catch (t: Throwable) {
                     _lastSetupError = "jni_init_threw: $t"
