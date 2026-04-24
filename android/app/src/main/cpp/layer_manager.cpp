@@ -210,7 +210,12 @@ void LayerManager::moveLayer(int fromIdx, int toIdx) {
 
 void LayerManager::composite(GLuint destFBO, GLuint destTexture,
                               int destW, int destH,
-                              const Color& background) {
+                              const Color& background,
+                              int surfW, int surfH) {
+    // surfW/surfH: dimensiones reales del WindowSurface (para DPR fix).
+    // Si surfW=0 (llamadas internas), usar destW/destH.
+    if (surfW <= 0) surfW = destW;
+    if (surfH <= 0) surfH = destH;
     // ── 1. Crear FBO temporal para acumular ───────────────────
     GLuint accumFBO = 0, accumTex = 0;
     glGenFramebuffers(1, &accumFBO);
@@ -293,13 +298,13 @@ void LayerManager::composite(GLuint destFBO, GLuint destTexture,
     glBindFramebuffer(GL_READ_FRAMEBUFFER, currentFBO);
 
     if (destFBO == 0) {
-        // FIX: destino es la WindowSurface (FBO 0).
-        // NO flip Y aquí — el vertex shader ya hace ndc.y = -ndc.y para
-        // convertir canvas (y=0 arriba) → GL (y=0 abajo).
-        // Flipear aquí causaba doble inversión → strokes en posición equivocada.
+        // FIX DPR: usar surfW/surfH para el blit destino al WindowSurface.
+        // destW/destH es la canvas resolution (1080x1920).
+        // surfW/surfH es la resolución real del surface (puede ser 2x en DPR=2).
+        // glBlitFramebuffer escala automáticamente de canvas a surface resolution.
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glBlitFramebuffer(0, 0, destW, destH,
-                          0, 0, destW, destH,   // FIX: sin flip Y
+                          0, 0, surfW, surfH,
                           GL_COLOR_BUFFER_BIT, GL_LINEAR);
     } else {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destFBO);

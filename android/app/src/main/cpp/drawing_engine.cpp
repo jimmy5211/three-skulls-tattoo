@@ -256,19 +256,30 @@ void DrawingEngine::render() {
     if (!ready_) return;
     if (!impl_->makeCurrent()) return;
 
-    glViewport(0, 0, impl_->cfg.canvasWidth, impl_->cfg.canvasHeight);
+    // FIX DPR: query dimensiones reales del WindowSurface.
+    // setDefaultBufferSize(1080,1920) es un hint — el driver puede crear
+    // un surface mayor (ej. 2160x3840 en DPR=2). Con el viewport incorrecto
+    // los strokes aparecen confinados al cuarto superior izquierdo del canvas.
+    EGLint surfW = 0, surfH = 0;
+    EGLDisplay disp = eglGetCurrentDisplay();
+    EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
+    eglQuerySurface(disp, surf, EGL_WIDTH,  &surfW);
+    eglQuerySurface(disp, surf, EGL_HEIGHT, &surfH);
+    if (surfW <= 0) surfW = impl_->cfg.canvasWidth;
+    if (surfH <= 0) surfH = impl_->cfg.canvasHeight;
+    LOGI("render: surf=%dx%d canvas=%dx%d",
+         surfW, surfH, impl_->cfg.canvasWidth, impl_->cfg.canvasHeight);
 
-    // Renderizar al framebuffer 0 (WindowSurface de Kotlin)
-    // Kotlin llamará eglSwapBuffers después de este render()
+    glViewport(0, 0, surfW, surfH);
+
     impl_->layerMgr->composite(
-        0,   // destFBO = 0 = framebuffer por defecto = WindowSurface
-        0,   // destTexture = no usado cuando destFBO = 0
+        0, 0,
         impl_->cfg.canvasWidth, impl_->cfg.canvasHeight,
-        impl_->background
+        impl_->background,
+        surfW, surfH
     );
     glFlush();
     impl_->doneCurrent();
-    // No llamar onFrameReady — Kotlin hace eglSwapBuffers que actualiza Flutter
 }
 
 // ── Stroke lifecycle ────────────────────────────────────────────────────
