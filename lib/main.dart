@@ -5,6 +5,7 @@ import 'package:workmanager/workmanager.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'theme/app_theme.dart';
@@ -134,6 +135,19 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp();
+
+  // ── Crashlytics ───────────────────────────────────────────────
+  // Capturar todos los errores de Flutter automáticamente
+  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+  // Capturar errores async no manejados (Dart isolate errors)
+  PlatformDispatcher.instance.onError = (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    return true;
+  };
+  // En debug no enviar a Crashlytics para no contaminar datos
+  await FirebaseCrashlytics.instance
+      .setCrashlyticsCollectionEnabled(true);
+
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   // Inicializar notificaciones locales
