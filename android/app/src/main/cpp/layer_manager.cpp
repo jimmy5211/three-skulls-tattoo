@@ -294,11 +294,12 @@ void LayerManager::composite(GLuint destFBO, GLuint destTexture,
 
     if (destFBO == 0) {
         // FIX: destino es la WindowSurface (FBO 0).
-        // NO llamar glFramebufferTexture2D sobre FBO 0 — genera INVALID_OPERATION.
-        // Solo hacer blit con flip Y (OpenGL Y=0 abajo, pantalla Y=0 arriba).
+        // NO flip Y aquí — el vertex shader ya hace ndc.y = -ndc.y para
+        // convertir canvas (y=0 arriba) → GL (y=0 abajo).
+        // Flipear aquí causaba doble inversión → strokes en posición equivocada.
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glBlitFramebuffer(0, 0, destW, destH,
-                          0, destH, destW, 0,   // Y flippeado
+                          0, 0, destW, destH,   // FIX: sin flip Y
                           GL_COLOR_BUFFER_BIT, GL_LINEAR);
     } else {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destFBO);
