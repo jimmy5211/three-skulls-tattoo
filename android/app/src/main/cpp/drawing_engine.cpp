@@ -294,6 +294,22 @@ void DrawingEngine::beginStroke(int layerId, const Point& p,
     impl_->capturingStroke = true;
 
     impl_->layerMgr->bindActiveLayer();
+
+    // DIAGNOSTIC: capturar viewport real ANTES de renderizar el stamp
+    // El usuario lo ve tocando el badge GPU → "Motor GPU" dialog
+    {
+        GLint vp[4] = {0,0,0,0};
+        glGetIntegerv(GL_VIEWPORT, vp);
+        char dbg[256];
+        snprintf(dbg, sizeof(dbg),
+                 "ok|center=(%.0f,%.0f)|canvasSize=(%d,%d)|viewport=(%dx%d)|dpr=check",
+                 p.x, p.y,
+                 impl_->cfg.canvasWidth, impl_->cfg.canvasHeight,
+                 vp[2], vp[3]);
+        g_lastError = dbg;
+        LOGI("DIAG: %s", dbg);
+    }
+
     impl_->strokeEng->beginStroke(p, brush, color,
                                    impl_->cfg.canvasWidth, impl_->cfg.canvasHeight);
     impl_->layerMgr->unbindLayer();
