@@ -55,6 +55,7 @@ dependencies:
   # 🔥 FIREBASE
   firebase_core: ^2.24.2
   firebase_messaging: ^14.7.10
+  firebase_crashlytics: ^3.4.8
 
 dev_dependencies:
   flutter_test:
@@ -76,9 +77,9 @@ flutter:
   assets:
     - assets/images/
     - assets/fonts/
-    # 🖌️ BRUSH TIPS — solo incluir carpetas que tienen archivos subidos al repo
+    # 🖌️ BRUSH TIPS (PNG por categoría)
     - assets/brushes/aerosoles/
-    # 🎭 SELLOS — solo carpetas con archivos subidos
+    # 🎭 SELLOS (stamps por categoría)
     - assets/stamps/abstractos/
     - assets/stamps/elementos/
     - assets/stamps/industriales/
