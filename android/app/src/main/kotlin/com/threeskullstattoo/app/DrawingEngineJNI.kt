@@ -35,7 +35,6 @@ object DrawingEngineJNI {
     var initialized = false
         private set
 
-    // FIX: tracking detallado del paso que falló
     private var _lastSetupError = "not_started"
 
     // ═══════════════════════════════════════════════════════════
@@ -55,7 +54,7 @@ object DrawingEngineJNI {
             return
         }
 
-        // FIX CRÍTICO: createSurfaceTexture() DEBE llamarse en el main thread.
+        // FIX: createSurfaceTexture() DEBE llamarse en el main thread.
         _lastSetupError = "creating_surface_texture"
         val entry = try {
             textureRegistry.createSurfaceTexture()
@@ -136,8 +135,6 @@ object DrawingEngineJNI {
                 if (errCode != 0) {
                     _lastSetupError = "jni_init_failed: $errName"
                     Log.e(TAG, "=== C++ ENGINE FAILED: $errName ===")
-                    Log.e(TAG, "GL: ${GLES30.glGetString(GLES30.GL_VERSION)}")
-                    Log.e(TAG, "Renderer: ${GLES30.glGetString(GLES30.GL_RENDERER)}")
                     notifyMain(-1L, onReady); return@post
                 }
 
@@ -185,17 +182,28 @@ object DrawingEngineJNI {
         size: Float, opacity: Float, hardness: Float, spacing: Float,
         isEraser: Boolean, brushTexId: Int, colorARGB: Int
     ) = glHandler.post {
-        if (initialized) jniBeginStroke(
-            layerId, x, y, pressure,
-            size, opacity, hardness, spacing,
-            isEraser, brushTexId, colorARGB
-        )
+        if (initialized) {
+            jniBeginStroke(
+                layerId, x, y, pressure,
+                size, opacity, hardness, spacing,
+                isEraser, brushTexId, colorARGB
+            )
+            // FIX Fase 2: render el primer stamp inmediatamente
+            jniRender(); swapBuffers()
+        }
     }
 
+    // FIX Fase 2: render después de cada punto para feedback en tiempo real
     fun addPoint(x: Float, y: Float, pressure: Float = 1f) =
-        glHandler.post { if (initialized) jniAddPoint(x, y, pressure) }
+        glHandler.post {
+            if (initialized) {
+                jniAddPoint(x, y, pressure)
+                jniRender()
+                swapBuffers()
+            }
+        }
 
-    fun endStroke()    = glHandler.post { if (initialized) { jniEndStroke(); swapBuffers() } }
+    fun endStroke()    = glHandler.post { if (initialized) { jniEndStroke(); jniRender(); swapBuffers() } }
     fun cancelStroke() = glHandler.post { if (initialized) jniCancelStroke() }
 
     fun undo() = glHandler.post { if (initialized) { jniUndo(); swapBuffers() } }
@@ -222,7 +230,6 @@ object DrawingEngineJNI {
         if (initialized) jniLoadBrushTexture(data, w, h) else -1
     fun unloadBrushTexture(id: Int) = glHandler.post { if (initialized) jniUnloadBrushTexture(id) }
 
-    // FIX: retorna el paso exacto donde falló el setup
     fun getLastError(): String = _lastSetupError
 
     // ═══════════════════════════════════════════════════════════
