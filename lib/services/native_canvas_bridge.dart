@@ -4,22 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 
 /// Puente entre Flutter y el motor C++/OpenGL a través de MethodChannel.
-///
-/// Uso:
-/// ```dart
-/// final bridge = NativeCanvasBridge();
-/// final textureId = await bridge.init(canvasW: 1080, canvasH: 1920);
-/// // Mostrar en UI:
-/// Texture(textureId: textureId)
-/// // Dibujar:
-/// bridge.beginStroke(...)
-/// bridge.addPoint(...)
-/// bridge.endStroke()
-/// ```
 class NativeCanvasBridge {
   static const _ch = MethodChannel('tsk/drawing_engine');
 
-  // textureId devuelto por init() — usar con Texture(textureId: id)
   int? textureId;
   bool _ready = false;
   bool get isReady => _ready;
@@ -36,9 +23,19 @@ class NativeCanvasBridge {
       'canvasH': canvasH,
       'maxUndo': maxUndo,
     });
-    // id == -1 significa que el motor C++ falló pero reportó correctamente
+
     if (id == null || id < 0) {
-      throw Exception('NativeCanvasBridge: motor C++ no disponible (id=$id)');
+      // FIX: obtener detalle del error antes de lanzar excepción
+      // Así el dialog muestra el paso exacto donde falló el motor
+      String errDetail = 'no_detail';
+      try {
+        errDetail = await _ch.invokeMethod<String>('getLastError') ?? 'null_response';
+      } catch (e) {
+        errDetail = 'getLastError_failed: $e';
+      }
+      throw Exception(
+        'NativeCanvasBridge: motor C++ no disponible (id=$id) | detail=$errDetail'
+      );
     }
     textureId = id;
     _ready = true;
@@ -53,13 +50,11 @@ class NativeCanvasBridge {
 
   // ── Stroke lifecycle ───────────────────────────────────────────────
 
-  /// Inicia un trazo. Llamar en onPointerDown.
   Future<void> beginStroke({
     required int    layerId,
     required double x,
     required double y,
     double pressure = 1.0,
-    // Brush params
     required double size,
     required double opacity,
     required double hardness,
@@ -84,7 +79,6 @@ class NativeCanvasBridge {
     });
   }
 
-  /// Agregar punto al trazo activo. Llamar en onPointerMove.
   Future<void> addPoint(double x, double y, {double pressure = 1.0}) async {
     if (!_ready) return;
     await _ch.invokeMethod('addPoint', {
@@ -92,13 +86,11 @@ class NativeCanvasBridge {
     });
   }
 
-  /// Terminar trazo. Llamar en onPointerUp.
   Future<void> endStroke() async {
     if (!_ready) return;
     await _ch.invokeMethod('endStroke');
   }
 
-  /// Cancelar trazo. Llamar si se detecta multitouch.
   Future<void> cancelStroke() async {
     if (!_ready) return;
     await _ch.invokeMethod('cancelStroke');
@@ -141,7 +133,6 @@ class NativeCanvasBridge {
 
   // ── Export ─────────────────────────────────────────────────────────
 
-  /// Devuelve los píxeles RGBA del canvas compuesto.
   Future<Uint8List?> exportPixels() async {
     final bytes = await _ch.invokeMethod<Uint8List>('exportPixels');
     return bytes;
@@ -149,8 +140,6 @@ class NativeCanvasBridge {
 
   // ── Brush textures ─────────────────────────────────────────────────
 
-  /// Carga una imagen PNG como textura de pincel.
-  /// Devuelve un ID para usar en beginStroke(brushTexId: id).
   Future<int> loadBrushTexture(Uint8List rgbaData, int w, int h) async =>
       await _ch.invokeMethod<int>('loadBrushTexture', {
         'data': rgbaData, 'w': w, 'h': h,
