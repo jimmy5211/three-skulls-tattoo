@@ -849,8 +849,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
   void _showRendererInfo() {
     final msg = _nativeReady
         ? 'Motor C++/OpenGL ES activo\n'
-          'Texture ID: \${_bridge.textureId}\n'
-          'Capas nativas: \${_nativeLayerIds.length}\n'
+          'Texture ID: ${_bridge.textureId}\n'
+          'Capas nativas: ${_nativeLayerIds.length}\n'
           'Estado: RENDERIZANDO EN GPU'
         : 'Motor Dart activo (fallback)\n'
           'Error: $_nativeInitError\n'
