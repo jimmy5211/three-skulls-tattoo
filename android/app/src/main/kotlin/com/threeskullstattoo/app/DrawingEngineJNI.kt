@@ -45,6 +45,7 @@ object DrawingEngineJNI {
         textureRegistry: TextureRegistry,
         canvasW: Int, canvasH: Int,
         maxUndoSteps: Int = 20,
+        dpr: Double = 1.0,
         onReady: (textureId: Long) -> Unit
     ) {
         if (!nativeLibLoaded) {
@@ -69,11 +70,17 @@ object DrawingEngineJNI {
         val st = entry.surfaceTexture()
         surfaceTex   = st
 
-        // SIMPLE: setDefaultBufferSize con canvas logico.
-        // Flutter Texture widget escala automaticamente segun DPR.
-        st.setDefaultBufferSize(canvasW, canvasH)
-        Log.i(TAG, "SurfaceTexture: id=$textureId canvas=${canvasW}x${canvasH}")
+        // FIX DPR: usar MediaQuery.devicePixelRatio de Flutter para calcular physW/physH.
+        // Flutter crea el SurfaceTexture esperando buffers en resolución física del display.
+        // Con buffer lógico (canvasW), el contenido aparece en solo 1/DPR de la pantalla.
+        val physW = (canvasW * dpr).toInt().coerceAtLeast(canvasW)
+        val physH = (canvasH * dpr).toInt().coerceAtLeast(canvasH)
+        st.setDefaultBufferSize(physW, physH)
+        Log.i(TAG, "SurfaceTexture: id=$textureId logical=${canvasW}x${canvasH} dpr=$dpr physical=${physW}x${physH}")
         _lastSetupError = "surface_texture_ok_starting_gl_thread"
+
+        val physWFinal = physW
+        val physHFinal = physH
 
         glHandler.post {
             try {
@@ -134,7 +141,9 @@ object DrawingEngineJNI {
                     // physW/physH = tamaño físico del EGL surface → C++ los usa para
                     // glViewport y blit final (render() llena el surface completo).
                     // canvasW/canvasH = canvas lógico → u_canvasSize en el shader.
-                    jniInit(dispHandle, ctxHandle, physW, physH, 0,
+                    // physWFinal/physHFinal = dimensiones físicas del buffer
+                    // canvasW/canvasH = canvas lógico (u_canvasSize en el shader)
+                    jniInit(dispHandle, ctxHandle, physWFinal, physHFinal, 0,
                             canvasW, canvasH, maxUndoSteps)
                 } catch (t: Throwable) {
                     _lastSetupError = "jni_init_threw: $t"

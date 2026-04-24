@@ -31,12 +31,15 @@ class MainActivity : FlutterActivity() {
                     val canvasW    = call.argument<Int>("canvasW")    ?: 1080
                     val canvasH    = call.argument<Int>("canvasH")    ?: 1920
                     val maxUndo    = call.argument<Int>("maxUndo")    ?: 20
+                    // FIX DPR: recibir el devicePixelRatio de Flutter (fuente más confiable)
+                    val dpr        = call.argument<Double>("dpr")     ?: 1.0
 
                     DrawingEngineJNI.setup(
                         textureRegistry = texRegistry,
                         canvasW = canvasW,
                         canvasH = canvasH,
                         maxUndoSteps = maxUndo,
+                        dpr = dpr,
                         onReady = { id ->
                             result.success(id)
                         }
@@ -45,43 +48,11 @@ class MainActivity : FlutterActivity() {
 
                 "destroy"        -> { DrawingEngineJNI.destroy(); result.success(null) }
 
-                // ── Stroke lifecycle ──────────────────────────────────
-                "beginStroke" -> {
-                    DrawingEngineJNI.beginStroke(
-                        layerId    = call.argument<Int>("layerId")!!,
-                        x          = (call.argument<Double>("x")!!).toFloat(),
-                        y          = (call.argument<Double>("y")!!).toFloat(),
-                        pressure   = (call.argument<Double>("pressure") ?: 1.0).toFloat(),
-                        size       = (call.argument<Double>("size")!!).toFloat(),
-                        opacity    = (call.argument<Double>("opacity")!!).toFloat(),
-                        hardness   = (call.argument<Double>("hardness")!!).toFloat(),
-                        spacing    = (call.argument<Double>("spacing") ?: 0.1).toFloat(),
-                        isEraser   = call.argument<Boolean>("isEraser") ?: false,
-                        brushTexId = call.argument<Int>("brushTexId") ?: -1,
-                        colorARGB  = call.argument<Int>("colorARGB")!!
-                    )
-                    result.success(null)
-                }
-
-                "addPoint" -> {
-                    DrawingEngineJNI.addPoint(
-                        x        = (call.argument<Double>("x")!!).toFloat(),
-                        y        = (call.argument<Double>("y")!!).toFloat(),
-                        pressure = (call.argument<Double>("pressure") ?: 1.0).toFloat()
-                    )
-                    result.success(null)
-                }
-
-                "endStroke"    -> { DrawingEngineJNI.endStroke();    result.success(null) }
-                "cancelStroke" -> { DrawingEngineJNI.cancelStroke(); result.success(null) }
-
-                // ── Historial ─────────────────────────────────────────
                 "undo"           -> { DrawingEngineJNI.undo();    result.success(null) }
                 "redo"           -> { DrawingEngineJNI.redo();    result.success(null) }
                 "canUndo"        -> result.success(DrawingEngineJNI.canUndo())
                 "canRedo"        -> result.success(DrawingEngineJNI.canRedo())
 
-                // ── Capas ─────────────────────────────────────────────
                 "addLayer"       -> {
                     val name = call.argument<String>("name") ?: ""
                     result.success(DrawingEngineJNI.addLayer(name))
@@ -113,7 +84,6 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
 
-                // ── Canvas ────────────────────────────────────────────
                 "setBackground"  -> {
                     DrawingEngineJNI.setBackground(call.argument<Int>("colorARGB")!!)
                     result.success(null)
@@ -126,10 +96,9 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
 
-                // ── Export ────────────────────────────────────────────
                 "exportPixels"   -> result.success(DrawingEngineJNI.exportPixels())
 
-                // ── Brush textures ────────────────────────────────────
+
                 "loadBrushTexture" -> {
                     val data = call.argument<ByteArray>("data")!!
                     val w    = call.argument<Int>("w")!!
@@ -141,14 +110,14 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
 
-                // ── Diagnóstico ───────────────────────────────────────
-                "getLastError"   -> result.success(DrawingEngineJNI.getLastError())
-
                 else -> result.notImplemented()
             }
         }
 
         // ── EventChannel: touch events → C++ engine ───────────────────
+        // Flutter envía los eventos de touch aquí para minimizar latencia.
+        // Se usa EventChannel en lugar de MethodChannel para evitar el
+        // overhead de roundtrip por cada punto del trazo.
         EventChannel(messenger, CH_TOUCH).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(args: Any?, sink: EventChannel.EventSink?) {
@@ -162,6 +131,9 @@ class MainActivity : FlutterActivity() {
     }
 
     // ── Touch forwarding al motor C++ ──────────────────────────────────
+    // Flutter no pasa events en raw por defecto, así que desde el lado Dart
+    // los eventos se envían a través de MethodChannel/EventChannel.
+    // Esta función es llamada desde el FlutterView como hook adicional.
     fun forwardTouchEvent(
         type: String,
         x: Float, y: Float, pressure: Float,
