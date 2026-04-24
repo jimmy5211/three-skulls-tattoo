@@ -17,11 +17,13 @@ class NativeCanvasBridge {
     int canvasW    = 1080,
     int canvasH    = 1920,
     int maxUndo    = 20,
+    double dpr     = 1.0,
   }) async {
     final id = await _ch.invokeMethod<int>('init', {
       'canvasW': canvasW,
       'canvasH': canvasH,
       'maxUndo': maxUndo,
+      'dpr':     dpr,
     });
 
     if (id == null || id < 0) {
