@@ -69,20 +69,11 @@ object DrawingEngineJNI {
         val st = entry.surfaceTexture()
         surfaceTex   = st
 
-        // FIX DPR: usar dimensiones FÍSICAS para el buffer del SurfaceTexture.
-        // canvasW/H son píxeles LÓGICOS de Flutter. En dispositivos con DPR > 1
-        // (ej. DPR=2 → physW = canvasW*2), el buffer lógico solo llena 1/4 de la
-        // surface física → strokes aparecen en la esquina superior izquierda.
-        val density = android.content.res.Resources.getSystem().displayMetrics.density
-        val physW = (canvasW * density).toInt()
-        val physH = (canvasH * density).toInt()
-        st.setDefaultBufferSize(physW, physH)
-        Log.i(TAG, "SurfaceTexture: logical=${canvasW}x${canvasH} density=$density physical=${physW}x${physH}")
+        // SIMPLE: setDefaultBufferSize con canvas logico.
+        // Flutter Texture widget escala automaticamente segun DPR.
+        st.setDefaultBufferSize(canvasW, canvasH)
+        Log.i(TAG, "SurfaceTexture: id=$textureId canvas=${canvasW}x${canvasH}")
         _lastSetupError = "surface_texture_ok_starting_gl_thread"
-
-        // Capturar physW/physH para uso en el GL thread (val, inmutable)
-        val physWFinal = physW
-        val physHFinal = physH
 
         glHandler.post {
             try {
@@ -126,13 +117,6 @@ object DrawingEngineJNI {
                 val ctxHandle  = EGL14.eglGetCurrentContext().nativeHandle
 
                 val errCode = try {
-                    // FIX DPR: physW/physH son las dimensiones físicas del WindowSurface.
-                    // C++ las usa como viewW/viewH para el viewport final al FBO 0.
-                    // canvasW/canvasH (lógico) se usan para las layer FBOs y shaders.
-                    // FIX: w/h deben ser canvasW/canvasH (logico).
-                    // jni_bridge.cpp usa w/h para cfg.canvasWidth/Height.
-                    // physW/physH ya estan en el EGL surface via setDefaultBufferSize.
-                    // render() obtiene las dimensiones fisicas via eglQuerySurface.
                     jniInit(dispHandle, ctxHandle, canvasW, canvasH, 0,
                             canvasW, canvasH, maxUndoSteps)
                 } catch (t: Throwable) {
