@@ -109,6 +109,18 @@ object DrawingEngineJNI {
                 Log.i(TAG, "jniInit result: $ok  textureId=$textureId")
                 initialized = ok
 
+                if (!ok) {
+                    // Log detail para Crashlytics via Android (se captura automáticamente)
+                    Log.e(TAG, "=== NATIVE ENGINE INIT FAILED ===")
+                    Log.e(TAG, "EGL Display: $eglDisplay")
+                    Log.e(TAG, "EGL Context: $eglContext")  
+                    Log.e(TAG, "Window Surface: $windowSurface")
+                    Log.e(TAG, "Canvas: ${canvasW}x${canvasH}")
+                    Log.e(TAG, "GL_VERSION: ${GLES30.glGetString(GLES30.GL_VERSION)}")
+                    Log.e(TAG, "GL_RENDERER: ${GLES30.glGetString(GLES30.GL_RENDERER)}")
+                    Log.e(TAG, "================================")
+                }
+
                 notifyMain(if (ok) textureId else -1L, onReady)
 
             } catch (t: Throwable) {
