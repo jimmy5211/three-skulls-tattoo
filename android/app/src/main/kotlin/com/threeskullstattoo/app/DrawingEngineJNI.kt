@@ -70,13 +70,12 @@ object DrawingEngineJNI {
         val st = entry.surfaceTexture()
         surfaceTex   = st
 
-        // FIX DPR: usar MediaQuery.devicePixelRatio de Flutter para calcular physW/physH.
-        // Flutter crea el SurfaceTexture esperando buffers en resolución física del display.
-        // Con buffer lógico (canvasW), el contenido aparece en solo 1/DPR de la pantalla.
-        val physW = (canvasW * dpr).toInt().coerceAtLeast(canvasW)
-        val physH = (canvasH * dpr).toInt().coerceAtLeast(canvasH)
-        st.setDefaultBufferSize(physW, physH)
-        Log.i(TAG, "SurfaceTexture: id=$textureId logical=${canvasW}x${canvasH} dpr=$dpr physical=${physW}x${physH}")
+        // SIMPLE: setDefaultBufferSize con canvas logico.
+        // El DPR se investiga via diagnostico en renderStamp.
+        st.setDefaultBufferSize(canvasW, canvasH)
+        Log.i(TAG, "SurfaceTexture: id=$textureId canvas=${canvasW}x${canvasH} dpr=$dpr")
+        val physW = canvasW
+        val physH = canvasH
         _lastSetupError = "surface_texture_ok_starting_gl_thread"
 
         val physWFinal = physW
@@ -259,7 +258,12 @@ object DrawingEngineJNI {
         if (initialized) jniLoadBrushTexture(data, w, h) else -1
     fun unloadBrushTexture(id: Int) = glHandler.post { if (initialized) jniUnloadBrushTexture(id) }
 
-    fun getLastError(): String = _lastSetupError
+    fun getLastError(): String {
+        // Return JNI debug info (stamp viewport, canvasSize, center) if available
+        return if (initialized) {
+            try { jniGetLastError() } catch (t: Throwable) { _lastSetupError }
+        } else _lastSetupError
+    }
 
     // ═══════════════════════════════════════════════════════════
     // EGL helpers
@@ -329,6 +333,7 @@ object DrawingEngineJNI {
         System.loadLibrary("three_skulls_engine"); true
     } catch (t: Throwable) { Log.e(TAG, "loadLibrary failed: $t"); false }
 
+    @JvmStatic private external fun jniGetLastError(): String
     @JvmStatic private external fun jniInit(eglDisplay: Long, sharedCtx: Long, w: Int, h: Int, texId: Int, canvasW: Int, canvasH: Int, maxUndo: Int): Int
     @JvmStatic private external fun jniDestroy()
     @JvmStatic private external fun jniRender()
