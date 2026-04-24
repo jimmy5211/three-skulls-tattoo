@@ -228,7 +228,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       final ch = _controller.canvasSize.height.toInt();
 
       // onReady siempre se llama (con -1 si falla) — sin timeout necesario
-      await _bridge.init(canvasW: cw, canvasH: ch, maxUndo: 20);
+      final dpr = MediaQuery.of(context).devicePixelRatio;
+      await _bridge.init(canvasW: cw, canvasH: ch, maxUndo: 20, dpr: dpr);
 
       // FIX: initWithCode ya crea la capa 0 en C++ en el GL thread.
       // addLayer() desde main thread no tiene contexto GL y retorna -1.
