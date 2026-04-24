@@ -71,6 +71,11 @@ public:
     bool init(EGLDisplay display, EGLContext sharedContext,
               int width, int height, GLuint targetTextureId,
               const EngineConfig& cfg = {});
+    // Returns: 0=ok, 1=no_ctx, 2=no_surf, 3=layer_mgr_fail, 4=stroke_fail, 5=unknown
+    int  initWithCode(EGLDisplay display, EGLContext sharedContext,
+                      int width, int height, GLuint targetTextureId,
+                      const EngineConfig& cfg = {});
+    static const char* getLastError();
     void resize(int width, int height);
     void destroy();
     bool isReady() const { return ready_; }

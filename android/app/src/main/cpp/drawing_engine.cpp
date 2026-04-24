@@ -198,6 +198,55 @@ bool DrawingEngine::init(EGLDisplay display, EGLContext sharedContext,
     return true;
 }
 
+// ── initWithCode ───────────────────────────────────────────────────────
+// Wraps init() and returns a numeric error code for JNI diagnostics
+
+int DrawingEngine::initWithCode(EGLDisplay display, EGLContext sharedContext,
+                                 int width, int height, GLuint targetTextureId,
+                                 const EngineConfig& cfg) {
+    // Check EGL state before calling init
+    EGLContext ctx  = eglGetCurrentContext();
+    EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
+    if (ctx  == EGL_NO_CONTEXT)  { g_lastError = "no_egl_context"; return 1; }
+    if (surf == EGL_NO_SURFACE)  { g_lastError = "no_egl_surface"; return 2; }
+
+    impl_ = std::make_unique<Impl>();
+    impl_->cfg        = cfg;
+    impl_->viewW      = width;
+    impl_->viewH      = height;
+    impl_->eglDisplay = display;
+    impl_->eglContext = sharedContext;
+    impl_->maxUndoSteps = cfg.maxUndoSteps;
+    impl_->outputFBO     = 0;
+    impl_->outputTexture = 0;
+
+    LOGI("initWithCode: canvas=%dx%d", cfg.canvasWidth, cfg.canvasHeight);
+
+    // Init LayerManager
+    impl_->layerMgr = std::make_unique<LayerManager>(cfg.canvasWidth, cfg.canvasHeight);
+    if (!impl_->layerMgr->init()) {
+        g_lastError = "layer_manager_init_failed";
+        LOGE("LayerManager init FAILED");
+        return 3;
+    }
+
+    // Init StrokeEngine
+    impl_->strokeEng = std::make_unique<StrokeEngine>();
+    if (!impl_->strokeEng->init()) {
+        g_lastError = "stroke_engine_init_failed";
+        LOGE("StrokeEngine init FAILED");
+        return 4;
+    }
+
+    // Create initial layer
+    impl_->layerMgr->createLayer("Layer 1");
+
+    ready_ = true;
+    g_lastError = "init_ok";
+    LOGI("initWithCode: SUCCESS");
+    return 0;
+}
+
 // ── Render ─────────────────────────────────────────────────────────────
 
 void DrawingEngine::render() {
