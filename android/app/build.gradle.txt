@@ -105,3 +105,4 @@ dependencies {
 
 // Firebase - debe ir al final
 apply plugin: 'com.google.gms.google-services'
+apply plugin: 'com.google.firebase.crashlytics'
