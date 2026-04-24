@@ -261,11 +261,19 @@ void DrawingEngine::render() {
     if (!ready_) return;
     if (!impl_->makeCurrent()) return;
 
-    // FIX DPR: viewW/viewH = dimensiones físicas del WindowSurface (canvasW * density).
-    // La layer FBO es canvasW x canvasH (lógico). El blit escala de lógico a físico.
-    // Sin esto, solo se llena 1/4 de la surface en dispositivos con DPR=2.
-    int surfW = impl_->viewW > 0 ? impl_->viewW : impl_->cfg.canvasWidth;
-    int surfH = impl_->viewH > 0 ? impl_->viewH : impl_->cfg.canvasHeight;
+    // FIX DPR: eglQuerySurface retorna las dimensiones fisicas reales del EGL surface.
+    // Kotlin llamo setDefaultBufferSize(physW,physH) antes de crear el surface,
+    // por lo que eglQuerySurface retorna physW/physH correctamente.
+    // cfg.canvasWidth/Height = 1080/1920 (logico) — correcto para layer FBOs y shader.
+    EGLint eglW = 0, eglH = 0;
+    EGLDisplay disp = eglGetCurrentDisplay();
+    EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
+    eglQuerySurface(disp, surf, EGL_WIDTH,  &eglW);
+    eglQuerySurface(disp, surf, EGL_HEIGHT, &eglH);
+    int surfW = (eglW > 0) ? (int)eglW : impl_->cfg.canvasWidth;
+    int surfH = (eglH > 0) ? (int)eglH : impl_->cfg.canvasHeight;
+    LOGI("render: eglSurf=%dx%d canvas=%dx%d", surfW, surfH,
+         impl_->cfg.canvasWidth, impl_->cfg.canvasHeight);
 
     glViewport(0, 0, surfW, surfH);
 
