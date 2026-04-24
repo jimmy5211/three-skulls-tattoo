@@ -111,13 +111,30 @@ object DrawingEngineJNI {
                 Log.i(TAG, "GL_VERSION:  ${GLES30.glGetString(GLES30.GL_VERSION)}")
                 Log.i(TAG, "GL_RENDERER: ${GLES30.glGetString(GLES30.GL_RENDERER)}")
 
+                // FIX DPR: query dimensiones reales del EGL surface DESDE KOTLIN
+                // después de eglMakeCurrent(windowSurface).
+                // En este punto, eglQuerySurface retorna el tamaño real del buffer
+                // (puede ser physW x physH en dispositivos DPR > 1).
+                // Esto es más confiable que Resources.getSystem().displayMetrics.density
+                // porque refleja el tamaño real del buffer de la surface, no el DPR global.
+                val eglW = IntArray(1)
+                val eglH = IntArray(1)
+                EGL14.eglQuerySurface(eglDisplay, windowSurface, EGL14.EGL_WIDTH,  eglW, 0)
+                EGL14.eglQuerySurface(eglDisplay, windowSurface, EGL14.EGL_HEIGHT, eglH, 0)
+                val physW = if (eglW[0] > canvasW) eglW[0] else canvasW
+                val physH = if (eglH[0] > canvasH) eglH[0] else canvasH
+                Log.i(TAG, "EGL surface: ${eglW[0]}x${eglH[0]} canvas: ${canvasW}x${canvasH} using: ${physW}x${physH}")
+
                 // ── 4. Init motor C++ ────────────────────────────
                 _lastSetupError = "jni_init"
                 val dispHandle = EGL14.eglGetCurrentDisplay().nativeHandle
                 val ctxHandle  = EGL14.eglGetCurrentContext().nativeHandle
 
                 val errCode = try {
-                    jniInit(dispHandle, ctxHandle, canvasW, canvasH, 0,
+                    // physW/physH = tamaño físico del EGL surface → C++ los usa para
+                    // glViewport y blit final (render() llena el surface completo).
+                    // canvasW/canvasH = canvas lógico → u_canvasSize en el shader.
+                    jniInit(dispHandle, ctxHandle, physW, physH, 0,
                             canvasW, canvasH, maxUndoSteps)
                 } catch (t: Throwable) {
                     _lastSetupError = "jni_init_threw: $t"
