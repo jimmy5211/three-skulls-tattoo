@@ -3,10 +3,10 @@
 #include <GLES3/gl3.h>
 #include <android/native_window.h>
 #include <cstdint>
+#include <string>
 #include <vector>
 #include <memory>
 #include <functional>
-#include <string>
 
 namespace tsk {
 
@@ -76,7 +76,7 @@ public:
     int  initWithCode(EGLDisplay display, EGLContext sharedContext,
                       int width, int height, GLuint targetTextureId,
                       const EngineConfig& cfg = {});
-    static const char* getLastError();
+    static const char* getLastError();  // diagnóstico
     void resize(int width, int height);
     void destroy();
     bool isReady() const { return ready_; }
@@ -128,7 +128,7 @@ public:
 
 private:
     DrawingEngine() = default;
-    ~DrawingEngine() { destroy(); }
+    ~DrawingEngine();   // FIX: definido en .cpp — Impl debe estar completo al destruir
     DrawingEngine(const DrawingEngine&) = delete;
     DrawingEngine& operator=(const DrawingEngine&) = delete;
 
