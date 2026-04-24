@@ -15,7 +15,9 @@ import io.flutter.view.TextureRegistry
  *
  * ARQUITECTURA CORRECTA:
  * 1. Flutter crea un SurfaceTexture entry (GL_TEXTURE_EXTERNAL_OES)
+ *    → DEBE hacerse en el main thread (API de Flutter)
  * 2. Kotlin crea una EGL WindowSurface desde ese SurfaceTexture.Surface
+ *    → Se hace en el GL thread, DESPUÉS de recibir el entry del main thread
  * 3. C++ renderiza al framebuffer 0 (la window surface) — NO a una texture custom
  * 4. Kotlin llama eglSwapBuffers → Flutter actualiza el Texture widget
  */
@@ -59,6 +61,19 @@ object DrawingEngineJNI {
             onReady(-1L)
             return
         }
+
+        // FIX CRÍTICO: createSurfaceTexture() DEBE llamarse en el main thread.
+        // Antes estaba dentro de glHandler.post{} (GL thread) → SurfaceTexture
+        // inválido → eglCreateWindowSurface fallaba silenciosamente → id=-1.
+        val entry = textureRegistry.createSurfaceTexture()
+        textureEntry = entry
+        textureId    = entry.id()
+        val st = entry.surfaceTexture()
+        surfaceTex   = st
+        st.setDefaultBufferSize(canvasW, canvasH)
+        Log.i(TAG, "SurfaceTexture created on main thread: id=$textureId")
+
+        // Resto del setup en el GL thread (EGL y C++ requieren el GL thread)
         glHandler.post {
             try {
                 // ── 1. Init EGL display + context ──────────────────
@@ -67,39 +82,33 @@ object DrawingEngineJNI {
                     notifyMain(-1L, onReady); return@post
                 }
 
-                // ── 2. Crear Flutter SurfaceTexture ────────────────
-                val entry = textureRegistry.createSurfaceTexture()
-                textureEntry = entry
-                textureId = entry.id()
-                surfaceTex = entry.surfaceTexture()
-                surfaceTex!!.setDefaultBufferSize(canvasW, canvasH)
-
-                // ── 3. Crear EGL WindowSurface desde la Surface ────
-                surface = Surface(surfaceTex!!)
+                // ── 2. Crear EGL WindowSurface desde la Surface ────
+                // Surface se crea aquí en el GL thread (necesita EGL activo)
+                surface = Surface(st)
                 val winAttribs = intArrayOf(EGL14.EGL_NONE)
                 windowSurface = EGL14.eglCreateWindowSurface(
                     eglDisplay, eglConfig, surface, winAttribs, 0)
 
                 if (windowSurface == EGL14.EGL_NO_SURFACE) {
-                    Log.e(TAG, "eglCreateWindowSurface failed: ${EGL14.eglGetError()}")
+                    Log.e(TAG, "eglCreateWindowSurface failed: 0x${EGL14.eglGetError().toString(16)}")
                     notifyMain(-1L, onReady); return@post
                 }
+                Log.i(TAG, "WindowSurface created OK")
 
-                // ── 4. Hacer current la window surface ─────────────
+                // ── 3. Hacer current la window surface ─────────────
                 if (!EGL14.eglMakeCurrent(eglDisplay, windowSurface, windowSurface, eglContext)) {
-                    Log.e(TAG, "eglMakeCurrent(windowSurface) failed: ${EGL14.eglGetError()}")
+                    Log.e(TAG, "eglMakeCurrent(windowSurface) failed: 0x${EGL14.eglGetError().toString(16)}")
                     notifyMain(-1L, onReady); return@post
                 }
                 Log.i(TAG, "WindowSurface current: canvas=${canvasW}x${canvasH}")
-                Log.i(TAG, "GL_VERSION: ${GLES30.glGetString(GLES30.GL_VERSION)}")
+                Log.i(TAG, "GL_VERSION:  ${GLES30.glGetString(GLES30.GL_VERSION)}")
                 Log.i(TAG, "GL_RENDERER: ${GLES30.glGetString(GLES30.GL_RENDERER)}")
 
-                // ── 5. Init motor C++ ──────────────────────────────
-                // C++ renderiza al framebuffer 0 (la window surface directamente)
+                // ── 4. Init motor C++ ──────────────────────────────
                 val dispHandle = EGL14.eglGetCurrentDisplay().nativeHandle
                 val ctxHandle  = EGL14.eglGetCurrentContext().nativeHandle
 
-                // jniInit returns: 0=ok, 1=no_ctx, 2=no_surf, 3=layer_mgr, 4=stroke, -1=exception
+                // jniInit returns: 0=ok, 1=no_ctx, 2=no_surf, 3=layer_mgr, 4=stroke
                 val errCode = try {
                     jniInit(dispHandle, ctxHandle, canvasW, canvasH, 0,
                             canvasW, canvasH, maxUndoSteps)
@@ -108,11 +117,11 @@ object DrawingEngineJNI {
                 }
 
                 val errName = when(errCode) {
-                    0  -> "SUCCESS"
-                    1  -> "NO_EGL_CONTEXT"
-                    2  -> "NO_EGL_SURFACE"
-                    3  -> "LAYER_MGR_INIT_FAILED"
-                    4  -> "STROKE_ENGINE_INIT_FAILED"
+                    0    -> "SUCCESS"
+                    1    -> "NO_EGL_CONTEXT"
+                    2    -> "NO_EGL_SURFACE"
+                    3    -> "LAYER_MGR_INIT_FAILED"
+                    4    -> "STROKE_ENGINE_INIT_FAILED"
                     else -> "UNKNOWN($errCode)"
                 }
                 Log.i(TAG, "jniInit: $errName  textureId=$textureId")
@@ -187,16 +196,15 @@ object DrawingEngineJNI {
     fun canRedo(): Boolean = initialized && jniCanRedo()
 
     fun addLayer(name: String): Int = if (initialized) jniAddLayer(name) else -1
-    fun removeLayer(id: Int)            = glHandler.post { if (initialized) jniRemoveLayer(id) }
-    fun setActiveLayer(id: Int)         = glHandler.post { if (initialized) jniSetActiveLayer(id) }
-    fun setLayerOpacity(id: Int, o: Float) = glHandler.post { if (initialized) jniSetLayerOpacity(id, o) }
+    fun removeLayer(id: Int)             = glHandler.post { if (initialized) jniRemoveLayer(id) }
+    fun setActiveLayer(id: Int)          = glHandler.post { if (initialized) jniSetActiveLayer(id) }
+    fun setLayerOpacity(id: Int, o: Float)   = glHandler.post { if (initialized) jniSetLayerOpacity(id, o) }
     fun setLayerVisible(id: Int, v: Boolean) = glHandler.post { if (initialized) jniSetLayerVisible(id, v) }
-    fun clearLayer(id: Int)             = glHandler.post { if (initialized) { jniClearLayer(id); swapBuffers() } }
-    fun setBackground(colorARGB: Int)   = glHandler.post { if (initialized) { jniSetBackground(colorARGB); swapBuffers() } }
-    fun setCanvasSize(w: Int, h: Int)   = glHandler.post {
+    fun clearLayer(id: Int)              = glHandler.post { if (initialized) { jniClearLayer(id); swapBuffers() } }
+    fun setBackground(colorARGB: Int)    = glHandler.post { if (initialized) { jniSetBackground(colorARGB); swapBuffers() } }
+    fun setCanvasSize(w: Int, h: Int)    = glHandler.post {
         if (initialized) {
             jniSetCanvasSize(w, h)
-            // Resize la window surface
             surfaceTex?.setDefaultBufferSize(w, h)
             swapBuffers()
         }
@@ -240,7 +248,7 @@ object DrawingEngineJNI {
         val ctxAttribs = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE)
         eglContext = EGL14.eglCreateContext(eglDisplay, eglConfig, EGL14.EGL_NO_CONTEXT, ctxAttribs, 0)
         if (eglContext == EGL14.EGL_NO_CONTEXT) {
-            Log.e(TAG, "eglCreateContext failed: ${EGL14.eglGetError()}")
+            Log.e(TAG, "eglCreateContext failed: 0x${EGL14.eglGetError().toString(16)}")
             return false
         }
 
