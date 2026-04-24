@@ -5,6 +5,7 @@ import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import '../services/native_canvas_bridge.dart';
 import '../controllers/canvas_controller.dart';
 import '../widgets/canvas_painter.dart';
@@ -240,9 +241,25 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
       if (mounted) setState(() => _nativeReady = true);
       debugPrint('[NativeEngine] ✅ Motor C++/OpenGL listo');
-    } catch (e) {
-      _nativeInitError = e.toString();
-      debugPrint('[NativeEngine] ⚠️ Fallback Dart: \$e');
+      // Registrar en Crashlytics que el motor nativo está activo
+      FirebaseCrashlytics.instance.setCustomKey('renderer', 'gpu_cpp');
+      FirebaseCrashlytics.instance.setCustomKey('texture_id', '${_bridge.textureId}');
+    } catch (e, stack) {
+      try {
+        final cppError = await _bridge.getLastError();
+        _nativeInitError = 'dart:$e | cpp:$cppError';
+      } catch (_) {
+        _nativeInitError = e.toString();
+      }
+      debugPrint('[NativeEngine] ⚠️ Error: $_nativeInitError');
+      // Reportar a Crashlytics como no-fatal (app sigue con renderer Dart)
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'NativeEngine init failed: $_nativeInitError',
+        fatal: false,
+      );
+      FirebaseCrashlytics.instance.setCustomKey('native_error', _nativeInitError);
+      FirebaseCrashlytics.instance.setCustomKey('renderer', 'cpu_dart_fallback');
       _nativeReady = false;
     }
   }
