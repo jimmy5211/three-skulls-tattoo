@@ -245,12 +245,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
       FirebaseCrashlytics.instance.setCustomKey('renderer', 'gpu_cpp');
       FirebaseCrashlytics.instance.setCustomKey('texture_id', '${_bridge.textureId}');
     } catch (e, stack) {
-      try {
-        final cppError = await _bridge.getLastError();
-        _nativeInitError = 'dart:$e | cpp:$cppError';
-      } catch (_) {
-        _nativeInitError = e.toString();
-      }
+      _nativeInitError = e.toString();
       debugPrint('[NativeEngine] ⚠️ Error: $_nativeInitError');
       // Reportar a Crashlytics como no-fatal (app sigue con renderer Dart)
       FirebaseCrashlytics.instance.recordError(
