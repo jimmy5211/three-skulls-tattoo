@@ -11,56 +11,56 @@
 namespace tsk {
 
 // ── GLSL shaders de composición ────────────────────────────────────────
+// FIX: #version DEBE ser el primer token — sin \n previo (algunos drivers
+// de Android budget lo rechazan si hay whitespace antes de #version).
 
-static const char* kCompositeVert = R"(
-#version 300 es
-precision highp float;
-layout(location = 0) in vec2 a_pos;
-layout(location = 1) in vec2 a_uv;
-out vec2 v_uv;
-void main() {
-    v_uv = a_uv;
-    gl_Position = vec4(a_pos, 0.0, 1.0);
-}
-)";
+static const char* kCompositeVert =
+"#version 300 es\n"
+"precision highp float;\n"
+"layout(location = 0) in vec2 a_pos;\n"
+"layout(location = 1) in vec2 a_uv;\n"
+"out vec2 v_uv;\n"
+"void main() {\n"
+"    v_uv = a_pos * 0.5 + 0.5;\n"
+"    gl_Position = vec4(a_pos, 0.0, 1.0);\n"
+"}\n";
 
-// Normal blend: dst = src * src.a + dst * (1 - src.a)
-static const char* kCompositeFrag = R"(
-#version 300 es
-precision highp float;
-uniform sampler2D u_src;
-uniform sampler2D u_dst;
-uniform float     u_opacity;
-uniform int       u_blendMode;
-out vec4 fragColor;
-in  vec2 v_uv;
-
-vec4 blend_normal(vec4 src, vec4 dst) {
-    float a = src.a * u_opacity;
-    return vec4(src.rgb * a + dst.rgb * (1.0 - a), dst.a + a * (1.0 - dst.a));
-}
-
-vec4 blend_multiply(vec4 src, vec4 dst) {
-    vec3 b = src.rgb * dst.rgb;
-    float a = src.a * u_opacity;
-    return vec4(mix(dst.rgb, b, a), dst.a + a * (1.0 - dst.a));
-}
-
-vec4 blend_screen(vec4 src, vec4 dst) {
-    vec3 b = 1.0 - (1.0 - src.rgb) * (1.0 - dst.rgb);
-    float a = src.a * u_opacity;
-    return vec4(mix(dst.rgb, b, a), dst.a + a * (1.0 - dst.a));
-}
-
-void main() {
-    vec4 src = texture(u_src, v_uv);
-    vec4 dst = texture(u_dst, v_uv);
-    if      (u_blendMode == 0) fragColor = blend_normal(src, dst);
-    else if (u_blendMode == 1) fragColor = blend_multiply(src, dst);
-    else if (u_blendMode == 2) fragColor = blend_screen(src, dst);
-    else                       fragColor = blend_normal(src, dst);
-}
-)";
+static const char* kCompositeFrag =
+"#version 300 es\n"
+"precision highp float;\n"
+"precision mediump int;\n"
+"uniform sampler2D u_src;\n"
+"uniform sampler2D u_dst;\n"
+"uniform float     u_opacity;\n"
+"uniform int       u_blendMode;\n"
+"layout(location = 0) out vec4 fragColor;\n"
+"in vec2 v_uv;\n"
+"\n"
+"vec4 blend_normal(vec4 src, vec4 dst) {\n"
+"    float a = src.a * u_opacity;\n"
+"    return vec4(src.rgb * a + dst.rgb * (1.0 - a), dst.a + a * (1.0 - dst.a));\n"
+"}\n"
+"\n"
+"vec4 blend_multiply(vec4 src, vec4 dst) {\n"
+"    vec3 b = src.rgb * dst.rgb;\n"
+"    float a = src.a * u_opacity;\n"
+"    return vec4(mix(dst.rgb, b, a), dst.a + a * (1.0 - dst.a));\n"
+"}\n"
+"\n"
+"vec4 blend_screen(vec4 src, vec4 dst) {\n"
+"    vec3 b = 1.0 - (1.0 - src.rgb) * (1.0 - dst.rgb);\n"
+"    float a = src.a * u_opacity;\n"
+"    return vec4(mix(dst.rgb, b, a), dst.a + a * (1.0 - dst.a));\n"
+"}\n"
+"\n"
+"void main() {\n"
+"    vec4 src = texture(u_src, v_uv);\n"
+"    vec4 dst = texture(u_dst, v_uv);\n"
+"    if      (u_blendMode == 0) fragColor = blend_normal(src, dst);\n"
+"    else if (u_blendMode == 1) fragColor = blend_multiply(src, dst);\n"
+"    else if (u_blendMode == 2) fragColor = blend_screen(src, dst);\n"
+"    else                       fragColor = blend_normal(src, dst);\n"
+"}\n";
 
 // ── Quad (fullscreen triangle pair) ───────────────────────────────────
 
@@ -80,11 +80,15 @@ LayerManager::LayerManager(int canvasW, int canvasH)
 LayerManager::~LayerManager() { destroy(); }
 
 bool LayerManager::init() {
+    // Limpiar errores GL previos antes de inicializar
+    while (glGetError() != GL_NO_ERROR) {}
+
     if (!initShaders()) {
-        LOGE("Failed to init composite shaders");
+        LOGE("Failed to init composite shaders (GL error: 0x%X)", glGetError());
         return false;
     }
-    // Crear quad VAO
+
+    // Crear quad VAO/VBO
     glGenVertexArrays(1, &quadVAO_);
     glGenBuffers(1, &quadVBO_);
     glBindVertexArray(quadVAO_);
@@ -95,6 +99,14 @@ bool LayerManager::init() {
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)(2*sizeof(float)));
     glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        LOGE("GL error after VAO setup: 0x%X", err);
+        return false;
+    }
+
     LOGI("LayerManager initialized (%dx%d)", canvasW_, canvasH_);
     return true;
 }
@@ -199,23 +211,27 @@ void LayerManager::moveLayer(int fromIdx, int toIdx) {
 void LayerManager::composite(GLuint destFBO, GLuint destTexture,
                               int destW, int destH,
                               const Color& background) {
-    // ── 1. Crear un FBO temporal para acumular ────────────────
+    // ── 1. Crear FBO temporal para acumular ───────────────────
     GLuint accumFBO = 0, accumTex = 0;
     glGenFramebuffers(1, &accumFBO);
     glGenTextures(1, &accumTex);
     glBindTexture(GL_TEXTURE_2D, accumTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, destW, destH, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, destW, destH, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
     glBindFramebuffer(GL_FRAMEBUFFER, accumFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, accumTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, accumTex, 0);
     glViewport(0, 0, destW, destH);
 
     // ── 2. Fondo ──────────────────────────────────────────────
     glClearColor(background.r, background.g, background.b, background.a);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // ── 3. Compositar capas de abajo hacia arriba ─────────────
+    // ── 3. Compositar capas ───────────────────────────────────
     glUseProgram(compositeProgram_);
     glBindVertexArray(quadVAO_);
     glDisable(GL_DEPTH_TEST);
@@ -225,46 +241,66 @@ void LayerManager::composite(GLuint destFBO, GLuint destTexture,
     GLint uOpa  = glGetUniformLocation(compositeProgram_, "u_opacity");
     GLint uBlnd = glGetUniformLocation(compositeProgram_, "u_blendMode");
 
+    // FBO auxiliar para ping-pong entre capas
+    GLuint pingFBO = 0, pingTex = 0;
+    glGenFramebuffers(1, &pingFBO);
+    glGenTextures(1, &pingTex);
+    glBindTexture(GL_TEXTURE_2D, pingTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, destW, destH, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, pingFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, pingTex, 0);
+
+    GLuint currentAccum = accumTex;
+    GLuint currentFBO   = accumFBO;
+    GLuint nextAccum    = pingTex;
+    GLuint nextFBO      = pingFBO;
+
     for (auto& layerPtr : layers_) {
         auto& layer = *layerPtr;
         if (!layer.visible || !layer.isValid()) continue;
+
+        // Render src+dst → nextFBO
+        glBindFramebuffer(GL_FRAMEBUFFER, nextFBO);
+        glViewport(0, 0, destW, destH);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, layer.texture);
         glUniform1i(uSrc, 0);
 
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, accumTex);
+        glBindTexture(GL_TEXTURE_2D, currentAccum);
         glUniform1i(uDst, 1);
 
         glUniform1f(uOpa,  layer.opacity);
         glUniform1i(uBlnd, static_cast<int>(layer.blendMode));
 
-        // Swap: render resultado en destTexture, luego copiar a accumTex
-        glBindFramebuffer(GL_FRAMEBUFFER, destFBO);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, destTexture, 0);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
-        // Copiar destTexture → accumTex para siguiente iteración
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, destFBO);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, accumFBO);
-        glBlitFramebuffer(0, 0, destW, destH, 0, 0, destW, destH,
-                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
-        glBindFramebuffer(GL_FRAMEBUFFER, accumFBO);
+        // Swap ping-pong
+        std::swap(currentAccum, nextAccum);
+        std::swap(currentFBO,   nextFBO);
     }
 
-    // ── 4. Copiar resultado final a destino ──────────────────
+    glBindVertexArray(0);
+    glActiveTexture(GL_TEXTURE0);
+
+    // ── 4. Copiar resultado final al destino ──────────────────
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, currentFBO);
+
     if (destFBO == 0) {
-        // Destino es el framebuffer por defecto (WindowSurface)
-        // glBlitFramebuffer funciona con FBO 0 como draw target
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, accumFBO);
+        // FIX: destino es la WindowSurface (FBO 0).
+        // NO llamar glFramebufferTexture2D sobre FBO 0 — genera INVALID_OPERATION.
+        // Solo hacer blit con flip Y (OpenGL Y=0 abajo, pantalla Y=0 arriba).
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-        // Flip Y: OpenGL tiene Y=0 abajo, la pantalla tiene Y=0 arriba
         glBlitFramebuffer(0, 0, destW, destH,
-                          0, destH, destW, 0,   // destY flippeado
+                          0, destH, destW, 0,   // Y flippeado
                           GL_COLOR_BUFFER_BIT, GL_LINEAR);
     } else {
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, accumFBO);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destFBO);
         if (destTexture != 0) {
             glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
@@ -274,11 +310,12 @@ void LayerManager::composite(GLuint destFBO, GLuint destTexture,
                           GL_COLOR_BUFFER_BIT, GL_LINEAR);
     }
 
-    // ── 5. Cleanup temporal ───────────────────────────────────
+    // ── 5. Cleanup ────────────────────────────────────────────
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glBindVertexArray(0);
     glDeleteFramebuffers(1, &accumFBO);
+    glDeleteFramebuffers(1, &pingFBO);
     glDeleteTextures(1, &accumTex);
+    glDeleteTextures(1, &pingTex);
 }
 
 void LayerManager::resize(int newW, int newH) {
@@ -328,39 +365,56 @@ void LayerManager::destroyLayerFBO(Layer& layer) {
 
 GLuint LayerManager::compileShader(GLenum type, const char* src) {
     GLuint s = glCreateShader(type);
+    if (s == 0) {
+        LOGE("glCreateShader returned 0 (GL error: 0x%X)", glGetError());
+        return 0;
+    }
     glShaderSource(s, 1, &src, nullptr);
     glCompileShader(s);
-    GLint ok; glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+    GLint ok = 0;
+    glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
     if (!ok) {
-        char buf[512]; glGetShaderInfoLog(s, 512, nullptr, buf);
-        LOGE("Shader compile error: %s", buf);
+        char buf[1024];
+        GLsizei len = 0;
+        glGetShaderInfoLog(s, sizeof(buf), &len, buf);
+        LOGE("Shader compile FAILED (type=0x%X):\n%s", type, buf);
         glDeleteShader(s);
         return 0;
     }
+    LOGI("Shader compiled OK (type=0x%X)", type);
     return s;
 }
 
 GLuint LayerManager::linkProgram(GLuint vert, GLuint frag) {
     GLuint p = glCreateProgram();
-    glAttachShader(p, vert); glAttachShader(p, frag);
+    glAttachShader(p, vert);
+    glAttachShader(p, frag);
     glLinkProgram(p);
-    glDeleteShader(vert); glDeleteShader(frag);
-    GLint ok; glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    glDeleteShader(vert);
+    glDeleteShader(frag);
+    GLint ok = 0;
+    glGetProgramiv(p, GL_LINK_STATUS, &ok);
     if (!ok) {
-        char buf[512]; glGetProgramInfoLog(p, 512, nullptr, buf);
-        LOGE("Program link error: %s", buf);
+        char buf[512];
+        glGetProgramInfoLog(p, sizeof(buf), nullptr, buf);
+        LOGE("Program link FAILED: %s", buf);
         glDeleteProgram(p);
         return 0;
     }
+    LOGI("Shader program linked OK");
     return p;
 }
 
 bool LayerManager::initShaders() {
+    LOGI("Compiling composite shaders...");
     GLuint v = compileShader(GL_VERTEX_SHADER,   kCompositeVert);
+    if (!v) { LOGE("Vertex shader failed"); return false; }
     GLuint f = compileShader(GL_FRAGMENT_SHADER, kCompositeFrag);
-    if (!v || !f) return false;
+    if (!f) { glDeleteShader(v); LOGE("Fragment shader failed"); return false; }
     compositeProgram_ = linkProgram(v, f);
-    return compositeProgram_ != 0;
+    if (!compositeProgram_) { LOGE("Program link failed"); return false; }
+    LOGI("Composite shaders ready (program=%u)", compositeProgram_);
+    return true;
 }
 
 } // namespace tsk
