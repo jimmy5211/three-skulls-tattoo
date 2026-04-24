@@ -49,9 +49,7 @@ public:
     void composite(GLuint destFBO, GLuint destTexture,
                    int destW, int destH,
                    const Color& background,
-                   int surfW = 0, int surfH = 0);
-
-    void resize(int newW, int newH);
+                   int surfW = 0, int surfH = 0);    void resize(int newW, int newH);
 
     const std::vector<std::unique_ptr<Layer>>& getLayers() const { return layers_; }
 

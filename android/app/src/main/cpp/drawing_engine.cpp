@@ -256,19 +256,11 @@ void DrawingEngine::render() {
     if (!ready_) return;
     if (!impl_->makeCurrent()) return;
 
-    // FIX DPR: query dimensiones reales del WindowSurface.
-    // setDefaultBufferSize(1080,1920) es un hint — el driver puede crear
-    // un surface mayor (ej. 2160x3840 en DPR=2). Con el viewport incorrecto
-    // los strokes aparecen confinados al cuarto superior izquierdo del canvas.
-    EGLint surfW = 0, surfH = 0;
-    EGLDisplay disp = eglGetCurrentDisplay();
-    EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
-    eglQuerySurface(disp, surf, EGL_WIDTH,  &surfW);
-    eglQuerySurface(disp, surf, EGL_HEIGHT, &surfH);
-    if (surfW <= 0) surfW = impl_->cfg.canvasWidth;
-    if (surfH <= 0) surfH = impl_->cfg.canvasHeight;
-    LOGI("render: surf=%dx%d canvas=%dx%d",
-         surfW, surfH, impl_->cfg.canvasWidth, impl_->cfg.canvasHeight);
+    // FIX DPR: viewW/viewH = dimensiones físicas del WindowSurface (canvasW * density).
+    // La layer FBO es canvasW x canvasH (lógico). El blit escala de lógico a físico.
+    // Sin esto, solo se llena 1/4 de la surface en dispositivos con DPR=2.
+    int surfW = impl_->viewW > 0 ? impl_->viewW : impl_->cfg.canvasWidth;
+    int surfH = impl_->viewH > 0 ? impl_->viewH : impl_->cfg.canvasHeight;
 
     glViewport(0, 0, surfW, surfH);
 

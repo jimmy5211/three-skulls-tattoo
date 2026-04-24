@@ -212,8 +212,6 @@ void LayerManager::composite(GLuint destFBO, GLuint destTexture,
                               int destW, int destH,
                               const Color& background,
                               int surfW, int surfH) {
-    // surfW/surfH: dimensiones reales del WindowSurface (para DPR fix).
-    // Si surfW=0 (llamadas internas), usar destW/destH.
     if (surfW <= 0) surfW = destW;
     if (surfH <= 0) surfH = destH;
     // ── 1. Crear FBO temporal para acumular ───────────────────
@@ -298,10 +296,10 @@ void LayerManager::composite(GLuint destFBO, GLuint destTexture,
     glBindFramebuffer(GL_READ_FRAMEBUFFER, currentFBO);
 
     if (destFBO == 0) {
-        // FIX DPR: usar surfW/surfH para el blit destino al WindowSurface.
-        // destW/destH es la canvas resolution (1080x1920).
-        // surfW/surfH es la resolución real del surface (puede ser 2x en DPR=2).
-        // glBlitFramebuffer escala automáticamente de canvas a surface resolution.
+        // FIX DPR: blit destino al WindowSurface usa surfW/surfH (físico).
+        // destW/destH = canvas lógico (1080x1920).
+        // surfW/surfH = canvas físico (1080*DPR x 1920*DPR).
+        // glBlitFramebuffer escala automáticamente lógico → físico.
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glBlitFramebuffer(0, 0, destW, destH,
                           0, 0, surfW, surfH,
