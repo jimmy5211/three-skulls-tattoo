@@ -255,16 +255,22 @@ void DrawingEngine::render() {
     if (!ready_) return;
     if (!impl_->makeCurrent()) return;
 
-    // SIMPLE: renderizar en canvas resolution (1080x1920).
-    // setDefaultBufferSize(canvasW, canvasH) — Flutter escala el Texture widget.
+    // FIX DPR: viewW/viewH = dimensiones fisicas del EGL surface (del Kotlin eglQuerySurface).
+    // canvasW/canvasH = canvas logico = usado en u_canvasSize del shader.
+    // El blit escala canvasLogico → physico, llenando el surface completo.
+    // Esto evita el scale factor en el SurfaceTexture transform matrix de Flutter.
     int cW = impl_->cfg.canvasWidth;
     int cH = impl_->cfg.canvasHeight;
-    glViewport(0, 0, cW, cH);
+    int surfW = (impl_->viewW > cW) ? impl_->viewW : cW;
+    int surfH = (impl_->viewH > cH) ? impl_->viewH : cH;
+
+    glViewport(0, 0, surfW, surfH);
 
     impl_->layerMgr->composite(
         0, 0,
         cW, cH,
-        impl_->background
+        impl_->background,
+        surfW, surfH
     );
     glFlush();
     impl_->doneCurrent();
