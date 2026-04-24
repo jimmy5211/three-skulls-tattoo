@@ -215,15 +215,24 @@ int DrawingEngine::initWithCode(EGLDisplay display, EGLContext sharedContext,
 
     impl_ = std::make_unique<Impl>();
     impl_->cfg        = cfg;
-    impl_->viewW      = width;
-    impl_->viewH      = height;
     impl_->eglDisplay = display;
     impl_->eglContext = sharedContext;
     impl_->maxUndoSteps = cfg.maxUndoSteps;
     impl_->outputFBO     = 0;
     impl_->outputTexture = 0;
 
-    LOGI("initWithCode: canvas=%dx%d", cfg.canvasWidth, cfg.canvasHeight);
+    // FIX DPR: leer el viewport real de OpenGL ANTES de cualquier glViewport nuestro.
+    // Despues de eglMakeCurrent, el viewport por defecto = dimensiones reales del surface.
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    GLint vp[4] = {0};
+    glGetIntegerv(GL_VIEWPORT, vp);
+    int glSurfW = vp[2];
+    int glSurfH = vp[3];
+    impl_->viewW = (glSurfW > 0) ? glSurfW : width;
+    impl_->viewH = (glSurfH > 0) ? glSurfH : height;
+
+    LOGI("initWithCode: canvas=%dx%d  glViewport=%dx%d  hint=%dx%d",
+         cfg.canvasWidth, cfg.canvasHeight, glSurfW, glSurfH, width, height);
 
     // Init LayerManager
     impl_->layerMgr = std::make_unique<LayerManager>(cfg.canvasWidth, cfg.canvasHeight);
