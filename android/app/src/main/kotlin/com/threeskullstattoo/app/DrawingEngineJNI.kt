@@ -10,17 +10,6 @@ import android.util.Log
 import android.view.Surface
 import io.flutter.view.TextureRegistry
 
-/**
- * Puente Kotlin ↔ C++ motor de dibujo.
- *
- * ARQUITECTURA CORRECTA:
- * 1. Flutter crea un SurfaceTexture entry (GL_TEXTURE_EXTERNAL_OES)
- *    → DEBE hacerse en el main thread (API de Flutter)
- * 2. Kotlin crea una EGL WindowSurface desde ese SurfaceTexture.Surface
- *    → Se hace en el GL thread, DESPUÉS de recibir el entry del main thread
- * 3. C++ renderiza al framebuffer 0 (la window surface) — NO a una texture custom
- * 4. Kotlin llama eglSwapBuffers → Flutter actualiza el Texture widget
- */
 object DrawingEngineJNI {
 
     private const val TAG = "TSK_KT"
@@ -29,11 +18,11 @@ object DrawingEngineJNI {
     val glHandler = Handler(glThread.looper)
 
     // EGL state
-    private var eglDisplay  = EGL14.EGL_NO_DISPLAY
-    private var eglContext  = EGL14.EGL_NO_CONTEXT
-    private var eglConfig   : android.opengl.EGLConfig? = null
-    private var windowSurface = EGL14.EGL_NO_SURFACE  // render target principal
-    private var pbufferSurface = EGL14.EGL_NO_SURFACE // para init antes de window
+    private var eglDisplay   = EGL14.EGL_NO_DISPLAY
+    private var eglContext   = EGL14.EGL_NO_CONTEXT
+    private var eglConfig    : android.opengl.EGLConfig? = null
+    private var windowSurface  = EGL14.EGL_NO_SURFACE
+    private var pbufferSurface = EGL14.EGL_NO_SURFACE
 
     // Flutter texture
     private var textureEntry : TextureRegistry.SurfaceTextureEntry? = null
@@ -46,6 +35,9 @@ object DrawingEngineJNI {
     var initialized = false
         private set
 
+    // FIX: tracking detallado del paso que falló
+    private var _lastSetupError = "not_started"
+
     // ═══════════════════════════════════════════════════════════
     // SETUP
     // ═══════════════════════════════════════════════════════════
@@ -57,63 +49,78 @@ object DrawingEngineJNI {
         onReady: (textureId: Long) -> Unit
     ) {
         if (!nativeLibLoaded) {
+            _lastSetupError = "native_lib_not_loaded"
             Log.e(TAG, "Native lib not loaded")
             onReady(-1L)
             return
         }
 
         // FIX CRÍTICO: createSurfaceTexture() DEBE llamarse en el main thread.
-        // Antes estaba dentro de glHandler.post{} (GL thread) → SurfaceTexture
-        // inválido → eglCreateWindowSurface fallaba silenciosamente → id=-1.
-        val entry = textureRegistry.createSurfaceTexture()
+        _lastSetupError = "creating_surface_texture"
+        val entry = try {
+            textureRegistry.createSurfaceTexture()
+        } catch (t: Throwable) {
+            _lastSetupError = "create_surface_texture_failed: $t"
+            Log.e(TAG, _lastSetupError)
+            onReady(-1L)
+            return
+        }
         textureEntry = entry
         textureId    = entry.id()
         val st = entry.surfaceTexture()
         surfaceTex   = st
         st.setDefaultBufferSize(canvasW, canvasH)
-        Log.i(TAG, "SurfaceTexture created on main thread: id=$textureId")
+        Log.i(TAG, "SurfaceTexture created on main thread: id=$textureId canvas=${canvasW}x${canvasH}")
+        _lastSetupError = "surface_texture_ok_starting_gl_thread"
 
-        // Resto del setup en el GL thread (EGL y C++ requieren el GL thread)
         glHandler.post {
             try {
-                // ── 1. Init EGL display + context ──────────────────
+                // ── 1. Init EGL ──────────────────────────────────
+                _lastSetupError = "egl_init"
                 if (!initEGL()) {
-                    Log.e(TAG, "EGL init failed")
+                    _lastSetupError = "egl_init_failed (error=0x${EGL14.eglGetError().toString(16)})"
+                    Log.e(TAG, _lastSetupError)
                     notifyMain(-1L, onReady); return@post
                 }
+                Log.i(TAG, "EGL init OK")
 
-                // ── 2. Crear EGL WindowSurface desde la Surface ────
-                // Surface se crea aquí en el GL thread (necesita EGL activo)
+                // ── 2. Crear EGL WindowSurface ───────────────────
+                _lastSetupError = "creating_window_surface"
                 surface = Surface(st)
                 val winAttribs = intArrayOf(EGL14.EGL_NONE)
                 windowSurface = EGL14.eglCreateWindowSurface(
                     eglDisplay, eglConfig, surface, winAttribs, 0)
 
                 if (windowSurface == EGL14.EGL_NO_SURFACE) {
-                    Log.e(TAG, "eglCreateWindowSurface failed: 0x${EGL14.eglGetError().toString(16)}")
+                    _lastSetupError = "egl_create_window_surface_failed (error=0x${EGL14.eglGetError().toString(16)})"
+                    Log.e(TAG, _lastSetupError)
                     notifyMain(-1L, onReady); return@post
                 }
                 Log.i(TAG, "WindowSurface created OK")
 
-                // ── 3. Hacer current la window surface ─────────────
+                // ── 3. Make current ──────────────────────────────
+                _lastSetupError = "egl_make_current"
                 if (!EGL14.eglMakeCurrent(eglDisplay, windowSurface, windowSurface, eglContext)) {
-                    Log.e(TAG, "eglMakeCurrent(windowSurface) failed: 0x${EGL14.eglGetError().toString(16)}")
+                    _lastSetupError = "egl_make_current_failed (error=0x${EGL14.eglGetError().toString(16)})"
+                    Log.e(TAG, _lastSetupError)
                     notifyMain(-1L, onReady); return@post
                 }
-                Log.i(TAG, "WindowSurface current: canvas=${canvasW}x${canvasH}")
+                Log.i(TAG, "eglMakeCurrent OK")
                 Log.i(TAG, "GL_VERSION:  ${GLES30.glGetString(GLES30.GL_VERSION)}")
                 Log.i(TAG, "GL_RENDERER: ${GLES30.glGetString(GLES30.GL_RENDERER)}")
 
-                // ── 4. Init motor C++ ──────────────────────────────
+                // ── 4. Init motor C++ ────────────────────────────
+                _lastSetupError = "jni_init"
                 val dispHandle = EGL14.eglGetCurrentDisplay().nativeHandle
                 val ctxHandle  = EGL14.eglGetCurrentContext().nativeHandle
 
-                // jniInit returns: 0=ok, 1=no_ctx, 2=no_surf, 3=layer_mgr, 4=stroke
                 val errCode = try {
                     jniInit(dispHandle, ctxHandle, canvasW, canvasH, 0,
                             canvasW, canvasH, maxUndoSteps)
                 } catch (t: Throwable) {
-                    Log.e(TAG, "jniInit threw: $t"); -1
+                    _lastSetupError = "jni_init_threw: $t"
+                    Log.e(TAG, _lastSetupError)
+                    notifyMain(-1L, onReady); return@post
                 }
 
                 val errName = when(errCode) {
@@ -122,30 +129,31 @@ object DrawingEngineJNI {
                     2    -> "NO_EGL_SURFACE"
                     3    -> "LAYER_MGR_INIT_FAILED"
                     4    -> "STROKE_ENGINE_INIT_FAILED"
-                    else -> "UNKNOWN($errCode)"
+                    else -> "UNKNOWN_CODE($errCode)"
                 }
                 Log.i(TAG, "jniInit: $errName  textureId=$textureId")
 
-                val ok = errCode == 0
-                if (!ok) {
+                if (errCode != 0) {
+                    _lastSetupError = "jni_init_failed: $errName"
                     Log.e(TAG, "=== C++ ENGINE FAILED: $errName ===")
-                    Log.e(TAG, "Canvas: ${canvasW}x${canvasH}")
                     Log.e(TAG, "GL: ${GLES30.glGetString(GLES30.GL_VERSION)}")
                     Log.e(TAG, "Renderer: ${GLES30.glGetString(GLES30.GL_RENDERER)}")
+                    notifyMain(-1L, onReady); return@post
                 }
-                initialized = ok
 
-                notifyMain(if (ok) textureId else -1L, onReady)
+                _lastSetupError = "ok"
+                initialized = true
+                notifyMain(textureId, onReady)
 
             } catch (t: Throwable) {
-                Log.e(TAG, "setup crashed: $t")
+                _lastSetupError = "setup_crashed: $t"
+                Log.e(TAG, _lastSetupError)
                 initialized = false
                 notifyMain(-1L, onReady)
             }
         }
     }
 
-    // Llama eglSwapBuffers para actualizar el SurfaceTexture de Flutter
     fun swapBuffers() {
         if (windowSurface != EGL14.EGL_NO_SURFACE) {
             EGL14.eglSwapBuffers(eglDisplay, windowSurface)
@@ -198,8 +206,8 @@ object DrawingEngineJNI {
     fun addLayer(name: String): Int = if (initialized) jniAddLayer(name) else -1
     fun removeLayer(id: Int)             = glHandler.post { if (initialized) jniRemoveLayer(id) }
     fun setActiveLayer(id: Int)          = glHandler.post { if (initialized) jniSetActiveLayer(id) }
-    fun setLayerOpacity(id: Int, o: Float)   = glHandler.post { if (initialized) jniSetLayerOpacity(id, o) }
-    fun setLayerVisible(id: Int, v: Boolean) = glHandler.post { if (initialized) jniSetLayerVisible(id, v) }
+    fun setLayerOpacity(id: Int, o: Float)    = glHandler.post { if (initialized) jniSetLayerOpacity(id, o) }
+    fun setLayerVisible(id: Int, v: Boolean)  = glHandler.post { if (initialized) jniSetLayerVisible(id, v) }
     fun clearLayer(id: Int)              = glHandler.post { if (initialized) { jniClearLayer(id); swapBuffers() } }
     fun setBackground(colorARGB: Int)    = glHandler.post { if (initialized) { jniSetBackground(colorARGB); swapBuffers() } }
     fun setCanvasSize(w: Int, h: Int)    = glHandler.post {
@@ -214,7 +222,8 @@ object DrawingEngineJNI {
         if (initialized) jniLoadBrushTexture(data, w, h) else -1
     fun unloadBrushTexture(id: Int) = glHandler.post { if (initialized) jniUnloadBrushTexture(id) }
 
-    fun getLastError(): String = if (initialized) "ok" else "init_failed"
+    // FIX: retorna el paso exacto donde falló el setup
+    fun getLastError(): String = _lastSetupError
 
     // ═══════════════════════════════════════════════════════════
     // EGL helpers
@@ -222,12 +231,14 @@ object DrawingEngineJNI {
 
     private fun initEGL(): Boolean {
         eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
-        if (eglDisplay == EGL14.EGL_NO_DISPLAY) return false
+        if (eglDisplay == EGL14.EGL_NO_DISPLAY) { Log.e(TAG, "eglGetDisplay failed"); return false }
 
         val ver = IntArray(2)
-        if (!EGL14.eglInitialize(eglDisplay, ver, 0, ver, 1)) return false
+        if (!EGL14.eglInitialize(eglDisplay, ver, 0, ver, 1)) {
+            Log.e(TAG, "eglInitialize failed: 0x${EGL14.eglGetError().toString(16)}")
+            return false
+        }
 
-        // Config con WINDOW_BIT para poder crear WindowSurface
         val cfgAttribs = intArrayOf(
             EGL14.EGL_RENDERABLE_TYPE, EGLExt.EGL_OPENGL_ES3_BIT_KHR,
             EGL14.EGL_SURFACE_TYPE,    EGL14.EGL_WINDOW_BIT or EGL14.EGL_PBUFFER_BIT,
@@ -240,7 +251,7 @@ object DrawingEngineJNI {
         val configs = arrayOfNulls<android.opengl.EGLConfig>(1)
         val n = IntArray(1)
         if (!EGL14.eglChooseConfig(eglDisplay, cfgAttribs, 0, configs, 0, 1, n, 0) || n[0] == 0) {
-            Log.e(TAG, "eglChooseConfig failed")
+            Log.e(TAG, "eglChooseConfig failed: 0x${EGL14.eglGetError().toString(16)}")
             return false
         }
         eglConfig = configs[0]
@@ -252,7 +263,6 @@ object DrawingEngineJNI {
             return false
         }
 
-        // PBuffer temporal para poder hacer GL calls antes de la window surface
         val pbAttribs = intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE)
         pbufferSurface = EGL14.eglCreatePbufferSurface(eglDisplay, eglConfig, pbAttribs, 0)
         EGL14.eglMakeCurrent(eglDisplay, pbufferSurface, pbufferSurface, eglContext)
@@ -266,7 +276,7 @@ object DrawingEngineJNI {
             EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
             if (windowSurface  != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, windowSurface)
             if (pbufferSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, pbufferSurface)
-            if (eglContext     != EGL14.EGL_NO_CONTEXT)  EGL14.eglDestroyContext(eglDisplay, eglContext)
+            if (eglContext     != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(eglDisplay, eglContext)
             EGL14.eglTerminate(eglDisplay)
         }
         surface?.release()
@@ -276,7 +286,7 @@ object DrawingEngineJNI {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // JNI (prefijo jni para evitar ambigüedad con la API pública)
+    // JNI
     // ═══════════════════════════════════════════════════════════
 
     private val nativeLibLoaded: Boolean = try {
