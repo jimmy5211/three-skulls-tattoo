@@ -1674,11 +1674,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                           .clamp(1, 100),
                       min: 1,
                       max: 100,
-                      onChanged: (v) => setState(
-                          () {
-                            _controller.setBrushSize(v);
-                            if (!_isScaling) _triggerBrushPreview(v);
-                          }),
+                      onChanged: (v) {
+                        // FIX FREEZE: no setState — evita rebuild completo con RawImage
+                        _controller.setBrushSize(v);
+                        if (!_isScaling) _triggerBrushPreview(v);
+                      },
                     ),
                   ),
                 ),
@@ -1731,9 +1731,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                           .clamp(0.01, 1.0),
                       min: 0.01,
                       max: 1.0,
-                      onChanged: (v) => setState(
-                          () =>
-                              _controller.setBrushOpacity(v)),
+                      onChanged: (v) {
+                        _controller.setBrushOpacity(v);
+                      },
                     ),
                   ),
                 ),
@@ -1779,9 +1779,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         value: _controller.activeBrush.hardness.clamp(0.0, 1.0),
                         min: 0.0,
                         max: 1.0,
-                        onChanged: (v) => setState(
-                            () => _controller.setBrushHardness(v)),
-                      ),
+                        onChanged: (v) {
+                          _controller.setBrushHardness(v);
+                        },
                     ),
                   ),
                 ),
@@ -4044,7 +4044,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 hardness:  _brush.hardness,
                 spacing:   0.15,
                 isEraser:  _brush.type == StrokeType.eraser,
-                color:     _controller.activeColor,
+                color:     _brush.type == StrokeType.eraser
+                    ? _controller.activeColor.withOpacity(_brush.opacity)
+                    : _controller.activeColor,
               ));
               for (final p in _pendingPoints.skip(1)) {
                 _controller.continueStroke(p);
@@ -4147,7 +4149,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 children: [
 
                   // ── Offscreen: imagen C++ + overlay Dart en tiempo real ──
-                  // ── Offscreen: imagen C++ base ────────────────
                   if (_nativeReady && _nativeCanvasImage != null)
                     RawImage(
                       image:  _nativeCanvasImage,
@@ -4174,8 +4175,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                                  _controller.canvasSize.height),
                     ),
                   // ── Fallback: renderer Dart mientras carga el motor ─
+                  // ── Fallback: renderer Dart mientras carga el motor ─
+                  if (!_nativeReady)
                     CustomPaint(
-                      painter: CanvasPainter(
                         layers: _controller.layers,
                         currentStroke: _controller.currentStroke,
                         currentMirrorStroke:
