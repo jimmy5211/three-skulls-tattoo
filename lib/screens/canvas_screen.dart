@@ -4141,16 +4141,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   // ── Fase 2: Motor C++/OpenGL ES via Texture widget ──
                   if (_nativeReady && _bridge.textureId != null)
                     SizedBox(
-                      width:  _controller.canvasSize.width,
-                       height: _controller.canvasSize.height,
-                       child: FittedBox(
-                       fit: BoxFit.fill,
-                       child: Texture(
-                       textureId: _bridge.textureId!,
-                    freeze: false,
-                      ),
+                     width:  _controller.canvasSize.width,
+                     height: _controller.canvasSize.height,
+                     child: Texture(
+                     textureId: _bridge.textureId!,
+                     freeze: false,
+                     filterQuality: FilterQuality.low,
                     ),
-                  )
+                 )
                   else
                     // ── Fallback: renderer Dart mientras carga el motor ─
                     CustomPaint(
