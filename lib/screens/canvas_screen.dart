@@ -4143,15 +4143,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     SizedBox(
                      width:  _controller.canvasSize.width,
                      height: _controller.canvasSize.height,
-                     child: Transform.scale(
-                     scale: MediaQuery.of(context).devicePixelRatio,
-                     alignment: Alignment.topLeft,
-                     child: Texture(
-                     textureId: _bridge.textureId!,
-                     freeze: false,
-                   ),
-                ),
-              )
+                     child: Texture(textureId: _bridge.textureId!),
+                   )
                   else
                     // ── Fallback: renderer Dart mientras carga el motor ─
                     CustomPaint(
