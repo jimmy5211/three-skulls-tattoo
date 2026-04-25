@@ -3028,23 +3028,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
     void stamp(Offset p) {
       final np = toNative(p);
-      // Replicar shader: h = pow(hardness, 2.2), inner = radius*(1-h)
-      final h     = hardness <= 0.0 ? 0.0 : (hardness >= 1.0 ? 1.0 : math.pow(hardness, 2.2).toDouble());
-      final inner = r * (1.0 - h);
-      if (inner >= r * 0.99) {
-        // Borde completamente duro
+      final h    = hardness <= 0.0 ? 0.0 : (hardness >= 1.0 ? 1.0 : math.pow(hardness, 2.2).toDouble());
+      final stop = (1.0 - h).clamp(0.0, 0.99);
+      if (stop <= 0.01) {
         canvas.drawCircle(np, r,
             Paint()..blendMode = BlendMode.dstOut
                    ..color = Colors.white
                    ..style = PaintingStyle.fill);
       } else {
-        // Degradado replicando smoothstep del shader
-        final stop = (inner / r).clamp(0.0, 0.99);
         canvas.drawCircle(np, r, Paint()
           ..shader = ui.Gradient.radial(np, r, [
-            Colors.white,
-            Colors.white,
-            Colors.transparent,
+            Colors.white, Colors.white, Colors.transparent,
           ], [0.0, stop, 1.0])
           ..blendMode = BlendMode.dstOut);
       }
@@ -3141,51 +3135,32 @@ class _CanvasScreenState extends State<CanvasScreen> {
     if (erase.points.isEmpty) return;
     final hardness = erase.hardness.clamp(0.0, 1.0);
     final r        = erase.radius;
-    // Replicar shader: h = pow(hardness, 2.2), inner = r*(1-h)
-    final h     = hardness <= 0.0 ? 0.0 : (hardness >= 1.0 ? 1.0 : math.pow(hardness, 2.2).toDouble());
-    final inner = r * (1.0 - h);
-    final stop  = (inner / r).clamp(0.0, 0.99);
-
-    Paint erasePaintFor(Offset center) {
-      if (inner >= r * 0.99) {
-        return Paint()..blendMode = BlendMode.dstOut..color = Colors.white;
-      }
+    final h        = hardness <= 0.0 ? 0.0 : (hardness >= 1.0 ? 1.0 : math.pow(hardness, 2.2).toDouble());
+    final stop     = (1.0 - h).clamp(0.0, 0.99);
+    Paint erasePaint(Offset center) {
+      if (stop <= 0.01) return Paint()..blendMode = BlendMode.dstOut..color = Colors.white;
       return Paint()
         ..shader = ui.Gradient.radial(center, r, [
           Colors.white, Colors.white, Colors.transparent,
         ], [0.0, stop, 1.0])
         ..blendMode = BlendMode.dstOut;
     }
-
     if (erase.points.length == 1) {
-      canvas.drawCircle(erase.points.first, r, erasePaintFor(erase.points.first));
+      canvas.drawCircle(erase.points.first, r, erasePaint(erase.points.first));
       return;
     }
-    // Para live overlay: dibujar stamps individuales (más consistente con shader)
-    void stampLive(Offset p) => canvas.drawCircle(p, r, erasePaintFor(p));
-    stampLive(erase.points.first);
-    for (int i = 1; i < erase.points.length; i++) {
-      stampLive(erase.points[i]);
-      final dist = (erase.points[i] - erase.points[i-1]).distance;
-      final steps = (dist / (r * 0.3)).ceil().clamp(1, 8);
-      for (int s = 1; s < steps; s++) {
-        final p = Offset.lerp(erase.points[i-1], erase.points[i], s / steps)!;
-        stampLive(p);
+    // Stamps individuales — consistente con shader GPU
+    for (int i = 0; i < erase.points.length; i++) {
+      canvas.drawCircle(erase.points[i], r, erasePaint(erase.points[i]));
+      if (i > 0) {
+        final dist  = (erase.points[i] - erase.points[i-1]).distance;
+        final steps = (dist / (r * 0.3)).ceil().clamp(1, 8);
+        for (int s = 1; s < steps; s++) {
+          final p = Offset.lerp(erase.points[i-1], erase.points[i], s / steps)!;
+          canvas.drawCircle(p, r, erasePaint(p));
+        }
       }
     }
-    if (false) { // dead code — mantener estructura original
-    final path = ui.Path();
-    path.moveTo(erase.points.first.dx, erase.points.first.dy);
-    for (int i = 1; i < erase.points.length - 1; i++) {
-      final mid = Offset(
-        (erase.points[i].dx + erase.points[i+1].dx) / 2,
-        (erase.points[i].dy + erase.points[i+1].dy) / 2,
-      );
-      path.quadraticBezierTo(
-          erase.points[i].dx, erase.points[i].dy, mid.dx, mid.dy);
-    }
-    path.lineTo(erase.points.last.dx, erase.points.last.dy);
-    canvas.drawPath(path, paint);
   }
 
   void _drawStrokeOnCanvas(ui.Canvas canvas, StrokeModel stroke) {
