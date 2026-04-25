@@ -1674,10 +1674,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                           .clamp(1, 100),
                       min: 1,
                       max: 100,
-                      onChanged: (v) {
-                        _controller.setBrushSize(v);
-                        if (!_isScaling) _triggerBrushPreview(v);
-                      },
+                      onChanged: (v) => setState(
+                          () {
+                            _controller.setBrushSize(v);
+                            if (!_isScaling) _triggerBrushPreview(v);
+                          }),
                     ),
                   ),
                 ),
@@ -1730,9 +1731,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                           .clamp(0.01, 1.0),
                       min: 0.01,
                       max: 1.0,
-                      onChanged: (v) {
-                        _controller.setBrushOpacity(v);
-                      },
+                      onChanged: (v) => setState(
+                          () =>
+                              _controller.setBrushOpacity(v)),
                     ),
                   ),
                 ),
@@ -1778,9 +1779,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         value: _controller.activeBrush.hardness.clamp(0.0, 1.0),
                         min: 0.0,
                         max: 1.0,
-                        onChanged: (v) {
-                          _controller.setBrushHardness(v);
-                        },
+                        onChanged: (v) => setState(
+                            () => _controller.setBrushHardness(v)),
                       ),
                     ),
                   ),
@@ -4044,9 +4044,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 hardness:  _brush.hardness,
                 spacing:   0.15,
                 isEraser:  _brush.type == StrokeType.eraser,
-                color:     _brush.type == StrokeType.eraser
-                    ? _controller.activeColor.withOpacity(_brush.opacity)
-                    : _controller.activeColor,
+                color:     _controller.activeColor,
               ));
               for (final p in _pendingPoints.skip(1)) {
                 _controller.continueStroke(p);
@@ -4151,11 +4149,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   // ── Offscreen: imagen C++ + overlay Dart en tiempo real ──
                   // ── Offscreen: imagen C++ base ────────────────
                   if (_nativeReady && _nativeCanvasImage != null)
-                    RawImage(
-                      image:  _nativeCanvasImage,
-                      width:  _controller.canvasSize.width,
-                      height: _controller.canvasSize.height,
-                      fit:    BoxFit.fill,
+                    RepaintBoundary(
+                      child: RawImage(
+                        image:  _nativeCanvasImage,
+                        width:  _controller.canvasSize.width,
+                        height: _controller.canvasSize.height,
+                        fit:    BoxFit.fill,
+                      ),
                     ),
                   // ── Overlay trazo actual (tiempo real) ──────────
                   if (_nativeReady && _controller.currentStroke != null)
