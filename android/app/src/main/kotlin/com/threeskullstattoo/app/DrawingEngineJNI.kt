@@ -117,6 +117,7 @@ object DrawingEngineJNI {
     fun endStrokeAndExport(onDone: (ByteArray?) -> Unit) {
         glHandler.post {
             if (!initialized) { notifyBytes(null, onDone); return@post }
+            ensureCurrent()
             jniEndStroke()
             notifyBytes(jniExportPixels(), onDone)
         }
@@ -162,6 +163,7 @@ object DrawingEngineJNI {
     // ── Canvas ─────────────────────────────────────────────────────────────
 
     fun setBackground(colorARGB: Int, onDone: (ByteArray?) -> Unit) = glHandler.post {
+        ensureCurrent()
         if (initialized) jniSetBackground(colorARGB)
         notifyBytes(if (initialized) jniExportPixels() else null, onDone)
     }
@@ -173,6 +175,15 @@ object DrawingEngineJNI {
     fun unloadBrushTexture(id: Int) = glHandler.post { if (initialized) jniUnloadBrushTexture(id) }
 
     // ── Destroy ────────────────────────────────────────────────────────────
+
+    /** Asegura que el contexto EGL esté activo en el GL thread. */
+    private fun ensureCurrent() {
+        if (eglDisplay != EGL14.EGL_NO_DISPLAY &&
+            pbufferSurface != EGL14.EGL_NO_SURFACE &&
+            eglContext != EGL14.EGL_NO_CONTEXT) {
+            EGL14.eglMakeCurrent(eglDisplay, pbufferSurface, pbufferSurface, eglContext)
+        }
+    }
 
     fun destroy() {
         glHandler.post {
