@@ -3028,18 +3028,24 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
     void stamp(Offset p) {
       final np = toNative(p);
-      if (hardness >= 0.99) {
+      // Replicar shader: h = pow(hardness, 2.2), inner = radius*(1-h)
+      final h     = hardness <= 0.0 ? 0.0 : (hardness >= 1.0 ? 1.0 : math.pow(hardness, 2.2).toDouble());
+      final inner = r * (1.0 - h);
+      if (inner >= r * 0.99) {
+        // Borde completamente duro
         canvas.drawCircle(np, r,
             Paint()..blendMode = BlendMode.dstOut
                    ..color = Colors.white
                    ..style = PaintingStyle.fill);
       } else {
+        // Degradado replicando smoothstep del shader
+        final stop = (inner / r).clamp(0.0, 0.99);
         canvas.drawCircle(np, r, Paint()
           ..shader = ui.Gradient.radial(np, r, [
-            Colors.white.withOpacity(1.0),
-            Colors.white.withOpacity(hardness),
+            Colors.white,
+            Colors.white,
             Colors.transparent,
-          ], [0.0, hardness.clamp(0.01, 0.99), 1.0])
+          ], [0.0, stop, 1.0])
           ..blendMode = BlendMode.dstOut);
       }
     }
@@ -3133,21 +3139,41 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   void _drawEraseOnCanvas(ui.Canvas canvas, EraseStroke erase) {
     if (erase.points.isEmpty) return;
-    final opacity = erase.hardness.clamp(0.1, 1.0);
-    final paint = Paint()
-      ..blendMode = BlendMode.dstOut
-      ..color = Colors.white.withOpacity(opacity)
-      ..strokeWidth = erase.radius * 2
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
+    final hardness = erase.hardness.clamp(0.0, 1.0);
+    final r        = erase.radius;
+    // Replicar shader: h = pow(hardness, 2.2), inner = r*(1-h)
+    final h     = hardness <= 0.0 ? 0.0 : (hardness >= 1.0 ? 1.0 : math.pow(hardness, 2.2).toDouble());
+    final inner = r * (1.0 - h);
+    final stop  = (inner / r).clamp(0.0, 0.99);
+
+    Paint erasePaintFor(Offset center) {
+      if (inner >= r * 0.99) {
+        return Paint()..blendMode = BlendMode.dstOut..color = Colors.white;
+      }
+      return Paint()
+        ..shader = ui.Gradient.radial(center, r, [
+          Colors.white, Colors.white, Colors.transparent,
+        ], [0.0, stop, 1.0])
+        ..blendMode = BlendMode.dstOut;
+    }
+
     if (erase.points.length == 1) {
-      canvas.drawCircle(erase.points.first, erase.radius,
-          Paint()..blendMode = BlendMode.dstOut
-                 ..color = Colors.white.withOpacity(opacity)
-                 ..style = PaintingStyle.fill);
+      canvas.drawCircle(erase.points.first, r, erasePaintFor(erase.points.first));
       return;
     }
+    // Para live overlay: dibujar stamps individuales (más consistente con shader)
+    void stampLive(Offset p) => canvas.drawCircle(p, r, erasePaintFor(p));
+    stampLive(erase.points.first);
+    for (int i = 1; i < erase.points.length; i++) {
+      stampLive(erase.points[i]);
+      final dist = (erase.points[i] - erase.points[i-1]).distance;
+      final steps = (dist / (r * 0.3)).ceil().clamp(1, 8);
+      for (int s = 1; s < steps; s++) {
+        final p = Offset.lerp(erase.points[i-1], erase.points[i], s / steps)!;
+        stampLive(p);
+      }
+    }
+    if (false) { // dead code — mantener estructura original
     final path = ui.Path();
     path.moveTo(erase.points.first.dx, erase.points.first.dy);
     for (int i = 1; i < erase.points.length - 1; i++) {
