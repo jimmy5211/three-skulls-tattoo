@@ -155,11 +155,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
   static const Color _textPrimary = Color(0xFFFFFFFF);
   static const Color _textSecondary = Color(0xFF8E8E93);
 
-  // ── NATIVE ENGINE (Fase 2) ──────────────────────────────────────
+  // ── NATIVE ENGINE (Offscreen) ────────────────────────────────────
   late NativeCanvasBridge _bridge;
   bool _nativeReady = false;
-  double _lastBridgeX = 0;
-  double _lastBridgeY = 0;
+  ui.Image? _nativeCanvasImage;
   String _nativeInitError = 'unknown';
   final Map<int, int> _nativeLayerIds = {};
 
@@ -229,25 +228,21 @@ class _CanvasScreenState extends State<CanvasScreen> {
       final cw = _controller.canvasSize.width.toInt();
       final ch = _controller.canvasSize.height.toInt();
 
-      // onReady siempre se llama (con -1 si falla) — sin timeout necesario
-      final dpr = MediaQuery.of(context).devicePixelRatio;
-      await _bridge.init(canvasW: cw, canvasH: ch, maxUndo: 20, dpr: dpr);
+      await _bridge.init(canvasW: cw, canvasH: ch, maxUndo: 20);
 
-      // FIX: initWithCode ya crea la capa 0 en C++ en el GL thread.
-      // addLayer() desde main thread no tiene contexto GL y retorna -1.
-     // Mapeamos directo: capa Dart i → capa nativa i.
       for (int i = 0; i < _controller.layers.length; i++) {
-       _nativeLayerIds[_controller.layers[i].id] = i;
+        _nativeLayerIds[_controller.layers[i].id] = i;
       }
       final nativeActive = _nativeLayerIds[_controller.activeLayerId];
       if (nativeActive != null) await _bridge.setActiveLayer(nativeActive);
-      await _bridge.setBackground(_controller.backgroundColor);
 
-      if (mounted) setState(() => _nativeReady = true);
-      debugPrint('[NativeEngine] ✅ Motor C++/OpenGL listo');
-      // Registrar en Crashlytics que el motor nativo está activo
-      FirebaseCrashlytics.instance.setCustomKey('renderer', 'gpu_cpp');
-      FirebaseCrashlytics.instance.setCustomKey('texture_id', '${_bridge.textureId}');
+      final initImg = await _bridge.setBackground(_controller.backgroundColor);
+      if (mounted) setState(() {
+        _nativeReady = true;
+        _nativeCanvasImage = initImg;
+      });
+      debugPrint('[NativeEngine] ✅ Motor C++ Offscreen listo');
+      FirebaseCrashlytics.instance.setCustomKey('renderer', 'gpu_cpp_offscreen');
     } catch (e, stack) {
       _nativeInitError = e.toString();
       debugPrint('[NativeEngine] ⚠️ Error: $_nativeInitError');
@@ -269,10 +264,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
   int _nativeLayer(int dartLayerId) =>
       _nativeLayerIds[dartLayerId] ?? 0;
 
-  /// Llama al bridge si está listo, sin bloquear
+  /// Llama al bridge para operaciones void.
   void _bridgeCall(Future<void> Function() fn) {
     if (_nativeReady) fn().catchError((e) {
-      debugPrint('[NativeEngine] \$e');
+      debugPrint('[NativeEngine] $e');
+    });
+  }
+
+  /// Llama al bridge y actualiza _nativeCanvasImage con el resultado.
+  void _bridgeImageCall(Future<ui.Image?> Function() fn) {
+    if (!_nativeReady) return;
+    fn().then((img) {
+      if (img != null && mounted) setState(() => _nativeCanvasImage = img);
+    }).catchError((e) {
+      debugPrint('[NativeEngine] $e');
     });
   }
 
@@ -635,8 +640,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
               const SizedBox(width: 4),
               _btn(Icons.arrow_back_ios,
                   onTap: () => context.go('/home')),
-              _btn(Icons.undo, tooltip: 'Deshacer', onTap: () { _controller.undo(); _bridgeCall(() => _bridge.undo()); }),
-              _btn(Icons.redo, tooltip: 'Rehacer', onTap: () { _controller.redo(); _bridgeCall(() => _bridge.redo()); }),
+              _btn(Icons.undo, tooltip: 'Deshacer', onTap: () { _controller.undo(); _bridgeImageCall(() => _bridge.undo()); }),
+              _btn(Icons.redo, tooltip: 'Rehacer', onTap: () { _controller.redo(); _bridgeImageCall(() => _bridge.redo()); }),
               _btn(
                 _zoomMode ? Icons.edit_outlined : Icons.zoom_in,
                 isActive: _zoomMode,
@@ -835,7 +840,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             const SizedBox(width: 4),
             Text(
               _nativeReady
-                  ? 'GPU C++  tex:${_bridge.textureId ?? "?"}'
+                  ? 'GPU C++ Offscreen'
                   : 'CPU Dart',
               style: const TextStyle(
                 color: Colors.white,
@@ -4119,7 +4124,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       _activePointers <= 1;
                   if (isValid) {
                     _controller.endStroke();
-                    _bridgeCall(() => _bridge.endStroke());
+                    _bridgeImageCall(() => _bridge.endStroke());
                   } else {
                     _controller.cancelStroke();
                     _bridgeCall(() => _bridge.cancelStroke());
@@ -4143,13 +4148,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
               child: Stack(
                 children: [
 
-                  // ── Fase 2: Motor C++/OpenGL ES via Texture widget ──
-                  if (_nativeReady && _bridge.textureId != null)
-                    SizedBox(
-                     width:  _controller.canvasSize.width,
-                     height: _controller.canvasSize.height,
-                     child: Texture(textureId: _bridge.textureId!),
-                   )
+                  // ── Offscreen: imagen C++ ──────────────────────
+                  if (_nativeReady && _nativeCanvasImage != null)
+                    RawImage(
+                      image:  _nativeCanvasImage,
+                      width:  _controller.canvasSize.width,
+                      height: _controller.canvasSize.height,
+                      fit:    BoxFit.fill,
+                    )
                   else
                     // ── Fallback: renderer Dart mientras carga el motor ─
                     CustomPaint(
