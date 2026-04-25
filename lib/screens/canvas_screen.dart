@@ -858,10 +858,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
   void _showRendererInfo() {
     final msg = _nativeReady
         ? 'Motor C++/OpenGL ES activo\n'
-          'Texture ID: ${_bridge.textureId}\n'
+          'Motor offscreen activo\n'
           'Capas nativas: ${_nativeLayerIds.length}\n'
           'Estado: RENDERIZANDO EN GPU\n'
-          'x=${_lastBridgeX.toStringAsFixed(0)},y=${_lastBridgeY.toStringAsFixed(0)}\ndpr=${MediaQuery.of(context).devicePixelRatio.toStringAsFixed(2)}'
+          'Estado: OK'
           'sc=${_scale.toStringAsFixed(3)} off=(${_offset.dx.toStringAsFixed(0)},${_offset.dy.toStringAsFixed(0)})'
         : 'Motor Dart activo (fallback)\n'
           'Error: $_nativeInitError\n'
@@ -4036,8 +4036,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _controller.startStroke(_pendingPoints.first, viewScale: _scale);
               // ── Fase 2: enviar al motor nativo ──
               final _brush = _controller.activeBrush;
-              _lastBridgeX = cp.dx;
-              _lastBridgeY = cp.dy;
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:   _nativeLayer(_controller.activeLayerId),
                 x: _pendingPoints.first.dx, y: _pendingPoints.first.dy,
