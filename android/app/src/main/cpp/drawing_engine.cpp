@@ -255,17 +255,27 @@ void DrawingEngine::render() {
     if (!ready_) return;
     if (!impl_->makeCurrent()) return;
 
-    // FIX DPR: viewW/viewH = dimensiones fisicas del EGL surface (del Kotlin eglQuerySurface).
-    // canvasW/canvasH = canvas logico = usado en u_canvasSize del shader.
-    // El blit escala canvasLogico → physico, llenando el surface completo.
-    // Esto evita el scale factor en el SurfaceTexture transform matrix de Flutter.
     int cW = impl_->cfg.canvasWidth;
     int cH = impl_->cfg.canvasHeight;
-    int surfW = (impl_->viewW > cW) ? impl_->viewW : cW;
-    int surfH = (impl_->viewH > cH) ? impl_->viewH : cH;
+
+    // FIX DPR: query dimensiones reales del EGL surface en render time.
+    // setDefaultBufferSize(1080,1920) crea un surface de 540x960 en algunos devices
+    // (el driver divide por DPR internamente). Sin este query, glViewport(1080,1920)
+    // en un surface de 540x960 clipea todos los strokes fuera de 0..540, 0..960.
+    EGLint eglW = cW, eglH = cH;
+    EGLDisplay disp = eglGetCurrentDisplay();
+    EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
+    eglQuerySurface(disp, surf, EGL_WIDTH,  &eglW);
+    eglQuerySurface(disp, surf, EGL_HEIGHT, &eglH);
+    // Usar el surface real (puede ser menor que cW si el driver aplica DPR)
+    int surfW = (eglW > 0) ? (int)eglW : cW;
+    int surfH = (eglH > 0) ? (int)eglH : cH;
+    LOGI("render: egl=%dx%d canvas=%dx%d", surfW, surfH, cW, cH);
 
     glViewport(0, 0, surfW, surfH);
 
+    // Blit: FBO capas (canvas resolution) → surface (puede ser diferente)
+    // glBlitFramebuffer escala automáticamente si surfW != cW
     impl_->layerMgr->composite(
         0, 0,
         cW, cH,
