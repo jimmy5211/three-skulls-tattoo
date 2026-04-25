@@ -4146,14 +4146,35 @@ class _CanvasScreenState extends State<CanvasScreen> {
               child: Stack(
                 children: [
 
-                  // ── Offscreen: imagen C++ ──────────────────────
-                  if (_nativeReady && _nativeCanvasImage != null)
+                  // ── Offscreen: imagen C++ + overlay Dart en tiempo real ──
+                  if (_nativeReady && _nativeCanvasImage != null) ...
+                  [
+                    // Imagen base: capas comprometidas (C++ GPU)
                     RawImage(
                       image:  _nativeCanvasImage,
                       width:  _controller.canvasSize.width,
                       height: _controller.canvasSize.height,
                       fit:    BoxFit.fill,
-                    )
+                    ),
+                    // Overlay Dart: trazo actual en tiempo real
+                    if (_controller.currentStroke != null)
+                      CustomPaint(
+                        painter: CanvasPainter(
+                          layers: const [],
+                          currentStroke: _controller.currentStroke,
+                          currentMirrorStroke: _controller.currentMirrorStroke,
+                          showGrid: false,
+                          showCenterGuides: false,
+                          showSymmetryLine: false,
+                          symmetryEnabled: _controller.symmetryEnabled,
+                          activeLayerId: _controller.activeLayerId,
+                          controller: _controller,
+                          backgroundColor: Colors.transparent,
+                        ),
+                        size: Size(_controller.canvasSize.width,
+                                   _controller.canvasSize.height),
+                      ),
+                  ]
                   else
                     // ── Fallback: renderer Dart mientras carga el motor ─
                     CustomPaint(
