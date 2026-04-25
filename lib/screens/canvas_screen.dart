@@ -1675,7 +1675,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       min: 1,
                       max: 100,
                       onChanged: (v) {
-                        // FIX FREEZE: no setState — evita rebuild completo con RawImage
                         _controller.setBrushSize(v);
                         if (!_isScaling) _triggerBrushPreview(v);
                       },
@@ -1782,6 +1781,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         onChanged: (v) {
                           _controller.setBrushHardness(v);
                         },
+                      ),
                     ),
                   ),
                 ),
@@ -4149,6 +4149,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 children: [
 
                   // ── Offscreen: imagen C++ + overlay Dart en tiempo real ──
+                  // ── Offscreen: imagen C++ base ────────────────
                   if (_nativeReady && _nativeCanvasImage != null)
                     RawImage(
                       image:  _nativeCanvasImage,
@@ -4175,9 +4176,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                                  _controller.canvasSize.height),
                     ),
                   // ── Fallback: renderer Dart mientras carga el motor ─
-                  // ── Fallback: renderer Dart mientras carga el motor ─
-                  if (!_nativeReady)
                     CustomPaint(
+                      painter: CanvasPainter(
                         layers: _controller.layers,
                         currentStroke: _controller.currentStroke,
                         currentMirrorStroke:
