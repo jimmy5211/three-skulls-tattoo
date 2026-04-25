@@ -4147,36 +4147,33 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 children: [
 
                   // ── Offscreen: imagen C++ + overlay Dart en tiempo real ──
-                  if (_nativeReady && _nativeCanvasImage != null) ...
-                  [
-                    // Imagen base: capas comprometidas (C++ GPU)
+                  // ── Offscreen: imagen C++ base ────────────────
+                  if (_nativeReady && _nativeCanvasImage != null)
                     RawImage(
                       image:  _nativeCanvasImage,
                       width:  _controller.canvasSize.width,
                       height: _controller.canvasSize.height,
                       fit:    BoxFit.fill,
                     ),
-                    // Overlay Dart: trazo actual en tiempo real
-                    if (_controller.currentStroke != null)
-                      CustomPaint(
-                        painter: CanvasPainter(
-                          layers: const [],
-                          currentStroke: _controller.currentStroke,
-                          currentMirrorStroke: _controller.currentMirrorStroke,
-                          showGrid: false,
-                          showCenterGuides: false,
-                          showSymmetryLine: false,
-                          symmetryEnabled: _controller.symmetryEnabled,
-                          activeLayerId: _controller.activeLayerId,
-                          controller: _controller,
-                          backgroundColor: Colors.transparent,
-                        ),
-                        size: Size(_controller.canvasSize.width,
-                                   _controller.canvasSize.height),
+                  // ── Overlay trazo actual (tiempo real) ──────────
+                  if (_nativeReady && _controller.currentStroke != null)
+                    CustomPaint(
+                      painter: CanvasPainter(
+                        layers: const [],
+                        currentStroke: _controller.currentStroke,
+                        currentMirrorStroke: _controller.currentMirrorStroke,
+                        showGrid: false,
+                        showCenterGuides: false,
+                        showSymmetryLine: false,
+                        symmetryEnabled: _controller.symmetryEnabled,
+                        activeLayerId: _controller.activeLayerId,
+                        controller: _controller,
+                        backgroundColor: Colors.transparent,
                       ),
-                  ]
-                  else
-                    // ── Fallback: renderer Dart mientras carga el motor ─
+                      size: Size(_controller.canvasSize.width,
+                                 _controller.canvasSize.height),
+                    ),
+                  // ── Fallback: renderer Dart mientras carga el motor ─
                     CustomPaint(
                       painter: CanvasPainter(
                         layers: _controller.layers,
