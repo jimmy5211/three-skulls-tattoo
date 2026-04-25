@@ -158,6 +158,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // ── NATIVE ENGINE (Fase 2) ──────────────────────────────────────
   late NativeCanvasBridge _bridge;
   bool _nativeReady = false;
+  double _lastBridgeX = 0;
+  double _lastBridgeY = 0;
   String _nativeInitError = 'unknown';
   final Map<int, int> _nativeLayerIds = {};
 
@@ -854,7 +856,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           'Texture ID: ${_bridge.textureId}\n'
           'Capas nativas: ${_nativeLayerIds.length}\n'
           'Estado: RENDERIZANDO EN GPU\n'
-          '${_nativeInitError}'
+          'x=${_lastBridgeX.toStringAsFixed(0)},y=${_lastBridgeY.toStringAsFixed(0)}'
         : 'Motor Dart activo (fallback)\n'
           'Error: $_nativeInitError\n'
           '(La app funciona con renderer Dart)';
@@ -4028,6 +4030,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _controller.startStroke(_pendingPoints.first, viewScale: _scale);
               // ── Fase 2: enviar al motor nativo ──
               final _brush = _controller.activeBrush;
+              _lastBridgeX = cp.dx;
+              _lastBridgeY = cp.dy;
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:   _nativeLayer(_controller.activeLayerId),
                 x: _pendingPoints.first.dx, y: _pendingPoints.first.dy,
