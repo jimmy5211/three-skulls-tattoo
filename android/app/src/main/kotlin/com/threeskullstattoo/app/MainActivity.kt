@@ -85,7 +85,9 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "setBackground"  -> {
-                    DrawingEngineJNI.setBackground(call.argument<Int>("colorARGB")!!)
+                    DrawingEngineJNI.setBackground(
+                        (call.argument<Any>("colorARGB") as? Number)?.toInt() ?: 0xFF000000.toInt()
+                    )
                     result.success(null)
                 }
                 "setCanvasSize"  -> {
@@ -95,6 +97,36 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(null)
                 }
+
+                // ── Stroke lifecycle ──────────────────────────────────
+                "beginStroke" -> {
+                    DrawingEngineJNI.beginStroke(
+                        layerId    = call.argument<Int>("layerId")!!,
+                        x          = (call.argument<Double>("x")!!).toFloat(),
+                        y          = (call.argument<Double>("y")!!).toFloat(),
+                        pressure   = (call.argument<Double>("pressure") ?: 1.0).toFloat(),
+                        size       = (call.argument<Double>("size")!!).toFloat(),
+                        opacity    = (call.argument<Double>("opacity")!!).toFloat(),
+                        hardness   = (call.argument<Double>("hardness")!!).toFloat(),
+                        spacing    = (call.argument<Double>("spacing") ?: 0.1).toFloat(),
+                        isEraser   = call.argument<Boolean>("isEraser") ?: false,
+                        brushTexId = call.argument<Int>("brushTexId") ?: -1,
+                        colorARGB  = (call.argument<Any>("colorARGB") as? Number)?.toInt() ?: 0xFF000000.toInt()
+                    )
+                    result.success(null)
+                }
+                "addPoint" -> {
+                    DrawingEngineJNI.addPoint(
+                        x        = (call.argument<Double>("x")!!).toFloat(),
+                        y        = (call.argument<Double>("y")!!).toFloat(),
+                        pressure = (call.argument<Double>("pressure") ?: 1.0).toFloat()
+                    )
+                    result.success(null)
+                }
+                "endStroke"    -> { DrawingEngineJNI.endStroke();    result.success(null) }
+                "cancelStroke" -> { DrawingEngineJNI.cancelStroke(); result.success(null) }
+
+                "getLastError" -> result.success(DrawingEngineJNI.getLastError())
 
                 "exportPixels"   -> result.success(DrawingEngineJNI.exportPixels())
 
