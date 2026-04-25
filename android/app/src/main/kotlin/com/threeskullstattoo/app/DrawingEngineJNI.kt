@@ -36,6 +36,7 @@ object DrawingEngineJNI {
         private set
 
     private var _lastSetupError = "not_started"
+    private var storedDpr: Float = 1.0f
 
     // ═══════════════════════════════════════════════════════════
     // SETUP
@@ -56,6 +57,7 @@ object DrawingEngineJNI {
         }
 
         // FIX: createSurfaceTexture() DEBE llamarse en el main thread.
+        storedDpr = dpr.toFloat()
         _lastSetupError = "creating_surface_texture"
         val entry = try {
             textureRegistry.createSurfaceTexture()
@@ -212,7 +214,7 @@ object DrawingEngineJNI {
     ) = glHandler.post {
         if (initialized) {
             jniBeginStroke(
-                layerId, x, y, pressure,
+                layerId, x * storedDpr, y * storedDpr, pressure,
                 size, opacity, hardness, spacing,
                 isEraser, brushTexId, colorARGB
             )
@@ -225,7 +227,7 @@ object DrawingEngineJNI {
     fun addPoint(x: Float, y: Float, pressure: Float = 1f) =
         glHandler.post {
             if (initialized) {
-                jniAddPoint(x, y, pressure)
+                jniAddPoint(x * storedDpr, y * storedDpr, pressure)
                 jniRender()
                 swapBuffers()
             }
