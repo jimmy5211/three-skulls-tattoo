@@ -48,7 +48,6 @@ public:
     void composite(GLuint destFBO, GLuint destTexture,
                    int destW, int destH,
                    const Color& background);
-);
 
     void resize(int newW, int newH);
 

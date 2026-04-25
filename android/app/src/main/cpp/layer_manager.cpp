@@ -254,7 +254,6 @@ void LayerManager::moveLayer(int fromIdx, int toIdx) {
 void LayerManager::composite(GLuint destFBO, GLuint destTexture,
                               int destW, int destH,
                               const Color& background) {
-                              ) {
     // PERF FIX: reusar FBOs cacheados en lugar de crear/destruir cada frame.
     if (!initCompositeFBOs(destW, destH)) { LOGE("composite: FBO cache failed"); return; }
 
