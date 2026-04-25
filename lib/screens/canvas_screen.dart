@@ -853,7 +853,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
         ? 'Motor C++/OpenGL ES activo\n'
           'Texture ID: ${_bridge.textureId}\n'
           'Capas nativas: ${_nativeLayerIds.length}\n'
-          'Estado: RENDERIZANDO EN GPU'
+          'Estado: RENDERIZANDO EN GPU\n'
+          '${await _bridge.getLastError()}'
         : 'Motor Dart activo (fallback)\n'
           'Error: $_nativeInitError\n'
           '(La app funciona con renderer Dart)';
