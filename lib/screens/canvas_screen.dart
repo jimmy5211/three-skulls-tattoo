@@ -4142,11 +4142,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   if (_nativeReady && _bridge.textureId != null)
                     SizedBox(
                       width:  _controller.canvasSize.width,
-                      height: _controller.canvasSize.height,
-                      child: RepaintBoundary(
-                        child: Texture(textureId: _bridge.textureId!),
+                       height: _controller.canvasSize.height,
+                       child: FittedBox(
+                       fit: BoxFit.fill,
+                       child: Texture(
+                       textureId: _bridge.textureId!,
+                    freeze: false,
                       ),
-                    )
+                    ),
+                  )
                   else
                     // ── Fallback: renderer Dart mientras carga el motor ─
                     CustomPaint(
