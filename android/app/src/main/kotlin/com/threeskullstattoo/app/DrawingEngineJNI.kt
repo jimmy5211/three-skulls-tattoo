@@ -37,6 +37,7 @@ object DrawingEngineJNI {
 
     private var _lastSetupError = "not_started"
     private var storedDpr: Float = 1.0f
+    @Volatile private var renderPending = false
 
     // ═══════════════════════════════════════════════════════════
     // SETUP
@@ -72,12 +73,14 @@ object DrawingEngineJNI {
         val st = entry.surfaceTexture()
         surfaceTex   = st
 
-        // SIMPLE: setDefaultBufferSize con canvas logico.
-        // El DPR se investiga via diagnostico en renderStamp.
-        st.setDefaultBufferSize(canvasW, canvasH)
-        Log.i(TAG, "SurfaceTexture: id=$textureId canvas=${canvasW}x${canvasH} dpr=$dpr")
-        val physW = canvasW
-        val physH = canvasH
+        // FIX DPR: physW/physH = canvas en pixeles FISICOS (canvasW * dpr).
+        // - setDefaultBufferSize usa tamaño fisico → buffer llena el widget completo
+        // - jniInit recibe physW/physH como canvasSize → shader divide correctamente
+        // - Stroke coords (logico 0..1080) * dpr → fisico (0..physW) → NDC correcto
+        val physW = (canvasW * dpr).toInt().coerceAtLeast(canvasW)
+        val physH = (canvasH * dpr).toInt().coerceAtLeast(canvasH)
+        st.setDefaultBufferSize(physW, physH)
+        Log.i(TAG, "SurfaceTexture: id=$textureId logical=${canvasW}x${canvasH} dpr=$dpr physical=${physW}x${physH}")
         _lastSetupError = "surface_texture_ok_starting_gl_thread"
 
         val physWFinal = physW
@@ -142,10 +145,12 @@ object DrawingEngineJNI {
                     // physW/physH = tamaño físico del EGL surface → C++ los usa para
                     // glViewport y blit final (render() llena el surface completo).
                     // canvasW/canvasH = canvas lógico → u_canvasSize en el shader.
-                    // physWFinal/physHFinal = dimensiones físicas del buffer
-                    // canvasW/canvasH = canvas lógico (u_canvasSize en el shader)
+                    // physWFinal/physHFinal = canvas FISICO (1080*dpr)
+                    // Usado TANTO para viewW/H (viewport final) COMO canvasW/H (shader)
+                    // El shader divide stroke_coord/physW para obtener NDC.
+                    // Como stroke_coord = logico * dpr, el resultado es correcto a cualquier zoom.
                     jniInit(dispHandle, ctxHandle, physWFinal, physHFinal, 0,
-                            canvasW, canvasH, maxUndoSteps)
+                            physWFinal, physHFinal, maxUndoSteps)
                 } catch (t: Throwable) {
                     _lastSetupError = "jni_init_threw: $t"
                     Log.e(TAG, _lastSetupError)
@@ -223,15 +228,20 @@ object DrawingEngineJNI {
         }
     }
 
-    // FIX Fase 2: render después de cada punto para feedback en tiempo real
-    fun addPoint(x: Float, y: Float, pressure: Float = 1f) =
+    // PERF: renderizar máximo una vez por vsync — evita acumulación en la cola GL.
+    // addPoint solo encola el punto. Si ya hay un render pendiente, no encola otro.
+    fun addPoint(x: Float, y: Float, pressure: Float = 1f) {
         glHandler.post {
-            if (initialized) {
-                jniAddPoint(x * storedDpr, y * storedDpr, pressure)
-                jniRender()
-                swapBuffers()
+            if (initialized) jniAddPoint(x * storedDpr, y * storedDpr, pressure)
+        }
+        if (!renderPending) {
+            renderPending = true
+            glHandler.post {
+                if (initialized) { jniRender(); swapBuffers() }
+                renderPending = false
             }
         }
+    }
 
     fun endStroke()    = glHandler.post { if (initialized) { jniEndStroke(); jniRender(); swapBuffers() } }
     fun cancelStroke() = glHandler.post { if (initialized) jniCancelStroke() }
