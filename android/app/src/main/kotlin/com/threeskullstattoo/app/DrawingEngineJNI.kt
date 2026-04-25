@@ -75,8 +75,8 @@ object DrawingEngineJNI {
 
         // SIMPLE: buffer logico. Layer FBOs permanecen en 1080x1920 (evita OOM en GPU).
         // DPR se aplica solo a las coordenadas de stroke (storedDpr multiply).
-        val physW = canvasW
-        val physH = canvasH
+        val physW = (canvasW * dpr).toInt().coerceAtLeast(canvasW)
+        val physH = (canvasH * dpr).toInt().coerceAtLeast(canvasH)
         st.setDefaultBufferSize(physW, physH)
         Log.i(TAG, "SurfaceTexture: id=$textureId canvas=${canvasW}x${canvasH} dpr=$dpr")
         _lastSetupError = "surface_texture_ok_starting_gl_thread"
