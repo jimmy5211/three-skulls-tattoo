@@ -856,7 +856,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
           'Texture ID: ${_bridge.textureId}\n'
           'Capas nativas: ${_nativeLayerIds.length}\n'
           'Estado: RENDERIZANDO EN GPU\n'
-          'x=${_lastBridgeX.toStringAsFixed(0)},y=${_lastBridgeY.toStringAsFixed(0)}'
+          'x=${_lastBridgeX.toStringAsFixed(0)},y=${_lastBridgeY.toStringAsFixed(0)}\n'
+          'sc=${_scale.toStringAsFixed(3)} off=(${_offset.dx.toStringAsFixed(0)},${_offset.dy.toStringAsFixed(0)})'
         : 'Motor Dart activo (fallback)\n'
           'Error: $_nativeInitError\n'
           '(La app funciona con renderer Dart)';
