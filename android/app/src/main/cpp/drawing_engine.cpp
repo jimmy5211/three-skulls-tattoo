@@ -258,19 +258,13 @@ void DrawingEngine::render() {
     int cW = impl_->cfg.canvasWidth;
     int cH = impl_->cfg.canvasHeight;
 
-    // FIX DPR: query dimensiones reales del EGL surface en render time.
-    // setDefaultBufferSize(1080,1920) crea un surface de 540x960 en algunos devices
-    // (el driver divide por DPR internamente). Sin este query, glViewport(1080,1920)
-    // en un surface de 540x960 clipea todos los strokes fuera de 0..540, 0..960.
-    EGLint eglW = cW, eglH = cH;
-    EGLDisplay disp = eglGetCurrentDisplay();
-    EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
-    eglQuerySurface(disp, surf, EGL_WIDTH,  &eglW);
-    eglQuerySurface(disp, surf, EGL_HEIGHT, &eglH);
-    // Usar el surface real (puede ser menor que cW si el driver aplica DPR)
-    int surfW = (eglW > 0) ? (int)eglW : cW;
-    int surfH = (eglH > 0) ? (int)eglH : cH;
-    LOGI("render: egl=%dx%d canvas=%dx%d", surfW, surfH, cW, cH);
+    // FIX DPR: usar viewW/viewH (= physW/physH pasados desde Kotlin via jniInit).
+    // eglQuerySurface NO es confiable — en muchos drivers MediaTek retorna el tamaño
+    // del hint de setDefaultBufferSize (1080x1920) en lugar del tamaño físico real.
+    // viewW/viewH = canvasW * dpr = 3240 x 5760 para DPR=3, garantizado correcto.
+    int surfW = (impl_->viewW > 0) ? impl_->viewW : cW;
+    int surfH = (impl_->viewH > 0) ? impl_->viewH : cH;
+    LOGI("render: view=%dx%d canvas=%dx%d", surfW, surfH, cW, cH);
 
     glViewport(0, 0, surfW, surfH);
 

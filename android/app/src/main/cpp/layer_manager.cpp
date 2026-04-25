@@ -56,7 +56,8 @@ static const char* kCompositeFrag =
 "void main() {\n"
 "    vec4 src = texture(u_src, v_uv);\n"
 "    vec4 dst = texture(u_dst, v_uv);\n"
-"    if      (u_blendMode == 0) fragColor = blend_normal(src, dst);\n"
+"    if      (u_blendMode == -1) { fragColor = src; }\n"
+"    else if (u_blendMode == 0) fragColor = blend_normal(src, dst);\n"
 "    else if (u_blendMode == 1) fragColor = blend_multiply(src, dst);\n"
 "    else if (u_blendMode == 2) fragColor = blend_screen(src, dst);\n"
 "    else                       fragColor = blend_normal(src, dst);\n"
@@ -304,9 +305,21 @@ void LayerManager::composite(GLuint destFBO, GLuint destTexture,
     // -- 3. Blit resultado al destino
     glBindFramebuffer(GL_READ_FRAMEBUFFER, currentFBO);
     if (destFBO == 0) {
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-        glBlitFramebuffer(0, 0, destW, destH, 0, 0, surfW, surfH,
-                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        // FIX: fullscreen quad en lugar de glBlitFramebuffer escalado.
+        // En drivers MediaTek, blit(1080x1920→3240x5760) no escala correctamente.
+        // El quad con glViewport(surfW,surfH) llena el surface completo garantizado.
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, surfW, surfH);
+        glUseProgram(compositeProgram_);
+        glBindVertexArray(quadVAO_);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, currentAccum);
+        glUniform1i(glGetUniformLocation(compositeProgram_, "u_src"), 0);
+        glUniform1f(glGetUniformLocation(compositeProgram_, "u_opacity"), 1.0f);
+        glUniform1i(glGetUniformLocation(compositeProgram_, "u_blendMode"), -1);
+        glDisable(GL_BLEND);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glBindVertexArray(0);
     } else {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destFBO);
         if (destTexture != 0)
