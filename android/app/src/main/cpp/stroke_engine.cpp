@@ -25,7 +25,7 @@ static const char* kStrokeVert =
 "void main() {\n"
 "    vec2 pos = u_center + a_pos * u_diameter;\n"
 "    vec2 ndc = (pos / u_canvasSize) * 2.0 - 1.0;\n"
-"    ndc = -ndc;\n"
+"    ndc.y = -ndc.y;\n"
 "    gl_Position = vec4(ndc, 0.0, 1.0);\n"
 "    v_uv = a_uv;\n"
 "}\n";
