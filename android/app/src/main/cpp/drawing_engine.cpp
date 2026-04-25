@@ -218,8 +218,34 @@ int DrawingEngine::initWithCode(EGLDisplay display, EGLContext sharedContext,
     impl_->eglDisplay = display;
     impl_->eglContext = sharedContext;
     impl_->maxUndoSteps = cfg.maxUndoSteps;
-    impl_->outputFBO     = 0;
-    impl_->outputTexture = 0;
+    // Offscreen: crear FBO propio para el canvas compuesto.
+    // exportPixels() leerá este FBO. Sin WindowSurface ni DPR.
+    {
+        GLuint tex, fbo;
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
+                     cfg.canvasWidth, cfg.canvasHeight, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, tex, 0);
+        GLenum st = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        if (st != GL_FRAMEBUFFER_COMPLETE) {
+            g_lastError = "output_fbo_incomplete";
+            LOGE("Output FBO incomplete: 0x%X", st);
+            return 3;
+        }
+        impl_->outputFBO     = fbo;
+        impl_->outputTexture = tex;
+        LOGI("Output FBO created: %u tex=%u canvas=%dx%d",
+             fbo, tex, cfg.canvasWidth, cfg.canvasHeight);
+    }
 
     LOGI("initWithCode: canvas=%dx%d  physSurface=%dx%d",
          cfg.canvasWidth, cfg.canvasHeight, width, height);
@@ -255,26 +281,17 @@ void DrawingEngine::render() {
     if (!ready_) return;
     if (!impl_->makeCurrent()) return;
 
+    // Offscreen: compositar al outputFBO (no FBO 0).
+    // exportPixels() lee el outputFBO y devuelve RGBA a Flutter.
     int cW = impl_->cfg.canvasWidth;
     int cH = impl_->cfg.canvasHeight;
 
-    // FIX DPR: usar viewW/viewH (= physW/physH pasados desde Kotlin via jniInit).
-    // eglQuerySurface NO es confiable — en muchos drivers MediaTek retorna el tamaño
-    // del hint de setDefaultBufferSize (1080x1920) en lugar del tamaño físico real.
-    // viewW/viewH = canvasW * dpr = 3240 x 5760 para DPR=3, garantizado correcto.
-    int surfW = (impl_->viewW > 0) ? impl_->viewW : cW;
-    int surfH = (impl_->viewH > 0) ? impl_->viewH : cH;
-    LOGI("render: view=%dx%d canvas=%dx%d", surfW, surfH, cW, cH);
+    glViewport(0, 0, cW, cH);
 
-    glViewport(0, 0, surfW, surfH);
-
-    // Blit: FBO capas (canvas resolution) → surface (puede ser diferente)
-    // glBlitFramebuffer escala automáticamente si surfW != cW
     impl_->layerMgr->composite(
-        0, 0,
+        impl_->outputFBO, impl_->outputTexture,
         cW, cH,
-        impl_->background,
-        surfW, surfH
+        impl_->background
     );
     glFlush();
     impl_->doneCurrent();

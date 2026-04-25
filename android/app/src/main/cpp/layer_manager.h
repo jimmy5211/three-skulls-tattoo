@@ -43,11 +43,12 @@ public:
     void clearLayer(int id);
     void moveLayer(int fromIdx, int toIdx);
 
-    // FIX DPR: surfW/surfH = dimensiones fisicas del WindowSurface.
+    // FIX: surfW/surfH = tamaño real del EGL surface (physW x physH).
+    // Final blit usa fullscreen quad para escalar correctamente en cualquier driver.
     void composite(GLuint destFBO, GLuint destTexture,
                    int destW, int destH,
-                   const Color& background,
-                   int surfW = 0, int surfH = 0);
+                   const Color& background);
+);
 
     void resize(int newW, int newH);
 
@@ -63,14 +64,6 @@ private:
     GLuint compositeProgram_ = 0;
     GLuint quadVAO_ = 0;
     GLuint quadVBO_ = 0;
-
-    // PERF FIX: FBOs cacheados - evita crear/destruir en cada addPoint().
-    GLuint accumFBO_ = 0, accumTex_ = 0;
-    GLuint pingFBO_  = 0, pingTex_  = 0;
-    int    cachedFBOW_ = 0, cachedFBOH_ = 0;
-
-    bool initCompositeFBOs(int w, int h);
-    void destroyCompositeFBOs();
 
     bool createLayerFBO(Layer& layer);
     void destroyLayerFBO(Layer& layer);

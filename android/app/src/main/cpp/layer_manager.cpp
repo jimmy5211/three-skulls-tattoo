@@ -253,10 +253,8 @@ void LayerManager::moveLayer(int fromIdx, int toIdx) {
 
 void LayerManager::composite(GLuint destFBO, GLuint destTexture,
                               int destW, int destH,
-                              const Color& background,
-                              int surfW, int surfH) {
-    if (surfW <= 0) surfW = destW;
-    if (surfH <= 0) surfH = destH;
+                              const Color& background) {
+                              ) {
     // PERF FIX: reusar FBOs cacheados en lugar de crear/destruir cada frame.
     if (!initCompositeFBOs(destW, destH)) { LOGE("composite: FBO cache failed"); return; }
 
@@ -302,32 +300,16 @@ void LayerManager::composite(GLuint destFBO, GLuint destTexture,
     glBindVertexArray(0);
     glActiveTexture(GL_TEXTURE0);
 
-    // -- 3. Blit resultado al destino
+    // -- 3. Blit resultado al outputFBO
+    // Arquitectura offscreen: destFBO = outputFBO (nunca FBO 0).
+    // Blit simple 1:1 — sin DPR, sin scaled blit, sin driver issues.
     glBindFramebuffer(GL_READ_FRAMEBUFFER, currentFBO);
-    if (destFBO == 0) {
-        // FIX: fullscreen quad en lugar de glBlitFramebuffer escalado.
-        // En drivers MediaTek, blit(1080x1920→3240x5760) no escala correctamente.
-        // El quad con glViewport(surfW,surfH) llena el surface completo garantizado.
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glViewport(0, 0, surfW, surfH);
-        glUseProgram(compositeProgram_);
-        glBindVertexArray(quadVAO_);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, currentAccum);
-        glUniform1i(glGetUniformLocation(compositeProgram_, "u_src"), 0);
-        glUniform1f(glGetUniformLocation(compositeProgram_, "u_opacity"), 1.0f);
-        glUniform1i(glGetUniformLocation(compositeProgram_, "u_blendMode"), -1);
-        glDisable(GL_BLEND);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindVertexArray(0);
-    } else {
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destFBO);
-        if (destTexture != 0)
-            glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                   GL_TEXTURE_2D, destTexture, 0);
-        glBlitFramebuffer(0, 0, destW, destH, 0, 0, destW, destH,
-                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
-    }
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destFBO);
+    if (destTexture != 0)
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, destTexture, 0);
+    glBlitFramebuffer(0, 0, destW, destH, 0, 0, destW, destH,
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     // NO borrar FBOs -- estan cacheados
 }
