@@ -271,6 +271,42 @@ int DrawingEngine::initWithCode(EGLDisplay display, EGLContext sharedContext,
 
     ready_ = true;
     g_lastError = "init_ok";
+
+    // ── DEBUG MARKERS: verificar sistema de coordenadas ──────────────
+    // Marca roja en (0,0) = esquina superior-izquierda del canvas
+    // Marca azul en (540,960) = centro exacto del canvas (1080x1920)
+    // Si aparecen en esas posiciones, el sistema de coords es correcto.
+    // QUITAR antes del Play Store.
+    {
+        impl_->layerMgr->bindActiveLayer();
+
+        BrushParams debugBrush;
+        debugBrush.size     = 40.0f;   // grande para ser visible
+        debugBrush.isEraser = false;
+        debugBrush.hardness = 1.0f;
+        debugBrush.spacing  = 0.1f;
+
+        impl_->strokeEng->beginStroke(
+            {0.0f, 0.0f, 1.0f},        // top-left corner
+            debugBrush,
+            {1.0f, 0.0f, 0.0f, 1.0f},  // rojo
+            cfg.canvasWidth, cfg.canvasHeight);
+        impl_->strokeEng->endStroke();
+
+        impl_->strokeEng->beginStroke(
+            {(float)cfg.canvasWidth/2, (float)cfg.canvasHeight/2, 1.0f}, // center
+            debugBrush,
+            {0.0f, 0.0f, 1.0f, 1.0f},  // azul
+            cfg.canvasWidth, cfg.canvasHeight);
+        impl_->strokeEng->endStroke();
+
+        impl_->layerMgr->unbindLayer();
+        render(); // componer para que exportPixels() lo incluya
+        LOGI("DEBUG MARKERS drawn: red=(0,0) blue=(%d,%d)",
+             cfg.canvasWidth/2, cfg.canvasHeight/2);
+    }
+    // ── FIN DEBUG MARKERS ──────────────────────────────────────────────
+
     LOGI("initWithCode: SUCCESS");
     return 0;
 }
