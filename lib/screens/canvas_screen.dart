@@ -158,6 +158,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // ── NATIVE ENGINE (Offscreen) ────────────────────────────────────
   late NativeCanvasBridge _bridge;
   bool _nativeReady = false;
+  // DIAGNOSTIC: últimas coordenadas enviadas al bridge (para debugging posición)
+  String _lastBridgeCoords = 'ninguno';
   ui.Image? _nativeCanvasImage;
   String _nativeInitError = 'unknown';
   final Map<int, int> _nativeLayerIds = {};
@@ -893,7 +895,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
           'Capas nativas: ${_nativeLayerIds.length}\n'
           'Estado: RENDERIZANDO EN GPU\n'
           'Estado: OK'
-          'sc=${_scale.toStringAsFixed(3)} off=(${_offset.dx.toStringAsFixed(0)},${_offset.dy.toStringAsFixed(0)})'
+          'sc=${_scale.toStringAsFixed(3)} off=(${_offset.dx.toStringAsFixed(0)},${_offset.dy.toStringAsFixed(0)})\n'
+          'Último beginStroke:\n$_lastBridgeCoords'
         : 'Motor Dart activo (fallback)\n'
           'Error: $_nativeInitError\n'
           '(La app funciona con renderer Dart)';
@@ -4070,9 +4073,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _controller.startStroke(_pendingPoints.first, viewScale: _scale);
               // ── Fase 2: enviar al motor nativo ──
               final _brush = _controller.activeBrush;
+              // DIAGNOSTIC: guardar coords para dialog Motor GPU
+              final _dbgX = _pendingPoints.first.dx;
+              final _dbgY = _pendingPoints.first.dy;
+              _lastBridgeCoords =
+                  'begin x=${_dbgX.toStringAsFixed(1)} y=${_dbgY.toStringAsFixed(1)}\n'
+                  'scale=$_scale off=(${_offset.dx.toStringAsFixed(0)},${_offset.dy.toStringAsFixed(0)})\n'
+                  'brushSz=${(_brush.size/_scale).toStringAsFixed(2)}';
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:   _nativeLayer(_controller.activeLayerId),
-                x: _pendingPoints.first.dx, y: _pendingPoints.first.dy,
+                x: _dbgX, y: _dbgY,
                 size:      _brush.size / _scale,
                 opacity:   _brush.opacity,
                 hardness:  _brush.hardness,
