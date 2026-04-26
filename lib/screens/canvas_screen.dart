@@ -160,6 +160,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _nativeReady = false;
   // DIAGNOSTIC: últimas coordenadas enviadas al bridge (para debugging posición)
   String _lastBridgeCoords = 'ninguno';
+  String _lastGpuStatus = 'sin datos';
   ui.Image? _nativeCanvasImage;
   String _nativeInitError = 'unknown';
   final Map<int, int> _nativeLayerIds = {};
@@ -894,8 +895,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
           'Motor offscreen activo\n'
           'Capas nativas: ${_nativeLayerIds.length}\n'
           'Estado: RENDERIZANDO EN GPU\n'
-          'Estado: OK'
+          'Estado: OK\n'
           'sc=${_scale.toStringAsFixed(3)} off=(${_offset.dx.toStringAsFixed(0)},${_offset.dy.toStringAsFixed(0)})\n'
+          'GPU status: $_lastGpuStatus\n'
           'Último beginStroke:\n$_lastBridgeCoords'
         : 'Motor Dart activo (fallback)\n'
           'Error: $_nativeInitError\n'
@@ -4079,7 +4081,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _lastBridgeCoords =
                   'begin x=${_dbgX.toStringAsFixed(1)} y=${_dbgY.toStringAsFixed(1)}\n'
                   'scale=$_scale off=(${_offset.dx.toStringAsFixed(0)},${_offset.dy.toStringAsFixed(0)})\n'
-                  'brushSz=${(_brush.size/_scale).toStringAsFixed(2)}';
+                  'brushSz=${(_brush.size/_scale).toStringAsFixed(2)}\n'
+                  'DART canvasSize=${_controller.canvasSize.width.toInt()}x${_controller.canvasSize.height.toInt()}';
+
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:   _nativeLayer(_controller.activeLayerId),
                 x: _dbgX, y: _dbgY,
