@@ -40,29 +40,38 @@ class CanvasPainter extends CustomPainter {
     final canvasW = controller.canvasSize.width;
     final canvasH = controller.canvasSize.height;
 
-    // 1. Fondo del área de trabajo (gris oscuro fuera del lienzo)
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = const Color(0xFF3A3A3C),
-    );
+    // Modo overlay: layers vacío = solo trazo en curso sobre GPU RawImage.
+    // En este modo se omiten el fondo gris, la sombra y el background del lienzo
+    // para que el overlay sea 100% transparente y el RawImage se vea debajo.
+    // Sin esta condición, la sombra (Paint opacity 0.4) oscurece el canvas
+    // durante cada trazo aunque el backgroundColor sea transparent.
+    final _isOverlayMode = layers.isEmpty;
 
-    // 2. Sombra de la hoja
-    final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.4)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-    canvas.drawRect(
-      Rect.fromLTWH(4, 4, canvasW, canvasH),
-      shadowPaint,
-    );
-
-    // 3. Fondo de la hoja (color según proyecto)
-    if (backgroundColor == Colors.transparent) {
-      _drawCheckerboard(canvas, canvasW, canvasH);
-    } else {
+    if (!_isOverlayMode) {
+      // 1. Fondo del área de trabajo (gris oscuro fuera del lienzo)
       canvas.drawRect(
-        Rect.fromLTWH(0, 0, canvasW, canvasH),
-        Paint()..color = backgroundColor,
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        Paint()..color = const Color(0xFF3A3A3C),
       );
+
+      // 2. Sombra de la hoja
+      final shadowPaint = Paint()
+        ..color = Colors.black.withOpacity(0.4)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+      canvas.drawRect(
+        Rect.fromLTWH(4, 4, canvasW, canvasH),
+        shadowPaint,
+      );
+
+      // 3. Fondo de la hoja (color según proyecto)
+      if (backgroundColor == Colors.transparent) {
+        _drawCheckerboard(canvas, canvasW, canvasH);
+      } else {
+        canvas.drawRect(
+          Rect.fromLTWH(0, 0, canvasW, canvasH),
+          Paint()..color = backgroundColor,
+        );
+      }
     }
 
     // 4. Grid (solo dentro del lienzo)
