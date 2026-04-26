@@ -3027,11 +3027,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
 
     // Precompute h outside local function (math.pow not visible inside closures)
-    final _h1    = hardness <= 0.0 ? 0.0 : (hardness >= 1.0 ? 1.0 : pow(hardness, 2.2).toDouble());
-    final _stop1 = (1.0 - _h1).clamp(0.0, 0.99);
+    // Match shader: edge0 = 0.5*hardness, edge1 = 0.5 → stop = hardness
+    final _stop1 = hardness.clamp(0.0, 0.99);
     void stamp(Offset p) {
       final np   = toNative(p);
-      final h    = _h1;
       final stop = _stop1;
       if (stop <= 0.01) {
         canvas.drawCircle(np, r,
@@ -3138,8 +3137,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
     if (erase.points.isEmpty) return;
     final hardness = erase.hardness.clamp(0.0, 1.0);
     final r        = erase.radius;
-    final h        = hardness <= 0.0 ? 0.0 : (hardness >= 1.0 ? 1.0 : pow(hardness, 2.2).toDouble());
-    final stop     = (1.0 - h).clamp(0.0, 0.99);
+    // Match shader: stop = hardness
+    final stop     = hardness.clamp(0.0, 0.99);
     Paint erasePaint(Offset center) {
       if (stop <= 0.01) return Paint()..blendMode = BlendMode.dstOut..color = Colors.white;
       return Paint()
@@ -4161,8 +4160,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         fit:    BoxFit.fill,
                       ),
                     ),
-                  // ── Overlay trazo actual (tiempo real) ──────────
-                  if (_nativeReady && _controller.currentStroke != null)
+                  // ── Overlay trazo actual — solo para pinceles, no eraser ──
+                  if (_nativeReady && _controller.currentStroke != null &&
+                      _brush.type != StrokeType.eraser)
                     CustomPaint(
                       painter: CanvasPainter(
                         layers: const [],
