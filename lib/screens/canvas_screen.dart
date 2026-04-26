@@ -4232,8 +4232,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
                             _controller.symmetryEnabled,
                         activeLayerId: _controller.activeLayerId,
                         controller: _controller,
+                        // FIX: mientras el motor GPU inicializa, mostrar blanco
+                        // en lugar de Colors.transparent (→ checkerboard 12px
+                        // → a 44% zoom parece gris oscuro uniforme).
                         backgroundColor:
-                            _controller.backgroundColor,
+                            _controller.backgroundColor == Colors.transparent
+                                ? Colors.white
+                                : _controller.backgroundColor,
                       ),
                       size: Size(
                         _controller.canvasSize.width,
