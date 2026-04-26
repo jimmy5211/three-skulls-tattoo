@@ -104,14 +104,18 @@ object DrawingEngineJNI {
         size: Float, opacity: Float, hardness: Float, spacing: Float,
         isEraser: Boolean, brushTexId: Int, colorARGB: Int
     ) = glHandler.post {
-        if (!initialized) return@post
-        ensureCurrent()
-        jniBeginStroke(layerId, x, y, pressure, size, opacity, hardness, spacing,
-            isEraser, brushTexId, colorARGB)
+        if (initialized) jniBeginStroke(
+            layerId, x, y, pressure, size, opacity, hardness, spacing,
+            isEraser, brushTexId, colorARGB
+        )
     }
 
     fun addPoint(x: Float, y: Float, pressure: Float = 1f) =
-        glHandler.post { if (!initialized) return@post; ensureCurrent(); jniAddPoint(x, y, pressure) }
+        glHandler.post {
+            if (!initialized) return@post
+            ensureCurrent()  // FIX: sin esto el contexto EGL se pierde entre posts
+            jniAddPoint(x, y, pressure)
+        }
 
     /** Termina el trazo y devuelve el canvas completo como RGBA. */
     fun endStrokeAndExport(onDone: (ByteArray?) -> Unit) {
@@ -123,7 +127,7 @@ object DrawingEngineJNI {
         }
     }
 
-    fun cancelStroke() = glHandler.post { if (initialized) jniCancelStroke() }
+    fun cancelStroke() = glHandler.post { if (!initialized) return@post; ensureCurrent(); jniCancelStroke() }
 
     /** Exporta el canvas actual sin modificar el historial. */
     fun exportCanvas(onDone: (ByteArray?) -> Unit) {
@@ -176,7 +180,7 @@ object DrawingEngineJNI {
         notifyBytes(if (initialized) jniExportPixels() else null, onDone)
     }
 
-    fun setCanvasSize(w: Int, h: Int) = glHandler.post { if (initialized) jniSetCanvasSize(w, h) }
+    fun setCanvasSize(w: Int, h: Int) = glHandler.post { if (!initialized) return@post; ensureCurrent(); jniSetCanvasSize(w, h) }
 
     fun loadBrushTexture(data: ByteArray, w: Int, h: Int): Int =
         if (initialized) jniLoadBrushTexture(data, w, h) else -1
