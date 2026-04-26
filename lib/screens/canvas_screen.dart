@@ -4635,6 +4635,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     setState(() {
                       _controller.updateCanvasSize(Size(w, h));
                       _controller.invalidateAllCache();
+                      // FIX: sincronizar GPU con el nuevo tamaño del canvas.
+                      // Sin esta llamada, el GPU queda en el tamaño anterior
+                      // y la RawImage se muestra comprimida/desalineada.
+                      _bridgeCall(() => _bridge.setCanvasSize(w.toInt(), h.toInt()));
                       final screen = MediaQuery.of(context).size;
                       final aW2 = screen.width - _sideBarWidth;
                       final aH2 = screen.height - _topBarHeight;
