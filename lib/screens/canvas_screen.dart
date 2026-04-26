@@ -3026,10 +3026,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
         (p.dy - imgPos.dy) * scaleY,
     );
 
+    // Precompute h outside local function (math.pow not visible inside closures)
+    final _h1    = hardness <= 0.0 ? 0.0 : (hardness >= 1.0 ? 1.0 : pow(hardness, 2.2).toDouble());
+    final _stop1 = (1.0 - _h1).clamp(0.0, 0.99);
     void stamp(Offset p) {
-      final np = toNative(p);
-      final h    = hardness <= 0.0 ? 0.0 : (hardness >= 1.0 ? 1.0 : math.pow(hardness, 2.2).toDouble());
-      final stop = (1.0 - h).clamp(0.0, 0.99);
+      final np   = toNative(p);
+      final h    = _h1;
+      final stop = _stop1;
       if (stop <= 0.01) {
         canvas.drawCircle(np, r,
             Paint()..blendMode = BlendMode.dstOut
@@ -3135,7 +3138,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     if (erase.points.isEmpty) return;
     final hardness = erase.hardness.clamp(0.0, 1.0);
     final r        = erase.radius;
-    final h        = hardness <= 0.0 ? 0.0 : (hardness >= 1.0 ? 1.0 : math.pow(hardness, 2.2).toDouble());
+    final h        = hardness <= 0.0 ? 0.0 : (hardness >= 1.0 ? 1.0 : pow(hardness, 2.2).toDouble());
     final stop     = (1.0 - h).clamp(0.0, 0.99);
     Paint erasePaint(Offset center) {
       if (stop <= 0.01) return Paint()..blendMode = BlendMode.dstOut..color = Colors.white;
