@@ -104,14 +104,14 @@ object DrawingEngineJNI {
         size: Float, opacity: Float, hardness: Float, spacing: Float,
         isEraser: Boolean, brushTexId: Int, colorARGB: Int
     ) = glHandler.post {
-        if (initialized) jniBeginStroke(
-            layerId, x, y, pressure, size, opacity, hardness, spacing,
-            isEraser, brushTexId, colorARGB
-        )
+        if (!initialized) return@post
+        ensureCurrent()
+        jniBeginStroke(layerId, x, y, pressure, size, opacity, hardness, spacing,
+            isEraser, brushTexId, colorARGB)
     }
 
     fun addPoint(x: Float, y: Float, pressure: Float = 1f) =
-        glHandler.post { if (initialized) jniAddPoint(x, y, pressure) }
+        glHandler.post { if (!initialized) return@post; ensureCurrent(); jniAddPoint(x, y, pressure) }
 
     /** Termina el trazo y devuelve el canvas completo como RGBA. */
     fun endStrokeAndExport(onDone: (ByteArray?) -> Unit) {
@@ -128,20 +128,26 @@ object DrawingEngineJNI {
     /** Exporta el canvas actual sin modificar el historial. */
     fun exportCanvas(onDone: (ByteArray?) -> Unit) {
         glHandler.post {
-            notifyBytes(if (initialized) jniExportPixels() else null, onDone)
+            if (!initialized) { notifyBytes(null, onDone); return@post }
+            ensureCurrent()
+            notifyBytes(jniExportPixels(), onDone)
         }
     }
 
     // ── Historial ─────────────────────────────────────────────────────────
 
     fun undo(onDone: (ByteArray?) -> Unit) = glHandler.post {
-        if (initialized) jniUndo()
-        notifyBytes(if (initialized) jniExportPixels() else null, onDone)
+        if (!initialized) { notifyBytes(null, onDone); return@post }
+        ensureCurrent()
+        jniUndo()
+        notifyBytes(jniExportPixels(), onDone)
     }
 
     fun redo(onDone: (ByteArray?) -> Unit) = glHandler.post {
-        if (initialized) jniRedo()
-        notifyBytes(if (initialized) jniExportPixels() else null, onDone)
+        if (!initialized) { notifyBytes(null, onDone); return@post }
+        ensureCurrent()
+        jniRedo()
+        notifyBytes(jniExportPixels(), onDone)
     }
 
     fun canUndo(): Boolean = initialized && jniCanUndo()
@@ -150,14 +156,16 @@ object DrawingEngineJNI {
     // ── Capas ──────────────────────────────────────────────────────────────
 
     fun addLayer(name: String): Int = if (initialized) jniAddLayer(name) else -1
-    fun removeLayer(id: Int)   = glHandler.post { if (initialized) jniRemoveLayer(id) }
-    fun setActiveLayer(id: Int)= glHandler.post { if (initialized) jniSetActiveLayer(id) }
-    fun setLayerOpacity(id: Int, o: Float) = glHandler.post { if (initialized) jniSetLayerOpacity(id, o) }
-    fun setLayerVisible(id: Int, v: Boolean) = glHandler.post { if (initialized) jniSetLayerVisible(id, v) }
+    fun removeLayer(id: Int)   = glHandler.post { if (!initialized) return@post; ensureCurrent(); jniRemoveLayer(id) }
+    fun setActiveLayer(id: Int)= glHandler.post { if (!initialized) return@post; ensureCurrent(); jniSetActiveLayer(id) }
+    fun setLayerOpacity(id: Int, o: Float) = glHandler.post { if (!initialized) return@post; ensureCurrent(); jniSetLayerOpacity(id, o) }
+    fun setLayerVisible(id: Int, v: Boolean) = glHandler.post { if (!initialized) return@post; ensureCurrent(); jniSetLayerVisible(id, v) }
 
     fun clearLayer(id: Int, onDone: (ByteArray?) -> Unit) = glHandler.post {
-        if (initialized) jniClearLayer(id)
-        notifyBytes(if (initialized) jniExportPixels() else null, onDone)
+        if (!initialized) { notifyBytes(null, onDone); return@post }
+        ensureCurrent()
+        jniClearLayer(id)
+        notifyBytes(jniExportPixels(), onDone)
     }
 
     // ── Canvas ─────────────────────────────────────────────────────────────
