@@ -38,15 +38,10 @@ static const char* kStrokeFrag =
 "layout(location = 0) out vec4 fragColor;\n"
 "in vec2 v_uv;\n"
 "void main() {\n"
-"    // distance-based hardness: edge0->edge1 controls sharpness\n"
-"    vec2  center = vec2(0.5, 0.5);\n"
-"    float dist   = distance(v_uv, center);\n"
-"    // DUR=1.0=hard(narrow band), DUR=0.0=soft(wide gradient)\n"
-"    float edge0  = 0.5 * u_hardness;\n"
-"    float edge1  = 0.5;\n"
-"    float alpha  = 1.0 - smoothstep(edge0, edge1, dist);\n"
-"    // Note: pure distance-based, no texture mask (mask cancels hardness effect)\n"
-"    fragColor = vec4(u_color.rgb, u_color.a * alpha);\n"
+"    float mask = texture(u_brush, v_uv).a;\n"
+"    float edge = mix(0.5, 0.0, u_hardness);\n"
+"    float soft = smoothstep(edge, 1.0 - edge, mask);\n"
+"    fragColor  = vec4(u_color.rgb, u_color.a * soft);\n"
 "}\n";
 
 static const char* kEraserFrag =
@@ -58,12 +53,10 @@ static const char* kEraserFrag =
 "layout(location = 0) out vec4 fragColor;\n"
 "in vec2 v_uv;\n"
 "void main() {\n"
-"    vec2  center = vec2(0.5, 0.5);\n"
-"    float dist   = distance(v_uv, center);\n"
-"    float edge0  = 0.5 * u_hardness;\n"
-"    float edge1  = 0.5;\n"
-"    float alpha  = 1.0 - smoothstep(edge0, edge1, dist);\n"
-"    fragColor = vec4(0.0, 0.0, 0.0, u_opacity * alpha);\n"
+"    float mask = texture(u_brush, v_uv).a;\n"
+"    float edge = mix(0.5, 0.0, u_hardness);\n"
+"    float soft = smoothstep(edge, 1.0 - edge, mask);\n"
+"    fragColor  = vec4(0.0, 0.0, 0.0, u_opacity * soft);\n"
 "}\n";
 
 // ── Quad vertices (-0.5..0.5 con UV 0..1) ────────────────────────────
@@ -149,11 +142,16 @@ void StrokeEngine::renderStamp(const Point& p, float diameterOverride) {
     glUseProgram(prog);
 
     if (brush_.isEraser) {
+        // Eraser: accumulate removal
         glBlendFuncSeparate(GL_ZERO, GL_ONE,
                             GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+        glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
     } else {
-        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
-                            GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
+        // Stroke: MAX blending — hardness falloff visible even with overlapping stamps
+        // GL_MAX takes the maximum alpha, so overlapping stamps don't accumulate to 1.0
+        glBlendFuncSeparate(GL_ONE, GL_ONE,
+                            GL_ONE, GL_ONE);
+        glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
     }
     glEnable(GL_BLEND);
 
