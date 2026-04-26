@@ -236,16 +236,30 @@ class _CanvasScreenState extends State<CanvasScreen> {
       final nativeActive = _nativeLayerIds[_controller.activeLayerId];
       if (nativeActive != null) await _bridge.setActiveLayer(nativeActive);
 
-      // FIX: GPU usa fondo opaco blanco cuando el proyecto es "transparente".
+      // FIX 1: GPU usa fondo opaco blanco cuando el proyecto es "transparente".
       // Sin esto, exportPixels() devuelve (0,0,0,0) → RawImage transparente →
       // Scaffold gris oscuro visible en lugar del lienzo blanco.
       final _gpuBg = _controller.backgroundColor == Colors.transparent
           ? Colors.white : _controller.backgroundColor;
       final initImg = await _bridge.setBackground(_gpuBg);
+
       if (mounted) setState(() {
         _nativeReady = true;
         _nativeCanvasImage = initImg;
       });
+
+      // FIX 2: setBackground puede devolver null si _toImage lanza excepción
+      // silenciosa. Forzar exportCanvas() en el siguiente frame garantiza
+      // que _nativeCanvasImage siempre tiene la imagen inicial del lienzo.
+      // Sin esto: canvas oscuro/tablero al inicio hasta que el usuario dibuje.
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted || !_nativeReady) return;
+        final freshImg = await _bridge.exportCanvas();
+        if (freshImg != null && mounted) {
+          setState(() => _nativeCanvasImage = freshImg);
+        }
+      });
+
       debugPrint('[NativeEngine] ✅ Motor C++ Offscreen listo');
       FirebaseCrashlytics.instance.setCustomKey('renderer', 'gpu_cpp_offscreen');
     } catch (e, stack) {
