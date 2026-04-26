@@ -236,7 +236,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
       final nativeActive = _nativeLayerIds[_controller.activeLayerId];
       if (nativeActive != null) await _bridge.setActiveLayer(nativeActive);
 
-      final initImg = await _bridge.setBackground(_controller.backgroundColor);
+      // FIX: GPU usa fondo opaco blanco cuando el proyecto es "transparente".
+      // Sin esto, exportPixels() devuelve (0,0,0,0) → RawImage transparente →
+      // Scaffold gris oscuro visible en lugar del lienzo blanco.
+      final _gpuBg = _controller.backgroundColor == Colors.transparent
+          ? Colors.white : _controller.backgroundColor;
+      final initImg = await _bridge.setBackground(_gpuBg);
       if (mounted) setState(() {
         _nativeReady = true;
         _nativeCanvasImage = initImg;
@@ -2816,7 +2821,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget _bgColorChip(String label, Color color) {
     final isActive = _controller.backgroundColor == color;
     return GestureDetector(
-      onTap: () { setState(() => _controller.setBackgroundColor(color)); _bridgeCall(() => _bridge.setBackground(color)); },
+      onTap: () { setState(() => _controller.setBackgroundColor(color)); _bridgeCall(() => _bridge.setBackground(color == Colors.transparent ? Colors.white : color)); },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
