@@ -4179,7 +4179,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       size: Size(_controller.canvasSize.width,
                                  _controller.canvasSize.height),
                     ),
-                  // ── Fallback: renderer Dart mientras carga el motor ─
+                  // ── Fondo blanco del canvas (siempre visible detrás del GPU) ──
+                  // FIX: sin este Container, los píxeles transparentes (áreas borradas)
+                  // muestran el _bgColor gris del Scaffold en lugar del fondo blanco del lienzo.
+                  Container(
+                    width:  _controller.canvasSize.width,
+                    height: _controller.canvasSize.height,
+                    color: _controller.backgroundColor == Colors.transparent
+                        ? Colors.white
+                        : _controller.backgroundColor,
+                  ),
+                  // ── Fallback: renderer Dart solo cuando GPU no está listo ──
+                  // FIX: sin condición !_nativeReady, el Dart painter sobreescribía el RawImage
+                  // del GPU, anulando visualmente DUR y el borrador del motor C++.
+                  if (!_nativeReady)
                     CustomPaint(
                       painter: CanvasPainter(
                         layers: _controller.layers,
