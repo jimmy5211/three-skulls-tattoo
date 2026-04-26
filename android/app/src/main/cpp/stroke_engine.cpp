@@ -39,7 +39,8 @@ static const char* kStrokeFrag =
 "in vec2 v_uv;\n"
 "void main() {\n"
 "    float mask = texture(u_brush, v_uv).a;\n"
-"    float edge = 0.5 * u_hardness;\n"
+"    // FIX: clamp hardness a 0.999 para evitar smoothstep(0.5,0.5,x) — undefined behavior GLSL\n"
+"    float edge = 0.5 * min(u_hardness, 0.999);\n"
 "    float soft = smoothstep(edge, 1.0 - edge, mask);\n"
 "    fragColor  = vec4(u_color.rgb, u_color.a * soft);\n"
 "}\n";
@@ -54,7 +55,8 @@ static const char* kEraserFrag =
 "in vec2 v_uv;\n"
 "void main() {\n"
 "    float mask = texture(u_brush, v_uv).a;\n"
-"    float edge = 0.5 * u_hardness;\n"
+"    // FIX: clamp hardness a 0.999 para evitar smoothstep(0.5,0.5,x) — undefined behavior GLSL\n"
+"    float edge = 0.5 * min(u_hardness, 0.999);\n"
 "    float soft = smoothstep(edge, 1.0 - edge, mask);\n"
 "    fragColor  = vec4(0.0, 0.0, 0.0, u_opacity * soft);\n"
 "}\n";
