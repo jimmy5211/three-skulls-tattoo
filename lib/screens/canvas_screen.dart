@@ -4162,7 +4162,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     ),
                   // ── Overlay trazo actual — solo para pinceles, no eraser ──
                   if (_nativeReady && _controller.currentStroke != null &&
-                      _brush.type != StrokeType.eraser)
+                      _controller.activeBrush.type != StrokeType.eraser)
                     CustomPaint(
                       painter: CanvasPainter(
                         layers: const [],
