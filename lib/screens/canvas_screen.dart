@@ -249,16 +249,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
       });
 
       // FIX 2: setBackground puede devolver null si _toImage lanza excepción
-      // silenciosa. Forzar exportCanvas() en el siguiente frame garantiza
-      // que _nativeCanvasImage siempre tiene la imagen inicial del lienzo.
-      // Sin esto: canvas oscuro/tablero al inicio hasta que el usuario dibuje.
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        if (!mounted || !_nativeReady) return;
-        final freshImg = await _bridge.exportCanvas();
-        if (freshImg != null && mounted) {
-          setState(() => _nativeCanvasImage = freshImg);
-        }
-      });
+      // silenciosa. Reintento con backoff: hasta 5 intentos con 80/160/320/640ms
+      // de delay para que el motor GL complete la inicialización.
+      // Sin esto: canvas oscuro al inicio hasta que el usuario dibuje.
+      _retryExportCanvas(attempts: 5, delayMs: 80);
 
       debugPrint('[NativeEngine] ✅ Motor C++ Offscreen listo');
       FirebaseCrashlytics.instance.setCustomKey('renderer', 'gpu_cpp_offscreen');
@@ -298,6 +292,24 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }).catchError((e) {
       debugPrint('[NativeEngine] $e');
     });
+  }
+
+  /// Reintenta exportCanvas hasta [attempts] veces con delay exponencial.
+  /// Necesario porque setBackground puede retornar null si el contexto GL
+  /// aún no está completamente inicializado al primer intento.
+  Future<void> _retryExportCanvas({required int attempts, required int delayMs}) async {
+    for (int i = 0; i < attempts; i++) {
+      await Future.delayed(Duration(milliseconds: delayMs * (1 << i)));
+      if (!mounted || !_nativeReady) return;
+      if (_nativeCanvasImage != null) return; // ya tenemos imagen válida
+      final img = await _bridge.exportCanvas();
+      if (img != null && mounted) {
+        setState(() => _nativeCanvasImage = img);
+        debugPrint('[NativeEngine] exportCanvas OK en intento ${i+1}');
+        return;
+      }
+      debugPrint('[NativeEngine] exportCanvas intento ${i+1} falló');
+    }
   }
 
   @override
