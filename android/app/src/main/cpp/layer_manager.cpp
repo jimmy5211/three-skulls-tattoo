@@ -21,7 +21,11 @@ static const char* kCompositeVert =
 "layout(location = 1) in vec2 a_uv;\n"
 "out vec2 v_uv;\n"
 "void main() {\n"
-"    v_uv = a_pos * 0.5 + 0.5;\n"
+"    // FIX Y-FLIP: glReadPixels lee FBO bottom-left, Flutter muestra top-left\n"
+"    // → Y-flip visual. Invertir v_uv.y compensa el flip:\n"
+"    // canvas y=0 (top) → FBO top → glReadPixels row H-1 → array final → Flutter top.\n"
+"    vec2 uv = a_pos * 0.5 + 0.5;\n"
+"    v_uv = vec2(uv.x, 1.0 - uv.y);\n"
 "    gl_Position = vec4(a_pos, 0.0, 1.0);\n"
 "}\n";
 
