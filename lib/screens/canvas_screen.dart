@@ -4171,6 +4171,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   if (isValid) {
                     _controller.endStroke();
                     _bridgeImageCall(() => _bridge.endStroke());
+                    // FIX DIAG: obtener g_lastError de C++ (contiene canvasSize real)
+                    Future.microtask(() async {
+                      try {
+                        const diagCh = MethodChannel('tsk/drawing_engine');
+                        final err = await diagCh.invokeMethod<String>('getLastError');
+                        if (mounted && err != null) setState(() => _lastGpuStatus = err);
+                      } catch (_) {}
+                    });
                   } else {
                     _controller.cancelStroke();
                     _bridgeCall(() => _bridge.cancelStroke());
