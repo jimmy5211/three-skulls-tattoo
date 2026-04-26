@@ -28,7 +28,7 @@ object DrawingEngineJNI {
         private set
 
     private var _lastSetupError = "not_started"
-    fun getLastError(): String = _lastSetupError
+    fun getLastError(): String = if (initialized) try { jniGetLastError() } catch (_: Throwable) { _lastSetupError } else _lastSetupError
 
     // ── Setup ──────────────────────────────────────────────────────────────
 
@@ -258,6 +258,7 @@ object DrawingEngineJNI {
     } catch (t: Throwable) { Log.e(TAG, "loadLibrary failed: $t"); false }
 
     @JvmStatic private external fun jniInit(d: Long, c: Long, w: Int, h: Int, t: Int, cW: Int, cH: Int, u: Int): Int
+    @JvmStatic private external fun jniGetLastError(): String
     @JvmStatic private external fun jniDestroy()
     @JvmStatic private external fun jniBeginStroke(lid: Int, x: Float, y: Float, p: Float, sz: Float, op: Float, hd: Float, sp: Float, er: Boolean, bt: Int, col: Int)
     @JvmStatic private external fun jniAddPoint(x: Float, y: Float, p: Float)
