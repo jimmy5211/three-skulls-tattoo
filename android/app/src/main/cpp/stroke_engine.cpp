@@ -220,7 +220,6 @@ void StrokeEngine::beginStroke(const Point& p, const BrushParams& brush,
     }
     renderStamp(p);
 }
-}
 
 bool StrokeEngine::addPoint(const Point& p) {
     if (!active_) return false;
