@@ -93,19 +93,34 @@ class CanvasPainter extends CustomPainter {
       _drawSymmetryLine(canvas, canvasW, canvasH);
     }
 
+    // OVERLAY MODE FIX: cuando layers=[], _drawLayerOptimized nunca se llama
+    // y currentStroke no se pinta → trazo solo aparece al soltar el dedo.
+    // En overlay mode dibujamos el stroke directamente aquí.
+    if (_isOverlayMode && currentStroke != null) {
+      canvas.save();
+      canvas.clipRect(Rect.fromLTWH(0, 0, canvasW, canvasH));
+      _drawStroke(canvas, currentStroke!);
+      if (currentMirrorStroke != null) {
+        _drawStroke(canvas, currentMirrorStroke!);
+      }
+      canvas.restore();
+    }
+
     canvas.restore();
 
-    // 6. Borde de la hoja
-    final borderColor = backgroundColor == Colors.transparent
-        ? const Color(0xAAC0392B)
-        : const Color(0x33000000);
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, canvasW, canvasH),
-      Paint()
-        ..color = borderColor
-        ..strokeWidth = 1.0
-        ..style = PaintingStyle.stroke,
-    );
+    // 6. Borde de la hoja (solo en modo normal, no overlay)
+    if (!_isOverlayMode) {
+      final borderColor = backgroundColor == Colors.transparent
+          ? const Color(0xAAC0392B)
+          : const Color(0x33000000);
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, canvasW, canvasH),
+        Paint()
+          ..color = borderColor
+          ..strokeWidth = 1.0
+          ..style = PaintingStyle.stroke,
+      );
+    }
   }
 
   void _drawCanvasImage(Canvas canvas, CanvasImageModel img) {
