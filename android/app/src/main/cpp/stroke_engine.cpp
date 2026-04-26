@@ -38,14 +38,16 @@ static const char* kStrokeFrag =
 "layout(location = 0) out vec4 fragColor;\n"
 "in vec2 v_uv;\n"
 "void main() {\n"
+"    // distance-based hardness: edge0->edge1 controls sharpness\n"
 "    vec2  center = vec2(0.5, 0.5);\n"
 "    float dist   = distance(v_uv, center);\n"
-"    float radius = 0.5;\n"
-"    float h      = pow(u_hardness, 2.2);\n"
-"    float edge0  = radius * (1.0 - h);\n"
-"    float edge1  = radius;\n"
+"    float h      = clamp(pow(u_hardness, 2.2), 0.001, 1.0);\n"
+"    float edge0  = 0.5 * (1.0 - h);\n"
+"    float edge1  = 0.5;\n"
 "    float alpha  = 1.0 - smoothstep(edge0, edge1, dist);\n"
-"    fragColor = vec4(u_color.rgb, u_color.a * alpha);\n"
+"    // Multiply by brush texture for non-circular brush shapes\n"
+"    float mask   = texture(u_brush, v_uv).a;\n"
+"    fragColor = vec4(u_color.rgb, u_color.a * alpha * mask);\n"
 "}\n";
 
 static const char* kEraserFrag =
@@ -59,12 +61,12 @@ static const char* kEraserFrag =
 "void main() {\n"
 "    vec2  center = vec2(0.5, 0.5);\n"
 "    float dist   = distance(v_uv, center);\n"
-"    float radius = 0.5;\n"
-"    float h      = pow(u_hardness, 2.2);\n"
-"    float edge0  = radius * (1.0 - h);\n"
-"    float edge1  = radius;\n"
+"    float h      = clamp(pow(u_hardness, 2.2), 0.001, 1.0);\n"
+"    float edge0  = 0.5 * (1.0 - h);\n"
+"    float edge1  = 0.5;\n"
 "    float alpha  = 1.0 - smoothstep(edge0, edge1, dist);\n"
-"    fragColor = vec4(0.0, 0.0, 0.0, u_opacity * alpha);\n"
+"    float mask   = texture(u_brush, v_uv).a;\n"
+"    fragColor = vec4(0.0, 0.0, 0.0, u_opacity * alpha * mask);\n"
 "}\n";
 
 // ── Quad vertices (-0.5..0.5 con UV 0..1) ────────────────────────────
