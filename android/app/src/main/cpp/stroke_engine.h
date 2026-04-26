@@ -35,7 +35,8 @@ public:
     void unloadBrushTexture(int id);
 
 private:
-    bool active_ = false;
+    bool   active_    = false;
+    GLuint layerFBO_  = 0;  // FBO del layer activo, guardado en beginStroke
 
     // Parámetros del trazo actual
     BrushParams brush_;
@@ -52,13 +53,32 @@ private:
     GLuint quadVBO_        = 0;
     GLuint defaultBrushTex_= 0;  // círculo gaussiano pre-generado
 
+    // Stroke buffer temporal — stamps se acumulan aquí con GL_MAX
+    // Se composita sobre el layer FBO en endStroke() para preservar hardness
+    GLuint strokeFBO_      = 0;
+    GLuint strokeTex_      = 0;
+    int    strokeW_        = 0;
+    int    strokeH_        = 0;
+
+    // Composite shader (quad fullscreen para blit strokeFBO → layerFBO)
+    GLuint compositeProgram_ = 0;
+
     // Brush texture cache
     struct BrushTexEntry { int id; GLuint tex; int w, h; };
     std::vector<BrushTexEntry> brushTextures_;
     int nextBrushTexId_ = 1;
 
-    // Render un stamp (círculo/texture) en la posición dada
+    // Render un stamp en el strokeFBO (buffer temporal)
     void renderStamp(const Point& p, float diameterOverride = -1.0f);
+
+    // Crea/recrea el strokeFBO si el tamaño cambió
+    bool ensureStrokeFBO(int w, int h);
+    // Destruye el strokeFBO
+    void destroyStrokeFBO();
+    // Blitea strokeFBO → layerFBO con normal alpha blending
+    void compositeStrokeToLayer(GLuint layerFBO);
+    // Inicia el composite shader
+    bool initCompositeShader();
 
     // Genera el circulo gaussiano default (64×64 RGBA)
     void generateDefaultBrushTex();
