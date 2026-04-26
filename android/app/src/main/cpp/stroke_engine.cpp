@@ -45,8 +45,8 @@ static const char* kStrokeFrag =
 "    float edge0  = 0.5 * u_hardness;\n"
 "    float edge1  = 0.5;\n"
 "    float alpha  = 1.0 - smoothstep(edge0, edge1, dist);\n"
-"    float mask   = texture(u_brush, v_uv).a;\n"
-"    fragColor = vec4(u_color.rgb, u_color.a * alpha * mask);\n"
+"    // Note: pure distance-based, no texture mask (mask cancels hardness effect)\n"
+"    fragColor = vec4(u_color.rgb, u_color.a * alpha);\n"
 "}\n";
 
 static const char* kEraserFrag =
@@ -63,8 +63,7 @@ static const char* kEraserFrag =
 "    float edge0  = 0.5 * u_hardness;\n"
 "    float edge1  = 0.5;\n"
 "    float alpha  = 1.0 - smoothstep(edge0, edge1, dist);\n"
-"    float mask   = texture(u_brush, v_uv).a;\n"
-"    fragColor = vec4(0.0, 0.0, 0.0, u_opacity * alpha * mask);\n"
+"    fragColor = vec4(0.0, 0.0, 0.0, u_opacity * alpha);\n"
 "}\n";
 
 // ── Quad vertices (-0.5..0.5 con UV 0..1) ────────────────────────────

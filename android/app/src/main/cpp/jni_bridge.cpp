@@ -79,6 +79,7 @@ JNINAME(jniBeginStroke)(JNIEnv*, jclass,
     brush.size     = size;
     brush.opacity  = opacity;
     brush.hardness = hardness;
+    LOGI("beginStroke: hardness=%.3f size=%.1f opacity=%.3f isEraser=%d", hardness, size, opacity, isEraser);
     brush.spacing  = spacing;
     brush.isEraser = (bool)isEraser;
     brush.brushTextureId = brushTexId;
