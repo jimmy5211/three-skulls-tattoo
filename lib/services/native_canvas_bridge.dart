@@ -107,8 +107,14 @@ class NativeCanvasBridge {
 
   Future<ui.Image?> setBackground(Color color) async =>
       _toImage(await _ch.invokeMethod<Uint8List>('setBackground', {'colorARGB': color.value}));
-  Future<void> setCanvasSize(int w, int h) =>
-      _ch.invokeMethod('setCanvasSize', {'w': w, 'h': h});
+  Future<void> setCanvasSize(int w, int h) async {
+    // FIX: actualizar _canvasW/_canvasH para que _toImage use las dimensiones
+    // correctas. Sin esto, la imagen GPU se decodifica con el tamaño anterior
+    // → imagen comprimida/distorsionada después de cambiar el canvas.
+    _canvasW = w;
+    _canvasH = h;
+    await _ch.invokeMethod('setCanvasSize', {'w': w, 'h': h});
+  }
 
   // ── Export raw ────────────────────────────────────────────────────
 
