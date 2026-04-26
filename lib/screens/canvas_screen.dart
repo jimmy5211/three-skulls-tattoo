@@ -4046,7 +4046,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 size:      _brush.size / _scale,
                 opacity:   _brush.opacity,
                 hardness:  _brush.hardness,
-                spacing:   0.15,
+                spacing:   0.25,
                 isEraser:  _brush.type == StrokeType.eraser,
                 color:     _controller.activeColor,
               ));
