@@ -4149,8 +4149,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
               child: Stack(
                 children: [
 
-                  // ── Offscreen: imagen C++ + overlay Dart en tiempo real ──
-                  // ── Offscreen: imagen C++ base ────────────────
+                  // ── PRIMER hijo: fondo del canvas (debajo de todo) ──────
+                  // FIX: debe ser el primer hijo para que quede DEBAJO del RawImage.
+                  // Sin él, los píxeles transparentes del GPU (áreas borradas o sin
+                  // dibujo) muestran el _bgColor gris del Scaffold.
+                  // Cuando backgroundColor == transparent → papel blanco.
+                  Container(
+                    width:  _controller.canvasSize.width,
+                    height: _controller.canvasSize.height,
+                    color: _controller.backgroundColor == Colors.transparent
+                        ? Colors.white
+                        : _controller.backgroundColor,
+                  ),
+
+                  // ── SEGUNDO hijo: imagen C++ (GPU canvas) ───────────────
                   if (_nativeReady && _nativeCanvasImage != null)
                     RepaintBoundary(
                       child: RawImage(
@@ -4174,21 +4186,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         symmetryEnabled: _controller.symmetryEnabled,
                         activeLayerId: _controller.activeLayerId,
                         controller: _controller,
-                        backgroundColor: Colors.transparent,
+                        // FIX: Color(0x00FFFFFF) = transparent-white, evita el check
+                        // `backgroundColor == Colors.transparent` que dibuja el
+                        // tablero de ajedrez en CanvasPainter. Visualmente idéntico
+                        // (alpha=0) pero no activa el modo checkerboard.
+                        backgroundColor: const Color(0x00FFFFFF),
                       ),
                       size: Size(_controller.canvasSize.width,
                                  _controller.canvasSize.height),
                     ),
-                  // ── Fondo blanco del canvas (siempre visible detrás del GPU) ──
-                  // FIX: sin este Container, los píxeles transparentes (áreas borradas)
-                  // muestran el _bgColor gris del Scaffold en lugar del fondo blanco del lienzo.
-                  Container(
-                    width:  _controller.canvasSize.width,
-                    height: _controller.canvasSize.height,
-                    color: _controller.backgroundColor == Colors.transparent
-                        ? Colors.white
-                        : _controller.backgroundColor,
-                  ),
                   // ── Fallback: renderer Dart solo cuando GPU no está listo ──
                   // FIX: sin condición !_nativeReady, el Dart painter sobreescribía el RawImage
                   // del GPU, anulando visualmente DUR y el borrador del motor C++.
