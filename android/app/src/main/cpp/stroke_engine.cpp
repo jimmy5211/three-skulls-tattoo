@@ -147,10 +147,10 @@ void StrokeEngine::renderStamp(const Point& p, float diameterOverride) {
                             GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
         glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
     } else {
-        // Stroke: MAX blending — hardness falloff visible even with overlapping stamps
-        // GL_MAX takes the maximum alpha, so overlapping stamps don't accumulate to 1.0
-        glBlendFuncSeparate(GL_ONE, GL_ONE,
-                            GL_ONE, GL_ONE);
+        // RGB: normal over blending. Alpha: GL_MAX preserves hardness falloff
+        // GL_ONE+GL_ONE (additive) was making black on white = white (invisible)
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                            GL_ONE,       GL_ONE);
         glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
     }
     glEnable(GL_BLEND);
