@@ -60,7 +60,13 @@ class NativeCanvasBridge {
   Future<ui.Image?> endStroke() async {
     if (!_ready) return null;
     final bytes = await _ch.invokeMethod<Uint8List>('endStrokeAndExport');
-    return _toImage(bytes);
+    if (bytes != null && bytes.isNotEmpty) return _toImage(bytes);
+    // FIX: si endStrokeAndExport devuelve null (EGL context issue),
+    // esperar un frame y hacer exportCanvas como fallback.
+    await Future.delayed(const Duration(milliseconds: 32));
+    if (!_ready) return null;
+    final fallback = await _ch.invokeMethod<Uint8List>('exportCanvas');
+    return _toImage(fallback);
   }
 
   Future<void> cancelStroke() async {
