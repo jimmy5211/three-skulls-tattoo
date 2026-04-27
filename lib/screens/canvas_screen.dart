@@ -4147,7 +4147,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:   _nativeLayer(_controller.activeLayerId),
                 x: _dbgX, y: _dbgY,
-                size:      _brush.size / _scale,
+                // Mínimo 1.5 canvas units para evitar trazos invisibles a zoom bajo.
+                // Con TAM=1 y scale=0.35: 1/0.35=2.86px en FBO → 2.86dp → 1dp on screen.
+                // Mínimo asegura visibilidad a cualquier zoom.
+                size:      (_brush.size / _scale).clamp(1.5, double.infinity),
                 opacity:   _brush.opacity,
                 hardness:  _brush.hardness,
                 spacing:   0.08,
