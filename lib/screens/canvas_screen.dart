@@ -4141,18 +4141,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   'begin x=${_dbgX.toStringAsFixed(1)} y=${_dbgY.toStringAsFixed(1)}\n'
                   'scale=$_scale off=(${_offset.dx.toStringAsFixed(0)},${_offset.dy.toStringAsFixed(0)})\n'
                   'brushSz=${(_brush.size/_scale).toStringAsFixed(2)}\n'
-                  'DART canvasSize=${_controller.canvasSize.width.toInt()}x${_controller.canvasSize.height.toInt()}';
+                  'DART canvasSize=${_controller.canvasSize.width.toInt()}x${_controller.canvasSize.height.toInt()}\n'
+                  'overlayStrokeW=${(_brush.size/_scale).toStringAsFixed(1)}dp scale=$_scale DPR=${MediaQuery.of(context).devicePixelRatio.toStringAsFixed(2)}';
 
+              // FIX DPR: RawImage(width:1080dp) muestra una imagen de 1080px físicos
+              // upscaleada DPR veces. El overlay Dart dibuja en dp nativos.
+              // Dividir size/DPR hace que el GPU renderice DPR veces más fino en el FBO,
+              // compensando el upscale → ambos se ven igual tamaño en pantalla.
+              final _dpr = MediaQuery.of(context).devicePixelRatio;
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:   _nativeLayer(_controller.activeLayerId),
                 x: _dbgX, y: _dbgY,
-                size:      _brush.size / _scale,
+                size:      (_brush.size / _scale) / _dpr,
                 opacity:   _brush.opacity,
                 hardness:  _brush.hardness,
-                // SPACING BALANCE: 0.08 (8% del diámetro).
-                // 0.02 era demasiado denso → acumulación masiva de stamps cuando el
-                // usuario se detiene = blobs grandes. 0.08 mantiene línea suave
-                // (92% solapamiento) sin acumulación excesiva.
                 spacing:   0.08,
                 isEraser:  _brush.type == StrokeType.eraser,
                 color:     _controller.activeColor,
