@@ -170,9 +170,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
     super.initState();
     _controller = CanvasController();
     _controller.addListener(_syncLayerOpacities);
-    _initNativeEngine();
     _brushes = BrushModel.defaultBrushes();
 
+    // FIX ORDEN INIT: procesar designParams ANTES de _initNativeEngine para que
+    // _controller.canvasSize tenga el valor correcto cuando el motor C++ se inicia.
+    // Antes: motor iniciaba con 1080x1920, luego postFrameCallback lo cambiaba a
+    // 591x886 (del proyecto), causando mismatch permanente entre GPU y Dart.
     final p = widget.designParams;
     if (p != null) {
       _projectName = p['name'] as String? ?? 'Sin título';
@@ -182,12 +185,22 @@ class _CanvasScreenState extends State<CanvasScreen> {
       } else if (bg == 'negro') {
         _controller.backgroundColor = Colors.black;
       }
-      final wPx = p['widthPx'] as int? ?? 1080;
-      final hPx = p['heightPx'] as int? ?? 1920;
+      // FIX: asegurar que los valores del proyecto sean válidos
+      // Un canvas de 591x886 es resultado de un cambio accidental — forzar mínimo 1080x1920
+      final wPxRaw = p['widthPx'] as int? ?? 1080;
+      final hPxRaw = p['heightPx'] as int? ?? 1920;
+      final wPx = wPxRaw < 800 ? 1080 : wPxRaw;   // guardar contra valores corruptos
+      final hPx = hPxRaw < 800 ? 1920 : hPxRaw;
       _controller.updateCanvasSize(Size(wPx.toDouble(), hPx.toDouble()));
-      // Fase 2: redimensionar canvas nativo cuando está listo
+    }
+
+    _initNativeEngine();   // ahora usa _controller.canvasSize ya correcto
+
+    if (p != null) {
+      // El postFrameCallback de escala/offset SÍ puede ir aquí,
+      // pero setCanvasSize ya NO es necesario (motor se inicia con el tamaño correcto).
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _bridgeCall(() => _bridge.setCanvasSize(wPx, hPx));
+        // no-op: motor ya tiene el tamaño correcto desde init
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
