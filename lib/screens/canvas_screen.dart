@@ -225,11 +225,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
           //           canvas 1920*0.35=672px alto (vs ~684px → casi cabe vertical).
           final fitScale = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
           final s = fitScale < 0.35 ? 0.35 : fitScale;
+          // FIX OFFSET: clampear para que el canvas nunca quede detrás del sidebar.
+          // Sin clamp: con canvas 1080px a 35% → offset.x = 56 + (355-378)/2 = 44.5dp
+          // → canvas parcialmente oculto detrás del sidebar (56dp).
+          final rawX = sideBar + (aW - csW * s) / 2;
+          final rawY = topBar + (aH - csH * s) / 2;
           setState(() {
             _scale = s;
             _offset = Offset(
-              sideBar + (aW - csW * s) / 2,
-              topBar + (aH - csH * s) / 2,
+              rawX < sideBar ? sideBar.toDouble() : rawX,
+              rawY < topBar  ? topBar.toDouble()  : rawY,
             );
           });
         });
@@ -293,10 +298,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
           final sy = aH / gpuH;
           final fitS = (sx < sy ? sx : sy) * 0.85;
           final s = fitS < 0.35 ? 0.35 : fitS;
+          // FIX OFFSET: mismo clamp para el FIX SYNC.
+          final _rawX = _sideBarWidth + (aW - gpuW * s) / 2;
+          final _rawY = _topBarHeight + (aH - gpuH * s) / 2;
           _scale = s;
           _offset = Offset(
-            _sideBarWidth + (aW - gpuW * s) / 2,
-            _topBarHeight + (aH - gpuH * s) / 2,
+            _rawX < _sideBarWidth ? _sideBarWidth.toDouble() : _rawX,
+            _rawY < _topBarHeight  ? _topBarHeight.toDouble()  : _rawY,
           );
         }
       });
@@ -4219,8 +4227,19 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       stroke.points.length > 2 &&
                       _activePointers <= 1;
                   if (isValid) {
-                    _controller.endStroke();
-                    _bridgeImageCall(() => _bridge.endStroke());
+                    // FIX BLINK: el overlay usa currentStroke para preview en tiempo real.
+                    // Si llamamos controller.endStroke() ANTES de obtener la imagen GPU,
+                    // currentStroke=null → overlay desaparece → frame en blanco antes de
+                    // que llegue _nativeCanvasImage → el trazo "parpadea".
+                    // Solución: bridge obtiene la imagen, LUEGO endStroke limpia el overlay.
+                    final _strokeSnapshot = _controller.currentStroke;
+                    _bridge.endStroke().then((img) {
+                      if (!mounted) return;
+                      _controller.endStroke();  // limpia currentStroke DESPUÉS de tener imagen
+                      if (img != null) setState(() => _nativeCanvasImage = img);
+                    }).catchError((_) {
+                      if (mounted) _controller.endStroke();
+                    });
                     // FIX DIAG: obtener g_lastError de C++ (contiene canvasSize real)
                     Future.microtask(() async {
                       try {
