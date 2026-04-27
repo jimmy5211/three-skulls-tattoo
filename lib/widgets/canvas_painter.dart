@@ -388,7 +388,26 @@ class CanvasPainter extends CustomPainter {
       case StrokeType.organico:
       case StrokeType.agua:
       case StrokeType.importado:
-        BrushStampPainter.drawStroke(canvas, stroke, baseColor);
+        // FIX OVERLAY DUR: aplicar blur cuando hardness < 1.0 para que el preview
+        // Dart se parezca al resultado GPU (que usa smoothstep con borde suave).
+        // Solo se aplica en overlay mode (layers vacío) para no afectar rendimiento
+        // del Dart fallback completo. El blurSigma escala con el strokeWidth y hardness.
+        final _hardness = stroke.hardness.clamp(0.0, 1.0);
+        if (_hardness < 0.95 && stroke.strokeWidth > 2) {
+          // Dibujar en capa temporal y aplicar blur gaussian
+          final _blurSigma = stroke.strokeWidth * (1 - _hardness) * 0.22;
+          final _bounds = Rect.fromCircle(
+            center: stroke.points.fold(Offset.zero, (a, b) => a + b) / stroke.points.length.toDouble(),
+            radius: stroke.strokeWidth * 2,
+          );
+          canvas.saveLayer(null,
+            Paint()..imageFilter = ui.ImageFilter.blur(
+              sigmaX: _blurSigma, sigmaY: _blurSigma));
+          BrushStampPainter.drawStroke(canvas, stroke, baseColor);
+          canvas.restore();
+        } else {
+          BrushStampPainter.drawStroke(canvas, stroke, baseColor);
+        }
         break;
 
       case StrokeType.eraser:
