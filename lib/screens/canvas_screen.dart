@@ -4144,15 +4144,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   'DART canvasSize=${_controller.canvasSize.width.toInt()}x${_controller.canvasSize.height.toInt()}\n'
                   'overlayStrokeW=${(_brush.size/_scale).toStringAsFixed(1)}dp scale=$_scale DPR=${MediaQuery.of(context).devicePixelRatio.toStringAsFixed(2)}';
 
-              // FIX DPR: RawImage(width:1080dp) muestra una imagen de 1080px físicos
-              // upscaleada DPR veces. El overlay Dart dibuja en dp nativos.
-              // Dividir size/DPR hace que el GPU renderice DPR veces más fino en el FBO,
-              // compensando el upscale → ambos se ven igual tamaño en pantalla.
-              final _dpr = MediaQuery.of(context).devicePixelRatio;
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:   _nativeLayer(_controller.activeLayerId),
                 x: _dbgX, y: _dbgY,
-                size:      (_brush.size / _scale) / _dpr,
+                size:      _brush.size / _scale,
                 opacity:   _brush.opacity,
                 hardness:  _brush.hardness,
                 spacing:   0.08,
