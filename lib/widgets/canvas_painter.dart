@@ -355,38 +355,53 @@ class CanvasPainter extends CustomPainter {
   //  DIBUJO DE STROKES
   // ══════════════════════════════════════════════════════════
 
-  // ── OVERLAY STROKE: preview en tiempo real que imita el algoritmo del GPU ────
-  // Usa stamps circulares (igual que el motor C++) para que el preview coincida
-  // visualmente con el resultado final. Spacing=0.08 = mismo valor que el GPU.
+  // ── OVERLAY STROKE: preview en tiempo real con path Bézier suave ────────────
+  // Usa path con StrokeCap.round en lugar de stamps individuales para evitar
+  // el efecto punteado cuando el dedo se mueve rápido (gaps entre stamps).
+  // strokeWidth = diámetro completo = activeBrush.size / viewScale → mismo
+  // tamaño visual que los stamps del GPU.
   void _drawOverlayStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     final h = stroke.hardness.clamp(0.0, 1.0);
-    final radius = stroke.strokeWidth / 2;
 
     final isEraser = stroke.type == StrokeType.eraser;
     final color = isEraser
         ? Colors.white.withOpacity(0.5)
         : stroke.color.withOpacity(stroke.opacity);
 
+    // stroke.strokeWidth = activeBrush.size / viewScale (diámetro, canvas units)
+    // Con StrokeCap.round y StrokeJoin.round, el path crea el mismo efecto visual
+    // que los stamps del GPU pero sin gaps entre puntos de toque.
     final paint = Paint()
       ..color = color
-      ..style = PaintingStyle.fill;
+      ..strokeWidth = stroke.strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
 
-    // Borde suave: MaskFilter por cada stamp (solo cuando hardness < 1.0)
     if (h < 0.95 && !isEraser) {
       paint.maskFilter = MaskFilter.blur(
-          BlurStyle.normal, radius * (1 - h) * 0.3);
+          BlurStyle.normal, stroke.strokeWidth * (1 - h) * 0.15);
     }
 
-    // Dibujar stamps individuales igual que el GPU (spacing = 8% del diámetro)
-    final minDist = 0.08 * stroke.strokeWidth;
-    Offset? lastStamp;
-    for (final p in stroke.points) {
-      if (lastStamp == null || (p - lastStamp).distance >= minDist) {
-        canvas.drawCircle(p, radius, paint);
-        lastStamp = p;
-      }
+    if (stroke.points.length == 1) {
+      canvas.drawCircle(stroke.points.first, stroke.strokeWidth / 2,
+          Paint()..color = color..style = PaintingStyle.fill);
+      return;
     }
+
+    final path = Path()
+        ..moveTo(stroke.points.first.dx, stroke.points.first.dy);
+    for (int i = 1; i < stroke.points.length - 1; i++) {
+      final mid = Offset(
+        (stroke.points[i].dx + stroke.points[i + 1].dx) / 2,
+        (stroke.points[i].dy + stroke.points[i + 1].dy) / 2,
+      );
+      path.quadraticBezierTo(
+          stroke.points[i].dx, stroke.points[i].dy, mid.dx, mid.dy);
+    }
+    path.lineTo(stroke.points.last.dx, stroke.points.last.dy);
+    canvas.drawPath(path, paint);
   }
 
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
