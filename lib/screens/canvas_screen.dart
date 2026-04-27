@@ -211,14 +211,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
           final topBar = _topBarHeight;
           final aW = screen.width - sideBar;
           final aH = screen.height - topBar;
-          final scaleX = aW / wPx;
-          final scaleY = aH / hPx;
+          // FIX SCOPE: usar _controller.canvasSize en lugar de wPx/hPx
+          // (ya fuera de scope después del refactor de initState)
+          final csW = _controller.canvasSize.width;
+          final csH = _controller.canvasSize.height;
+          final scaleX = aW / csW;
+          final scaleY = aH / csH;
           final s = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
           setState(() {
             _scale = s;
             _offset = Offset(
-              sideBar + (aW - wPx * s) / 2,
-              topBar + (aH - hPx * s) / 2,
+              sideBar + (aW - csW * s) / 2,
+              topBar + (aH - csH * s) / 2,
             );
           });
         });
