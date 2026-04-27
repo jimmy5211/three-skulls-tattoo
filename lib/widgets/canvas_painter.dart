@@ -355,15 +355,14 @@ class CanvasPainter extends CustomPainter {
   //  DIBUJO DE STROKES
   // ══════════════════════════════════════════════════════════
 
-  // ── OVERLAY STROKE: preview en tiempo real, grosor y suavidad correctos ──────
-  // Reemplaza BrushStampPainter en overlay mode porque BrushStampPainter
-  // usa strokeWidth como radio en lugar de diámetro → trazo 2x demasiado fino.
+  // ── OVERLAY STROKE: preview en tiempo real que imita el algoritmo del GPU ────
+  // Usa stamps circulares (igual que el motor C++) para que el preview coincida
+  // visualmente con el resultado final. Spacing=0.08 = mismo valor que el GPU.
   void _drawOverlayStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     final h = stroke.hardness.clamp(0.0, 1.0);
+    final radius = stroke.strokeWidth / 2;
 
-    // Eraser overlay: blanco semitransparente (no dstOut — no borramos el GPU RawImage)
-    // El resultado real del borrador se ve al soltar el dedo (endStroke exporta GPU).
     final isEraser = stroke.type == StrokeType.eraser;
     final color = isEraser
         ? Colors.white.withOpacity(0.5)
@@ -371,36 +370,23 @@ class CanvasPainter extends CustomPainter {
 
     final paint = Paint()
       ..color = color
-      ..strokeWidth = stroke.strokeWidth  // diámetro completo = activeBrush.size/scale
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
+      ..style = PaintingStyle.fill;
 
-    // Simular borde suave del GPU (smoothstep con hardness).
-    // MaskFilter.blur mantiene el tamaño visual, solo suaviza los bordes —
-    // a diferencia de ImageFilter.blur que inflaba el tamaño.
+    // Borde suave: MaskFilter por cada stamp (solo cuando hardness < 1.0)
     if (h < 0.95 && !isEraser) {
       paint.maskFilter = MaskFilter.blur(
-          BlurStyle.normal, stroke.strokeWidth * (1 - h) * 0.15);
+          BlurStyle.normal, radius * (1 - h) * 0.3);
     }
 
-    if (stroke.points.length == 1) {
-      canvas.drawCircle(
-          stroke.points.first, stroke.strokeWidth / 2, paint);
-      return;
+    // Dibujar stamps individuales igual que el GPU (spacing = 8% del diámetro)
+    final minDist = 0.08 * stroke.strokeWidth;
+    Offset? lastStamp;
+    for (final p in stroke.points) {
+      if (lastStamp == null || (p - lastStamp).distance >= minDist) {
+        canvas.drawCircle(p, radius, paint);
+        lastStamp = p;
+      }
     }
-    final path = Path()
-      ..moveTo(stroke.points.first.dx, stroke.points.first.dy);
-    for (int i = 1; i < stroke.points.length - 1; i++) {
-      final mid = Offset(
-        (stroke.points[i].dx + stroke.points[i + 1].dx) / 2,
-        (stroke.points[i].dy + stroke.points[i + 1].dy) / 2,
-      );
-      path.quadraticBezierTo(
-          stroke.points[i].dx, stroke.points[i].dy, mid.dx, mid.dy);
-    }
-    path.lineTo(stroke.points.last.dx, stroke.points.last.dy);
-    canvas.drawPath(path, paint);
   }
 
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
