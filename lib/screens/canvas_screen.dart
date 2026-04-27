@@ -262,6 +262,30 @@ class _CanvasScreenState extends State<CanvasScreen> {
       if (mounted) setState(() {
         _nativeReady = true;
         _nativeCanvasImage = initImg;
+        // FIX SYNC: forzar _controller.canvasSize al tamaño real del GPU.
+        // Si el proyecto tenía un tamaño corrupto (ej: 591x886 de una conversión
+        // accidental de cm), el RawImage se renderizaba con esas dimensiones
+        // mientras el GPU pintaba en 1080x1920 → trazo comprimido y desplazado.
+        final gpuW = _controller.canvasSize.width < 800
+            ? 1080.0 : _controller.canvasSize.width;
+        final gpuH = _controller.canvasSize.height < 800
+            ? 1920.0 : _controller.canvasSize.height;
+        if (_controller.canvasSize.width != gpuW ||
+            _controller.canvasSize.height != gpuH) {
+          _controller.updateCanvasSize(Size(gpuW, gpuH));
+          // Recalcular escala y offset para el nuevo tamaño
+          final screen = MediaQuery.of(context).size;
+          final aW = screen.width - _sideBarWidth;
+          final aH = screen.height - _topBarHeight;
+          final sx = aW / gpuW;
+          final sy = aH / gpuH;
+          final s = (sx < sy ? sx : sy) * 0.85;
+          _scale = s;
+          _offset = Offset(
+            _sideBarWidth + (aW - gpuW * s) / 2,
+            _topBarHeight + (aH - gpuH * s) / 2,
+          );
+        }
       });
 
       // FIX 2: setBackground puede devolver null si _toImage lanza excepción
