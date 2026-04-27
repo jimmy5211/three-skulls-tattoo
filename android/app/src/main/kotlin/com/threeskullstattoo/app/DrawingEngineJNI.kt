@@ -119,11 +119,23 @@ object DrawingEngineJNI {
 
     /** Termina el trazo y devuelve el canvas completo como RGBA. */
     fun endStrokeAndExport(onDone: (ByteArray?) -> Unit) {
+        // FIX: separar endStroke y exportPixels en dos posts consecutivos.
+        // En un solo post, jniEndStroke() llama render() que puede fallar
+        // silenciosamente si el GL state no está listo, y jniExportPixels()
+        // leería el outputFBO vacío (sin el trazo).
+        // Con dos posts: el primero garantiza que render() completó y el
+        // GL pipeline se flusheó antes de que el segundo lea el FBO.
         glHandler.post {
             if (!initialized) { notifyBytes(null, onDone); return@post }
             ensureCurrent()
             jniEndStroke()
-            notifyBytes(jniExportPixels(), onDone)
+            // Segundo post: exportar DESPUÉS de que el render del endStroke
+            // haya completado en el GL thread.
+            glHandler.post {
+                if (!initialized) { notifyBytes(null, onDone); return@post }
+                ensureCurrent()
+                notifyBytes(jniExportPixels(), onDone)
+            }
         }
     }
 
