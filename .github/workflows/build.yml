@@ -34,9 +34,10 @@ jobs:
           add-to-path: true
 
       - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.28.0'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y cmake
+          cmake --version
 
       - name: Setup Keystore
         run: |
