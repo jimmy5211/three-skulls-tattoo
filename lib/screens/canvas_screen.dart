@@ -4268,7 +4268,22 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ..translate(_offset.dx, _offset.dy)
                 ..rotateZ(_rotation)
                 ..scale(_scale),
-              child: Stack(
+              // FIX ROOT: el inner Stack heredaba las constraints del padre (411×890dp),
+              // haciendo que Container/RawImage/overlay se clippearan a ese tamaño.
+              // Transform(scale=0.35) entonces escalaba 411×890 → 144×311dp en pantalla
+              // en lugar del 1080×1920 * 0.35 = 378×672dp correcto.
+              // OverflowBox rompe la cadena de constraints y SizedBox fija el tamaño
+              // al canvas real (1080×1920dp), que después escala correctamente.
+              child: OverflowBox(
+                alignment: Alignment.topLeft,
+                minWidth: 0,
+                maxWidth: double.infinity,
+                minHeight: 0,
+                maxHeight: double.infinity,
+                child: SizedBox(
+                  width:  _controller.canvasSize.width,
+                  height: _controller.canvasSize.height,
+                  child: Stack(
                 children: [
 
                   // ── PRIMER hijo: fondo del canvas (debajo de todo) ──────
@@ -4375,6 +4390,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     ),
                 ],
               ),
+                ), // SizedBox(canvasSize)
+              ), // OverflowBox
             );
           },
         ),
