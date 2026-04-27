@@ -161,6 +161,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // DIAGNOSTIC: últimas coordenadas enviadas al bridge (para debugging posición)
   String _lastBridgeCoords = 'ninguno';
   String _lastGpuStatus = 'sin datos';
+  int _eraseExportCounter = 0;  // throttle exports durante borrado
   ui.Image? _nativeCanvasImage;
   String _nativeInitError = 'unknown';
   final Map<int, int> _nativeLayerIds = {};
@@ -4167,6 +4168,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
           } else {
             _controller.continueStroke(cp);
             _bridgeCall(() => _bridge.addPoint(cp.dx, cp.dy));
+            // FIX ERASER REAL-TIME: exportar cada 8 puntos del borrador para que
+            // el usuario vea el área borrada en tiempo real (sin bloquear el hilo).
+            if (_controller.activeBrush.type == StrokeType.eraser) {
+              _eraseExportCounter++;
+              if (_eraseExportCounter % 8 == 0) {
+                _bridgeImageCall(() => _bridge.exportCanvas());
+              }
+            }
           }
         },
         onScaleEnd: (details) {
@@ -4314,9 +4323,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         fit:    BoxFit.fill,
                       ),
                     ),
-                  // ── Overlay trazo actual — solo para pinceles, no eraser ──
-                  if (_nativeReady && _controller.currentStroke != null &&
-                      _controller.activeBrush.type != StrokeType.eraser)
+                  // ── Overlay trazo actual — pinceles Y borrador en tiempo real ──
+                  // FIX ERASER: el borrador también necesita overlay para preview.
+                  // _drawOverlayStroke maneja el eraser como blanco semitransparente
+                  // (no dstOut) para indicar el área que se está borrando.
+                  if (_nativeReady && _controller.currentStroke != null)
                     CustomPaint(
                       painter: CanvasPainter(
                         layers: const [],
