@@ -185,12 +185,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
       } else if (bg == 'negro') {
         _controller.backgroundColor = Colors.black;
       }
-      // FIX: asegurar que los valores del proyecto sean válidos
-      // Un canvas de 591x886 es resultado de un cambio accidental — forzar mínimo 1080x1920
+      // FIX: si cualquier dimensión < 1000px, el proyecto tiene valores corruptos
+      // (ej: conversión accidental cm→px a 72DPI en lugar de 300DPI).
+      // Forzar ambas dimensiones a 1080x1920 en ese caso.
       final wPxRaw = p['widthPx'] as int? ?? 1080;
       final hPxRaw = p['heightPx'] as int? ?? 1920;
-      final wPx = wPxRaw < 800 ? 1080 : wPxRaw;   // guardar contra valores corruptos
-      final hPx = hPxRaw < 800 ? 1920 : hPxRaw;
+      final bool corrupt = wPxRaw < 1000 || hPxRaw < 1000;
+      final wPx = corrupt ? 1080 : wPxRaw;
+      final hPx = corrupt ? 1920 : hPxRaw;
       _controller.updateCanvasSize(Size(wPx.toDouble(), hPx.toDouble()));
     }
 
@@ -270,10 +272,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
         // Si el proyecto tenía un tamaño corrupto (ej: 591x886 de una conversión
         // accidental de cm), el RawImage se renderizaba con esas dimensiones
         // mientras el GPU pintaba en 1080x1920 → trazo comprimido y desplazado.
-        final gpuW = _controller.canvasSize.width < 800
-            ? 1080.0 : _controller.canvasSize.width;
-        final gpuH = _controller.canvasSize.height < 800
-            ? 1920.0 : _controller.canvasSize.height;
+        // FIX SYNC: si cualquier dimensión < 1000px → ambas corruptas → forzar 1080x1920
+        final bool _sizeCorrupt = _controller.canvasSize.width < 1000
+            || _controller.canvasSize.height < 1000;
+        final gpuW = _sizeCorrupt ? 1080.0 : _controller.canvasSize.width;
+        final gpuH = _sizeCorrupt ? 1920.0 : _controller.canvasSize.height;
         if (_controller.canvasSize.width != gpuW ||
             _controller.canvasSize.height != gpuH) {
           _controller.updateCanvasSize(Size(gpuW, gpuH));
