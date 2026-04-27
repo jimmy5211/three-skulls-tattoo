@@ -93,15 +93,18 @@ class CanvasPainter extends CustomPainter {
       _drawSymmetryLine(canvas, canvasW, canvasH);
     }
 
-    // OVERLAY MODE FIX: cuando layers=[], _drawLayerOptimized nunca se llama
-    // y currentStroke no se pinta → trazo solo aparece al soltar el dedo.
-    // En overlay mode dibujamos el stroke directamente aquí.
+    // OVERLAY MODE: renderizar trazo en tiempo real durante el dibujo.
+    // Usa _drawOverlayStroke (no BrushStampPainter) para garantizar grosor correcto:
+    // BrushStampPainter interpreta strokeWidth como radio en lugar de diámetro,
+    // dando la mitad del grosor esperado. _drawOverlayStroke usa el diámetro completo
+    // con MaskFilter.blur proporcional a (1-hardness) para simular el borde suave del GPU.
+    // El borrador también se muestra (blanco semitransparente para indicar área borrada).
     if (_isOverlayMode && currentStroke != null) {
       canvas.save();
       canvas.clipRect(Rect.fromLTWH(0, 0, canvasW, canvasH));
-      _drawStroke(canvas, currentStroke!);
+      _drawOverlayStroke(canvas, currentStroke!);
       if (currentMirrorStroke != null) {
-        _drawStroke(canvas, currentMirrorStroke!);
+        _drawOverlayStroke(canvas, currentMirrorStroke!);
       }
       canvas.restore();
     }
@@ -352,6 +355,54 @@ class CanvasPainter extends CustomPainter {
   //  DIBUJO DE STROKES
   // ══════════════════════════════════════════════════════════
 
+  // ── OVERLAY STROKE: preview en tiempo real, grosor y suavidad correctos ──────
+  // Reemplaza BrushStampPainter en overlay mode porque BrushStampPainter
+  // usa strokeWidth como radio en lugar de diámetro → trazo 2x demasiado fino.
+  void _drawOverlayStroke(Canvas canvas, StrokeModel stroke) {
+    if (stroke.points.isEmpty) return;
+    final h = stroke.hardness.clamp(0.0, 1.0);
+
+    // Eraser overlay: blanco semitransparente (no dstOut — no borramos el GPU RawImage)
+    // El resultado real del borrador se ve al soltar el dedo (endStroke exporta GPU).
+    final isEraser = stroke.type == StrokeType.eraser;
+    final color = isEraser
+        ? Colors.white.withOpacity(0.5)
+        : stroke.color.withOpacity(stroke.opacity);
+
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = stroke.strokeWidth  // diámetro completo = activeBrush.size/scale
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+
+    // Simular borde suave del GPU (smoothstep con hardness).
+    // MaskFilter.blur mantiene el tamaño visual, solo suaviza los bordes —
+    // a diferencia de ImageFilter.blur que inflaba el tamaño.
+    if (h < 0.95 && !isEraser) {
+      paint.maskFilter = MaskFilter.blur(
+          BlurStyle.normal, stroke.strokeWidth * (1 - h) * 0.15);
+    }
+
+    if (stroke.points.length == 1) {
+      canvas.drawCircle(
+          stroke.points.first, stroke.strokeWidth / 2, paint);
+      return;
+    }
+    final path = Path()
+      ..moveTo(stroke.points.first.dx, stroke.points.first.dy);
+    for (int i = 1; i < stroke.points.length - 1; i++) {
+      final mid = Offset(
+        (stroke.points[i].dx + stroke.points[i + 1].dx) / 2,
+        (stroke.points[i].dy + stroke.points[i + 1].dy) / 2,
+      );
+      path.quadraticBezierTo(
+          stroke.points[i].dx, stroke.points[i].dy, mid.dx, mid.dy);
+    }
+    path.lineTo(stroke.points.last.dx, stroke.points.last.dy);
+    canvas.drawPath(path, paint);
+  }
+
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
 
@@ -388,26 +439,7 @@ class CanvasPainter extends CustomPainter {
       case StrokeType.organico:
       case StrokeType.agua:
       case StrokeType.importado:
-        // FIX OVERLAY DUR: aplicar blur cuando hardness < 1.0 para que el preview
-        // Dart se parezca al resultado GPU (que usa smoothstep con borde suave).
-        // Solo se aplica en overlay mode (layers vacío) para no afectar rendimiento
-        // del Dart fallback completo. El blurSigma escala con el strokeWidth y hardness.
-        final _hardness = stroke.hardness.clamp(0.0, 1.0);
-        if (_hardness < 0.95 && stroke.strokeWidth > 2) {
-          // Dibujar en capa temporal y aplicar blur gaussian
-          final _blurSigma = stroke.strokeWidth * (1 - _hardness) * 0.22;
-          final _bounds = Rect.fromCircle(
-            center: stroke.points.fold(Offset.zero, (a, b) => a + b) / stroke.points.length.toDouble(),
-            radius: stroke.strokeWidth * 2,
-          );
-          canvas.saveLayer(null,
-            Paint()..imageFilter = ui.ImageFilter.blur(
-              sigmaX: _blurSigma, sigmaY: _blurSigma));
-          BrushStampPainter.drawStroke(canvas, stroke, baseColor);
-          canvas.restore();
-        } else {
-          BrushStampPainter.drawStroke(canvas, stroke, baseColor);
-        }
+        BrushStampPainter.drawStroke(canvas, stroke, baseColor);
         break;
 
       case StrokeType.eraser:
