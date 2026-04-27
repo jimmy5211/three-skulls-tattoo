@@ -4149,12 +4149,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 size:      _brush.size / _scale,
                 opacity:   _brush.opacity,
                 hardness:  _brush.hardness,
-                // FIX SERRUCHO: spacing=0.1 (10% del diámetro) crea escalonado visible
-                // a DUR=100% porque cada stamp es un círculo con borde duro y las "juntas"
-                // entre círculos se ven como dientes de sierra. Con 0.02 (2%) los stamps
-                // están tan juntos (~1dp) que el escalonado es imperceptible. El overlay Dart
-                // también dibuja un path suave, así que ambos match correctamente.
-                spacing:   0.02,
+                // SPACING BALANCE: 0.08 (8% del diámetro).
+                // 0.02 era demasiado denso → acumulación masiva de stamps cuando el
+                // usuario se detiene = blobs grandes. 0.08 mantiene línea suave
+                // (92% solapamiento) sin acumulación excesiva.
+                spacing:   0.08,
                 isEraser:  _brush.type == StrokeType.eraser,
                 color:     _controller.activeColor,
               ));
