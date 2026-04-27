@@ -219,7 +219,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
           final csH = _controller.canvasSize.height;
           final scaleX = aW / csW;
           final scaleY = aH / csH;
-          final s = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
+          // FIX ZOOM: usar mínimo 0.35 para que el canvas sea usable.
+          // El 0.85 del fit-to-screen da 24% para 1080x1920 — demasiado pequeño.
+          // Con 0.35: canvas 1080*0.35=378px ancho (vs 304px disponibles → scroll leve)
+          //           canvas 1920*0.35=672px alto (vs ~684px → casi cabe vertical).
+          final fitScale = (scaleX < scaleY ? scaleX : scaleY) * 0.85;
+          final s = fitScale < 0.35 ? 0.35 : fitScale;
           setState(() {
             _scale = s;
             _offset = Offset(
@@ -286,7 +291,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
           final aH = screen.height - _topBarHeight;
           final sx = aW / gpuW;
           final sy = aH / gpuH;
-          final s = (sx < sy ? sx : sy) * 0.85;
+          final fitS = (sx < sy ? sx : sy) * 0.85;
+          final s = fitS < 0.35 ? 0.35 : fitS;
           _scale = s;
           _offset = Offset(
             _sideBarWidth + (aW - gpuW * s) / 2,
