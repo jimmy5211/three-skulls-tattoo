@@ -4241,6 +4241,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       stroke.points.length > 2 &&
                       _activePointers <= 1;
                   if (isValid) {
+                    _pendingPoints.clear(); // FIX PUNTOS FANTASMAS: limpiar también en path válido
                     // FIX BLINK: el overlay usa currentStroke para preview en tiempo real.
                     // Si llamamos controller.endStroke() ANTES de obtener la imagen GPU,
                     // currentStroke=null → overlay desaparece → frame en blanco antes de
@@ -4263,6 +4264,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       } catch (_) {}
                     });
                   } else {
+                    // FIX PUNTOS FANTASMAS: limpiar _pendingPoints en TODOS los paths.
+                    // Si el dedo se levanta antes de acumular 3 puntos, _pendingPoints
+                    // queda con 1-2 puntos. El próximo trazo los hereda y aparecen
+                    // como puntos sueltos en posiciones incorrectas (fantasmas).
+                    _pendingPoints.clear();
                     _controller.cancelStroke();
                     _bridgeCall(() => _bridge.cancelStroke());
                   }
