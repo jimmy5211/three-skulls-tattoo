@@ -3620,7 +3620,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget _buildCanvas() {
     return Positioned.fill(
       child: Listener(
-        onPointerDown: (_) {
+        onPointerDown: (event) {
+          // Guard: no contar punteros fuera del lienzo (topbar, sidebar)
+          if (!_isTouchOnCanvas(event.localPosition)) return;
           _activePointers++;
           if (_activePointers > 1) {
             // Kill switch: 2do dedo detectado — descartar stroke inmediatamente
@@ -3631,8 +3633,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _controller.cancelStroke();
           }
         },
-        onPointerUp: (_) => _activePointers--,
-        onPointerCancel: (_) => _activePointers--,
+        onPointerUp: (event) {
+          if (_isTouchOnCanvas(event.localPosition)) _activePointers--;
+        },
+        onPointerCancel: (event) {
+          if (_isTouchOnCanvas(event.localPosition)) _activePointers--;
+        },
         child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: (details) {
@@ -4313,6 +4319,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 maxWidth: double.infinity,
                 minHeight: 0,
                 maxHeight: double.infinity,
+                // FIX HIT TEST: sin Clip.hardEdge, el SizedBox(1080×1920)
+                // es hit-testable en toda su área sin escalar → absorbe toques
+                // en topbar/sidebar aunque visualmente el canvas esté escaleado.
+                clipBehavior: Clip.hardEdge,
                 child: SizedBox(
                   width:  _controller.canvasSize.width,
                   height: _controller.canvasSize.height,
