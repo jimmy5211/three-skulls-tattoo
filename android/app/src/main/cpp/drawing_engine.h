@@ -97,6 +97,8 @@ public:
     void removeLayer(int layerId);
     void setActiveLayer(int layerId);
     void setLayerOpacity(int layerId, float opacity);
+    // Borra píxeles en un rectángulo de la capa (coordenadas canvas, Y=0 arriba)
+    void eraseRegion(int layerId, float x, float y, float w, float h);
     void setLayerBlendMode(int layerId, BlendMode mode);
     void setLayerVisible(int layerId, bool visible);
     void moveLayer(int fromIndex, int toIndex);

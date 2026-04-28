@@ -271,8 +271,6 @@ int DrawingEngine::initWithCode(EGLDisplay display, EGLContext sharedContext,
 
     ready_ = true;
     g_lastError = "init_ok";
-
-
     LOGI("initWithCode: SUCCESS");
     return 0;
 }
@@ -522,6 +520,27 @@ std::vector<uint8_t> DrawingEngine::exportPixels(int* outW, int* outH) {
     if (outW) *outW = w;
     if (outH) *outH = h;
     return pixels;
+}
+
+// ── Region operations (selection: delete, fill) ─────────────────────────
+
+void DrawingEngine::eraseRegion(int layerId, float x, float y, float w, float h) {
+    if (!ready_) return;
+    if (!impl_->makeCurrent()) return;
+    auto* layer = impl_->layerMgr->getLayer(layerId);
+    if (!layer) { impl_->doneCurrent(); return; }
+    glBindFramebuffer(GL_FRAMEBUFFER, layer->fbo);
+    glViewport(0, 0, layer->width, layer->height);
+    glEnable(GL_SCISSOR_TEST);
+    // OpenGL Y=0 at bottom; canvas Y=0 at top → flip
+    GLint sy = (GLint)(layer->height - (int)y - (int)h);
+    glScissor((GLint)x, sy, (GLsizei)w, (GLsizei)h);
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_SCISSOR_TEST);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    impl_->doneCurrent();
+    render();
 }
 
 // ── Brush textures ──────────────────────────────────────────────────────

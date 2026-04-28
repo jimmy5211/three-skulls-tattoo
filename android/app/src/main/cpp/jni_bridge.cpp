@@ -84,6 +84,10 @@ JNINAME(jniBeginStroke)(JNIEnv*, jclass,
     brush.isEraser = (bool)isEraser;
     brush.brushTextureId = brushTexId;
     Color color = Color::fromARGB((uint32_t)colorARGB);
+    // FIX OPACITY: multiplicar alpha del color por la opacidad del pincel.
+    // Sin esto, color.a = 1.0 siempre (activeColor es siempre opaco)
+    // y el shader dibuja al 100% sin importar el slider OPA.
+    color.a *= opacity;
     DrawingEngine::get().beginStroke(layerId, p, brush, color);
 }
 
@@ -198,14 +202,10 @@ JNINAME(jniUnloadBrushTexture)(JNIEnv*, jclass, jint id) {
     DrawingEngine::get().unloadBrushTexture(id);
 }
 
-// ── Diagnóstico ────────────────────────────────────────────────────────
-// Expone el g_lastError de C++ (contiene canvasSize del último beginStroke)
-// al lado Kotlin/Dart para diagnóstico desde el Motor GPU dialog.
-
-JNIEXPORT jstring JNICALL
-JNINAME(jniGetLastError)(JNIEnv* env, jclass) {
-    const char* err = DrawingEngine::get().getLastError();
-    return env->NewStringUTF(err ? err : "null");
+JNIEXPORT void JNICALL
+JNINAME(jniEraseRegion)(JNIEnv*, jclass,
+                         jint layerId, jfloat x, jfloat y, jfloat w, jfloat h) {
+    DrawingEngine::get().eraseRegion(layerId, x, y, w, h);
 }
 
 } // extern "C"
