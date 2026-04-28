@@ -378,27 +378,30 @@ class CanvasPainter extends CustomPainter {
           BlurStyle.normal, radius * (1 - h) * 0.3);
     }
 
-    // Spacing = 25% del radio para cobertura completa sin gaps visibles.
-    // Más denso que el GPU (0.08 * diámetro) para compensar la menor
-    // frecuencia de eventos touch vs el pipeline C++ nativo.
-    final minDist = max(0.5, radius * 0.25);
+    // Spacing = 8% del radio → línea suave sin scalloping visible.
+    // Cap a 500 stamps por stroke para evitar lag con pinceles gruesos.
+    final minDist = max(0.5, radius * 0.08);
+    int _stampCount = 0;
+    const _maxStamps = 500;
 
     void stamp(Offset p) => canvas.drawCircle(p, radius, paint);
 
     Offset? last;
     for (final p in stroke.points) {
+      if (_stampCount >= _maxStamps) break;
       if (last == null) {
-        stamp(p);
+        stamp(p); _stampCount++;
         last = p;
         continue;
       }
       final delta = p - last;
       final dist = delta.distance;
       if (dist < minDist) continue;
-      // Interpolar: rellenar todos los stamps entre last y p
-      int steps = (dist / minDist).floor();
+      int steps = (dist / minDist).floor().clamp(1, 50); // max 50 interp stamps per segment
       for (int s = 1; s <= steps; s++) {
+        if (_stampCount >= _maxStamps) break;
         stamp(last! + delta * (s / steps));
+        _stampCount++;
       }
       last = p;
     }
