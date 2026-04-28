@@ -118,6 +118,15 @@ class MainActivity : FlutterActivity() {
                 // ── Export ────────────────────────────────────────────
                 "exportPixels" -> DrawingEngineJNI.exportCanvas { bytes -> result.success(bytes) }
 
+                "eraseRegion" -> {
+                    val lid = call.argument<Int>("layerId")!!
+                    val x = (call.argument<Any>("x") as Number).toFloat()
+                    val y = (call.argument<Any>("y") as Number).toFloat()
+                    val w = (call.argument<Any>("w") as Number).toFloat()
+                    val h = (call.argument<Any>("h") as Number).toFloat()
+                    DrawingEngineJNI.eraseRegion(lid, x, y, w, h) { bytes -> result.success(bytes) }
+                }
+
                 // ── Brush textures ────────────────────────────────────
                 "loadBrushTexture" -> {
                     val data = call.argument<ByteArray>("data")!!
