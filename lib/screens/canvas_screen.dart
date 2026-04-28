@@ -3644,7 +3644,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
           if (_trackedPointers.remove(event.pointer)) _activePointers--;
         },
         child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+        // FIX TOPBAR: deferToChild = GestureDetector solo responde cuando
+        // un hijo (Canvas SizedBox) es alcanzado. Toques en topbar/sidebar
+        // mapean fuera del SizedBox(1080×1920) → no hit → topbar los recibe.
+        behavior: HitTestBehavior.deferToChild,
         onTapDown: (details) {
           // Guardar posición exacta del tap para transform mode
           _tapDownCanvasPos = _screenToCanvas(details.localPosition);
