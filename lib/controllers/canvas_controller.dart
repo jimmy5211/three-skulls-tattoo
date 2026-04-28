@@ -123,7 +123,7 @@ class CanvasController extends ChangeNotifier {
     _saveToHistory();
     _bumpVersion();
     // FIX: tamaño del pincel independiente del zoom
-    final strokeW = activeBrush.size / viewScale;
+    final strokeW = (activeBrush.size + 5.0) / viewScale; // FIX: offset +5 para mínimo visible
 
     currentStroke = StrokeModel(
       points: [point],
