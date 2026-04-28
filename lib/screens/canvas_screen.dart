@@ -3644,15 +3644,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
           if (_trackedPointers.remove(event.pointer)) _activePointers--;
         },
         child: GestureDetector(
-        // FIX TOPBAR: deferToChild = GestureDetector solo responde cuando
-        // un hijo (Canvas SizedBox) es alcanzado. Toques en topbar/sidebar
-        // mapean fuera del SizedBox(1080×1920) → no hit → topbar los recibe.
-        behavior: HitTestBehavior.deferToChild,
+        behavior: HitTestBehavior.opaque,
         onTapDown: (details) {
-          // Guardar posición exacta del tap para transform mode
+          // Guard: solo guardar posición si el tap está en el canvas
+          if (!_isTouchOnCanvas(details.localPosition)) {
+            _tapDownCanvasPos = null;
+            return;
+          }
           _tapDownCanvasPos = _screenToCanvas(details.localPosition);
         },
         onTap: () {
+          // Guard: ignorar taps fuera del canvas (topbar, sidebar)
+          if (_tapDownCanvasPos == null) return;
           if (_showBrushPanel) setState(() => _showBrushPanel = false);
           if (_showSelectionOptions) setState(() => _showSelectionOptions = false);
           if (_showColors) setState(() => _showColors = false);
