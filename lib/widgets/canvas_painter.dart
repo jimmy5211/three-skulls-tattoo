@@ -632,3 +632,202 @@ class CanvasPainter extends CustomPainter {
     return false;
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+/// Overlay permanente que se dibuja SIEMPRE encima del RawImage del GPU.
+/// Incluye: grilla, guías del centro, línea de simetría, e imágenes importadas.
+/// Separado de CanvasPainter para no duplicar el renderer de strokes.
+// ─────────────────────────────────────────────────────────────────────────────
+class CanvasOverlayPainter extends CustomPainter {
+  final CanvasController controller;
+  final bool showGrid;
+  final bool showCenterGuides;
+  final bool showSymmetryLine;
+  // version counter para invalidar cuando cambien imágenes / estado
+  final int paintVersion;
+
+  CanvasOverlayPainter({
+    required this.controller,
+    required this.paintVersion,
+    this.showGrid = false,
+    this.showCenterGuides = false,
+    this.showSymmetryLine = false,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = controller.canvasSize.width;
+    final h = controller.canvasSize.height;
+
+    // ── Grilla ──────────────────────────────────────────────────────────
+    if (showGrid) {
+      final p = Paint()
+        ..color = Colors.grey.withOpacity(0.18)
+        ..strokeWidth = 0.5;
+      const gs = 50.0;
+      for (double x = 0; x < w; x += gs) canvas.drawLine(Offset(x, 0), Offset(x, h), p);
+      for (double y = 0; y < h; y += gs) canvas.drawLine(Offset(0, y), Offset(w, y), p);
+    }
+
+    // ── Guías del centro ─────────────────────────────────────────────────
+    if (showCenterGuides) {
+      final dashPaint = Paint()
+        ..color = const Color(0xFF4A90E2).withOpacity(0.55)
+        ..strokeWidth = 0.75;
+      _dashedLine(canvas, Offset(0, h / 2), Offset(w, h / 2), dashPaint);
+      _dashedLine(canvas, Offset(w / 2, 0), Offset(w / 2, h), dashPaint);
+    }
+
+    // ── Línea de simetría ────────────────────────────────────────────────
+    if (showSymmetryLine) {
+      canvas.drawLine(
+        Offset(w / 2, 0), Offset(w / 2, h),
+        Paint()
+          ..color = Colors.blue.withOpacity(0.35)
+          ..strokeWidth = 1.0
+          ..style = PaintingStyle.stroke,
+      );
+    }
+
+    // ── Imágenes importadas ──────────────────────────────────────────────
+    for (final img in controller.canvasImages) {
+      _drawImage(canvas, img);
+    }
+    // Handles encima de todo (para que no queden detrás de otras imágenes)
+    for (final img in controller.canvasImages) {
+      if (img.isSelected) _drawHandles(canvas, img);
+    }
+  }
+
+  void _drawImage(Canvas canvas, CanvasImageModel img) {
+    if (img.rect.width <= 0 || img.rect.height <= 0) return;
+    if (img.image.width <= 0 || img.image.height <= 0) return;
+
+    final src = Rect.fromLTWH(
+      0, 0, img.image.width.toDouble(), img.image.height.toDouble(),
+    );
+    final cx = img.center.dx;
+    final cy = img.center.dy;
+
+    canvas.save();
+    if (img.rotation != 0.0) {
+      canvas.translate(cx, cy);
+      canvas.rotate(img.rotation);
+      canvas.translate(-cx, -cy);
+    }
+    if (img.flipX || img.flipY) {
+      canvas.translate(cx, cy);
+      canvas.scale(img.flipX ? -1.0 : 1.0, img.flipY ? -1.0 : 1.0);
+      canvas.translate(-cx, -cy);
+    }
+
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(img.opacity)
+      ..filterQuality = FilterQuality.medium;
+
+    if (!img.hasErases) {
+      canvas.drawImageRect(img.image, src, img.rect, paint);
+    } else {
+      canvas.saveLayer(img.rect, Paint());
+      canvas.drawImageRect(img.image, src, img.rect, paint);
+      final toRender = img.currentEraseStroke != null
+          ? [img.currentEraseStroke!]
+          : img.eraseStrokes.length <= 3
+              ? img.eraseStrokes
+              : img.eraseStrokes.sublist(img.eraseStrokes.length - 3);
+      for (final erase in toRender) {
+        _drawEraseStroke(canvas, erase);
+      }
+      canvas.restore();
+    }
+    canvas.restore();
+  }
+
+  void _drawHandles(Canvas canvas, CanvasImageModel img) {
+    final cx = img.center.dx;
+    final cy = img.center.dy;
+    canvas.save();
+    canvas.translate(cx, cy);
+    canvas.rotate(img.rotation);
+    canvas.translate(-cx, -cy);
+
+    canvas.drawRect(img.rect,
+        Paint()..color = const Color(0xFF4A90E2)..strokeWidth = 2.5..style = PaintingStyle.stroke);
+
+    final hp = Paint()..color = const Color(0xFF4A90E2)..style = PaintingStyle.fill;
+    final hb = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 2.0;
+
+    for (final c in [img.rect.topLeft, img.rect.topRight,
+                     img.rect.bottomLeft, img.rect.bottomRight]) {
+      canvas.drawCircle(c, 10.0, hp);
+      canvas.drawCircle(c, 10.0, hb);
+    }
+    final rotHandle = img.rect.topCenter - const Offset(0, 36);
+    canvas.drawLine(img.rect.topCenter, rotHandle,
+        Paint()..color = Colors.white..strokeWidth = 1.5);
+    canvas.drawCircle(rotHandle, 12.0,
+        Paint()..color = const Color(0xFFE74C3C)..style = PaintingStyle.fill);
+    canvas.drawCircle(rotHandle, 12.0, hb);
+    canvas.restore();
+  }
+
+  void _drawEraseStroke(Canvas canvas, EraseStroke erase) {
+    if (erase.points.isEmpty) return;
+    final opacity = (erase.hardness.clamp(0.1, 1.0));
+    final paint = Paint()
+      ..blendMode = BlendMode.dstOut
+      ..color = Colors.white.withOpacity(opacity)
+      ..strokeWidth = erase.radius * 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+
+    if (erase.points.length == 1) {
+      canvas.drawCircle(erase.points.first, erase.radius,
+          Paint()..blendMode = BlendMode.dstOut
+                 ..color = Colors.white.withOpacity(opacity)
+                 ..style = PaintingStyle.fill);
+      return;
+    }
+    final path = Path();
+    path.moveTo(erase.points.first.dx, erase.points.first.dy);
+    for (int i = 1; i < erase.points.length - 1; i++) {
+      final mid = Offset(
+        (erase.points[i].dx + erase.points[i + 1].dx) / 2,
+        (erase.points[i].dy + erase.points[i + 1].dy) / 2,
+      );
+      path.quadraticBezierTo(
+          erase.points[i].dx, erase.points[i].dy, mid.dx, mid.dy);
+    }
+    path.lineTo(erase.points.last.dx, erase.points.last.dy);
+    canvas.drawPath(path, paint);
+  }
+
+  void _dashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
+    const dashLen = 8.0;
+    const gapLen = 5.0;
+    final total = (end - start).distance;
+    final dir = (end - start) / total;
+    double dist = 0.0;
+    bool drawing = true;
+    while (dist < total) {
+      final segEnd = (dist + (drawing ? dashLen : gapLen)).clamp(0.0, total);
+      if (drawing) canvas.drawLine(start + dir * dist, start + dir * segEnd, paint);
+      dist = segEnd;
+      drawing = !drawing;
+    }
+  }
+
+  @override
+  bool shouldRepaint(CanvasOverlayPainter old) {
+    if (old.showGrid != showGrid) return true;
+    if (old.showCenterGuides != showCenterGuides) return true;
+    if (old.showSymmetryLine != showSymmetryLine) return true;
+    if (old.paintVersion != paintVersion) return true;
+    if (controller.imagesChanged) {
+      controller.resetImagesChanged();
+      return true;
+    }
+    return false;
+  }
+}
