@@ -355,53 +355,53 @@ class CanvasPainter extends CustomPainter {
   //  DIBUJO DE STROKES
   // ══════════════════════════════════════════════════════════
 
-  // ── OVERLAY STROKE: preview en tiempo real con path Bézier suave ────────────
-  // Usa path con StrokeCap.round en lugar de stamps individuales para evitar
-  // el efecto punteado cuando el dedo se mueve rápido (gaps entre stamps).
-  // strokeWidth = diámetro completo = activeBrush.size / viewScale → mismo
-  // tamaño visual que los stamps del GPU.
+  // ── OVERLAY STROKE: stamps con interpolación para evitar gaps ───────────────
+  // Los stamps rellenos (PaintingStyle.fill) replican el GPU visualmente.
+  // La interpolación lineal entre puntos consecutivos elimina el efecto
+  // punteado cuando el dedo se mueve rápido (gap > stampDiameter).
   void _drawOverlayStroke(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.isEmpty) return;
     final h = stroke.hardness.clamp(0.0, 1.0);
+    final radius = stroke.strokeWidth / 2;
 
     final isEraser = stroke.type == StrokeType.eraser;
     final color = isEraser
         ? Colors.white.withOpacity(0.5)
         : stroke.color.withOpacity(stroke.opacity);
 
-    // stroke.strokeWidth = activeBrush.size / viewScale (diámetro, canvas units)
-    // Con StrokeCap.round y StrokeJoin.round, el path crea el mismo efecto visual
-    // que los stamps del GPU pero sin gaps entre puntos de toque.
     final paint = Paint()
       ..color = color
-      ..strokeWidth = stroke.strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
+      ..style = PaintingStyle.fill;
 
     if (h < 0.95 && !isEraser) {
       paint.maskFilter = MaskFilter.blur(
-          BlurStyle.normal, stroke.strokeWidth * (1 - h) * 0.15);
+          BlurStyle.normal, radius * (1 - h) * 0.3);
     }
 
-    if (stroke.points.length == 1) {
-      canvas.drawCircle(stroke.points.first, stroke.strokeWidth / 2,
-          Paint()..color = color..style = PaintingStyle.fill);
-      return;
-    }
+    // Spacing = 25% del radio para cobertura completa sin gaps visibles.
+    // Más denso que el GPU (0.08 * diámetro) para compensar la menor
+    // frecuencia de eventos touch vs el pipeline C++ nativo.
+    final minDist = max(0.5, radius * 0.25);
 
-    final path = Path()
-        ..moveTo(stroke.points.first.dx, stroke.points.first.dy);
-    for (int i = 1; i < stroke.points.length - 1; i++) {
-      final mid = Offset(
-        (stroke.points[i].dx + stroke.points[i + 1].dx) / 2,
-        (stroke.points[i].dy + stroke.points[i + 1].dy) / 2,
-      );
-      path.quadraticBezierTo(
-          stroke.points[i].dx, stroke.points[i].dy, mid.dx, mid.dy);
+    void stamp(Offset p) => canvas.drawCircle(p, radius, paint);
+
+    Offset? last;
+    for (final p in stroke.points) {
+      if (last == null) {
+        stamp(p);
+        last = p;
+        continue;
+      }
+      final delta = p - last;
+      final dist = delta.distance;
+      if (dist < minDist) continue;
+      // Interpolar: rellenar todos los stamps entre last y p
+      int steps = (dist / minDist).floor();
+      for (int s = 1; s <= steps; s++) {
+        stamp(last! + delta * (s / steps));
+      }
+      last = p;
     }
-    path.lineTo(stroke.points.last.dx, stroke.points.last.dy);
-    canvas.drawPath(path, paint);
   }
 
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
