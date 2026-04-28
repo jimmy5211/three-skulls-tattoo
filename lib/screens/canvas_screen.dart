@@ -162,6 +162,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   String _lastBridgeCoords = 'ninguno';
   String _lastGpuStatus = 'sin datos';
   int _eraseExportCounter = 0;  // throttle exports durante trazo
+  final Set<int> _trackedPointers = {};  // IDs de punteros activos en canvas
   int _lastExportMs = 0;         // timestamp del último export
   ui.Image? _nativeCanvasImage;
   String _nativeInitError = 'unknown';
@@ -3621,11 +3622,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return Positioned.fill(
       child: Listener(
         onPointerDown: (event) {
-          // Guard: no contar punteros fuera del lienzo (topbar, sidebar)
+          // Solo contar punteros que empiezan EN el canvas.
+          // Usar el ID del puntero para rastrear cuáles bajar en Up/Cancel.
           if (!_isTouchOnCanvas(event.localPosition)) return;
+          _trackedPointers.add(event.pointer);
           _activePointers++;
           if (_activePointers > 1) {
-            // Kill switch: 2do dedo detectado — descartar stroke inmediatamente
             _cancelStrokeImmediately = true;
             _isDrawing = false;
             _pendingPoints.clear();
@@ -3634,10 +3636,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
         },
         onPointerUp: (event) {
-          if (_isTouchOnCanvas(event.localPosition)) _activePointers--;
+          // Decrementar SOLO si este puntero fue registrado en Down.
+          // Evita desbalance cuando el dedo sale del canvas antes de levantarse.
+          if (_trackedPointers.remove(event.pointer)) _activePointers--;
         },
         onPointerCancel: (event) {
-          if (_isTouchOnCanvas(event.localPosition)) _activePointers--;
+          if (_trackedPointers.remove(event.pointer)) _activePointers--;
         },
         child: GestureDetector(
         behavior: HitTestBehavior.opaque,
