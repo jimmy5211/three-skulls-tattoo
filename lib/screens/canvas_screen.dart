@@ -161,7 +161,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
   // DIAGNOSTIC: últimas coordenadas enviadas al bridge (para debugging posición)
   String _lastBridgeCoords = 'ninguno';
   String _lastGpuStatus = 'sin datos';
-  int _eraseExportCounter = 0;  // throttle exports durante borrado
+  int _eraseExportCounter = 0;  // throttle exports durante trazo
+  int _lastExportMs = 0;         // timestamp del último export
   ui.Image? _nativeCanvasImage;
   String _nativeInitError = 'unknown';
   final Map<int, int> _nativeLayerIds = {};
@@ -4167,11 +4168,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
           } else {
             _controller.continueStroke(cp);
             _bridgeCall(() => _bridge.addPoint(cp.dx, cp.dy));
-            // FIX ERASER REAL-TIME: exportar cada 8 puntos del borrador para que
-            // el usuario vea el área borrada en tiempo real (sin bloquear el hilo).
-            if (_controller.activeBrush.type == StrokeType.eraser) {
-              _eraseExportCounter++;
-              if (_eraseExportCounter % 8 == 0) {
+            // Export GPU cada 5 puntos para preview en tiempo real de TODOS los pinceles.
+            // El overlay Dart era impreciso vs GPU. Export directo = resultado exacto.
+            // Throttle: evita exportar más de 1 vez cada 32ms (~30fps max).
+            _eraseExportCounter++;
+            if (_eraseExportCounter % 5 == 0) {
+              final now = DateTime.now().millisecondsSinceEpoch;
+              if (now - _lastExportMs >= 32) {
+                _lastExportMs = now;
                 _bridgeImageCall(() => _bridge.exportCanvas());
               }
             }
@@ -4321,38 +4325,22 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   // ── SEGUNDO hijo: imagen C++ (GPU canvas) ───────────────
                   if (_nativeReady && _nativeCanvasImage != null)
                     RepaintBoundary(
-                      child: RawImage(
-                        image:  _nativeCanvasImage,
-                        width:  _controller.canvasSize.width,
-                        height: _controller.canvasSize.height,
-                        fit:    BoxFit.fill,
+                      // FIX DPR: ui.Image tiene 1080px físicos. RawImage(width:1080dp)
+                      // los upscalea DPR veces → stamps GPU 2.75x más grandes que el overlay.
+                      // Sin width/height explícitos, Flutter usa la escala nativa del
+                      // dispositivo: la imagen se muestra a tamaño natural (1px=1dp*DPR
+                      // → 1px ocupa 1dp lógico). PositionedFill + fit:fill mantiene la
+                      // misma área visual que el overlay CustomPaint del SizedBox.
+                      child: SizedBox.expand(
+                        child: RawImage(
+                          image:  _nativeCanvasImage,
+                          fit:    BoxFit.fill,
+                        ),
                       ),
                     ),
-                  // ── Overlay trazo actual — pinceles Y borrador en tiempo real ──
-                  // FIX ERASER: el borrador también necesita overlay para preview.
-                  // _drawOverlayStroke maneja el eraser como blanco semitransparente
-                  // (no dstOut) para indicar el área que se está borrando.
-                  if (_nativeReady && _controller.currentStroke != null)
-                    CustomPaint(
-                      painter: CanvasPainter(
-                        layers: const [],
-                        currentStroke: _controller.currentStroke,
-                        currentMirrorStroke: _controller.currentMirrorStroke,
-                        showGrid: false,
-                        showCenterGuides: false,
-                        showSymmetryLine: false,
-                        symmetryEnabled: _controller.symmetryEnabled,
-                        activeLayerId: _controller.activeLayerId,
-                        controller: _controller,
-                        // FIX: Color(0x00FFFFFF) = transparent-white, evita el check
-                        // `backgroundColor == Colors.transparent` que dibuja el
-                        // tablero de ajedrez en CanvasPainter. Visualmente idéntico
-                        // (alpha=0) pero no activa el modo checkerboard.
-                        backgroundColor: const Color(0x00FFFFFF),
-                      ),
-                      size: Size(_controller.canvasSize.width,
-                                 _controller.canvasSize.height),
-                    ),
+                  // OVERLAY ELIMINADO: el GPU exporta cada 5 puntos durante el trazo.
+                  // Más fiable que el overlay Dart que nunca coincidía exactamente
+                  // con el resultado GPU (diferente algoritmo de renderizado).
                   // ── Fallback: renderer Dart solo cuando GPU no está listo ──
                   // FIX: sin condición !_nativeReady, el Dart painter sobreescribía el RawImage
                   // del GPU, anulando visualmente DUR y el borrador del motor C++.
