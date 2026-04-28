@@ -4164,10 +4164,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:   _nativeLayer(_controller.activeLayerId),
                 x: _dbgX, y: _dbgY,
-                // Mínimo 1.5 canvas units para evitar trazos invisibles a zoom bajo.
-                // Con TAM=1 y scale=0.35: 1/0.35=2.86px en FBO → 2.86dp → 1dp on screen.
-                // Mínimo asegura visibilidad a cualquier zoom.
-                size:      (_brush.size / _scale).clamp(1.5, double.infinity),
+                size:      _brush.size / _scale,
                 opacity:   _brush.opacity,
                 hardness:  _brush.hardness,
                 spacing:   0.08,
@@ -4188,7 +4185,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             // El overlay Dart era impreciso vs GPU. Export directo = resultado exacto.
             // Throttle: evita exportar más de 1 vez cada 32ms (~30fps max).
             _eraseExportCounter++;
-            if (_eraseExportCounter % 5 == 0) {
+            if (_eraseExportCounter % 20 == 0) {
               final now = DateTime.now().millisecondsSinceEpoch;
               if (now - _lastExportMs >= 32) {
                 _lastExportMs = now;
@@ -4311,13 +4308,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
               // haciendo que Container/RawImage/overlay se clippearan a ese tamaño.
               // Transform(scale=0.35) entonces escalaba 411×890 → 144×311dp en pantalla
               // en lugar del 1080×1920 * 0.35 = 378×672dp correcto.
-              // OverflowBox rompe la cadena de constraints y SizedBox fija el tamaño
-              // al canvas real (1080×1920dp), que después escala correctamente.
-              // FIX HIT TEST: ClipRect limita hit testing al área visible del Transform.
-              // OverflowBox en Flutter 3.19 no tiene clipBehavior, así que usamos
-              // ClipRect como wrapper para recortar tanto rendering como hit testing.
-              child: ClipRect(
-                child: OverflowBox(
+              // OverflowBox: permite que SizedBox(canvasWidth×canvasHeight) ignore
+              // los constraints del padre (screen size) y use sus dimensiones reales.
+              // Sin esto, el inner Stack se limita a ~411×890dp y la imagen GPU se
+              // distorsiona. Hit testing se controla vía _isTouchOnCanvas guards.
+              child: OverflowBox(
                 alignment: Alignment.topLeft,
                 minWidth: 0,
                 maxWidth: double.infinity,
@@ -4421,7 +4416,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ),
                 ), // SizedBox(canvasSize)
               ), // OverflowBox
-              ), // ClipRect
             );
           },
         ),
