@@ -10,8 +10,6 @@
 namespace tsk {
 
 // ── GLSL shaders ──────────────────────────────────────────────────────
-// FIX: #version debe ser el primer token — sin \n previo.
-// Usar string literals concatenadas en lugar de raw strings con \n inicial.
 
 static const char* kStrokeVert =
 "#version 300 es\n"
@@ -25,7 +23,7 @@ static const char* kStrokeVert =
 "void main() {\n"
 "    vec2 pos = u_center + a_pos * u_diameter;\n"
 "    vec2 ndc = (pos / u_canvasSize) * 2.0 - 1.0;\n"
-"    gl_Position = vec4(ndc, 0.0, 1.0);\n"
+"    gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);\n"
 "    v_uv = a_uv;\n"
 "}\n";
 
@@ -39,8 +37,8 @@ static const char* kStrokeFrag =
 "in vec2 v_uv;\n"
 "void main() {\n"
 "    float mask = texture(u_brush, v_uv).a;\n"
-"    // FIX: clamp hardness a 0.999 para evitar smoothstep(0.5,0.5,x) — undefined behavior GLSL\n"
-"    float edge = 0.5 * min(u_hardness, 0.999);\n"
+"    float h    = min(u_hardness, 0.999);\n"
+"    float edge = 0.5 * h;\n"
 "    float soft = smoothstep(edge, 1.0 - edge, mask);\n"
 "    fragColor  = vec4(u_color.rgb, u_color.a * soft);\n"
 "}\n";
@@ -55,10 +53,34 @@ static const char* kEraserFrag =
 "in vec2 v_uv;\n"
 "void main() {\n"
 "    float mask = texture(u_brush, v_uv).a;\n"
-"    // FIX: clamp hardness a 0.999 para evitar smoothstep(0.5,0.5,x) — undefined behavior GLSL\n"
-"    float edge = 0.5 * min(u_hardness, 0.999);\n"
+"    float h    = min(u_hardness, 0.999);\n"
+"    float edge = 0.5 * h;\n"
 "    float soft = smoothstep(edge, 1.0 - edge, mask);\n"
 "    fragColor  = vec4(0.0, 0.0, 0.0, u_opacity * soft);\n"
+"}\n";
+
+// ── Composite shader: blitea el strokeFBO sobre el layerFBO ───────────
+// Vertex: quad -0.5..0.5 → NDC -1..1 (fullscreen)
+static const char* kCompositeVert =
+"#version 300 es\n"
+"precision highp float;\n"
+"layout(location = 0) in vec2 a_pos;\n"
+"layout(location = 1) in vec2 a_uv;\n"
+"out vec2 v_uv;\n"
+"void main() {\n"
+"    gl_Position = vec4(a_pos * 2.0, 0.0, 1.0);\n"
+"    v_uv = a_uv;\n"
+"}\n";
+
+// Fragment: copia el stroke buffer tal cual (con alpha premultiplicado)
+static const char* kCompositeFrag =
+"#version 300 es\n"
+"precision highp float;\n"
+"uniform sampler2D u_tex;\n"
+"layout(location = 0) out vec4 fragColor;\n"
+"in vec2 v_uv;\n"
+"void main() {\n"
+"    fragColor = texture(u_tex, v_uv);\n"
 "}\n";
 
 // ── Quad vertices (-0.5..0.5 con UV 0..1) ────────────────────────────
@@ -73,9 +95,7 @@ static const float kQuad[] = {
 // ─────────────────────────────────────────────────────────────────────
 
 bool StrokeEngine::init() {
-    // Limpiar errores GL previos
     while (glGetError() != GL_NO_ERROR) {}
-
     if (!initShaders()) { LOGE("StrokeEngine: initShaders failed"); return false; }
     if (!initQuad())    { LOGE("StrokeEngine: initQuad failed");    return false; }
     generateDefaultBrushTex();
@@ -84,14 +104,85 @@ bool StrokeEngine::init() {
 }
 
 void StrokeEngine::destroy() {
-    if (strokeProgram_)   { glDeleteProgram(strokeProgram_);        strokeProgram_   = 0; }
-    if (eraserProgram_)   { glDeleteProgram(eraserProgram_);        eraserProgram_   = 0; }
-    if (quadVBO_)         { glDeleteBuffers(1, &quadVBO_);          quadVBO_         = 0; }
-    if (quadVAO_)         { glDeleteVertexArrays(1, &quadVAO_);     quadVAO_         = 0; }
-    if (defaultBrushTex_) { glDeleteTextures(1, &defaultBrushTex_); defaultBrushTex_ = 0; }
+    destroyStrokeFBO();
+    if (strokeProgram_)    { glDeleteProgram(strokeProgram_);     strokeProgram_    = 0; }
+    if (eraserProgram_)    { glDeleteProgram(eraserProgram_);     eraserProgram_    = 0; }
+    if (compositeProgram_) { glDeleteProgram(compositeProgram_);  compositeProgram_ = 0; }
+    if (quadVBO_)          { glDeleteBuffers(1, &quadVBO_);       quadVBO_          = 0; }
+    if (quadVAO_)          { glDeleteVertexArrays(1, &quadVAO_);  quadVAO_          = 0; }
+    if (defaultBrushTex_)  { glDeleteTextures(1, &defaultBrushTex_); defaultBrushTex_ = 0; }
     for (auto& e : brushTextures_) glDeleteTextures(1, &e.tex);
     brushTextures_.clear();
 }
+
+// ── Stroke buffer (FBO temporal) ──────────────────────────────────────
+
+bool StrokeEngine::ensureStrokeFBO(int w, int h) {
+    if (strokeFBO_ && strokeW_ == w && strokeH_ == h) return true;
+    destroyStrokeFBO();
+
+    glGenFramebuffers(1, &strokeFBO_);
+    glGenTextures(1, &strokeTex_);
+
+    glBindTexture(GL_TEXTURE_2D, strokeTex_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, strokeFBO_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, strokeTex_, 0);
+
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        LOGE("StrokeFBO incomplete: 0x%X", status);
+        destroyStrokeFBO();
+        return false;
+    }
+    strokeW_ = w;
+    strokeH_ = h;
+    LOGI("StrokeFBO created (%dx%d)", w, h);
+    return true;
+}
+
+void StrokeEngine::destroyStrokeFBO() {
+    if (strokeTex_) { glDeleteTextures(1, &strokeTex_); strokeTex_ = 0; }
+    if (strokeFBO_) { glDeleteFramebuffers(1, &strokeFBO_); strokeFBO_ = 0; }
+    strokeW_ = strokeH_ = 0;
+}
+
+// Composita strokeFBO sobre el layerFBO con blending normal (src-over)
+void StrokeEngine::compositeStrokeToLayer(GLuint layerFBO) {
+    if (!compositeProgram_ || !strokeFBO_ || !strokeTex_) return;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, layerFBO);
+    glViewport(0, 0, strokeW_, strokeH_);
+
+    glUseProgram(compositeProgram_);
+
+    // Src-over blending: stroke buffer sobre la capa permanente
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                        GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, strokeTex_);
+    glUniform1i(glGetUniformLocation(compositeProgram_, "u_tex"), 0);
+
+    glBindVertexArray(quadVAO_);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+
+    glDisable(GL_BLEND);
+    // Restaurar blendEquation por defecto
+    glBlendEquation(GL_FUNC_ADD);
+}
+
+// ─────────────────────────────────────────────────────────────────────
 
 void StrokeEngine::beginStroke(const Point& p, const BrushParams& brush,
                                 const Color& color, int cw, int ch) {
@@ -102,6 +193,23 @@ void StrokeEngine::beginStroke(const Point& p, const BrushParams& brush,
     lastPoint_ = p;
     accDist_   = 0.0f;
     active_    = true;
+
+    // Guardar el FBO de destino (la capa activa)
+    GLint currentFBO = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &currentFBO);
+    layerFBO_ = (GLuint)currentFBO;
+
+    // Crear/bind stroke buffer y limpiar a transparente
+    if (ensureStrokeFBO(cw, ch)) {
+        glBindFramebuffer(GL_FRAMEBUFFER, strokeFBO_);
+        glViewport(0, 0, cw, ch);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+    } else {
+        // Fallback: renderizar directo en la capa si el FBO falló
+        LOGE("StrokeFBO creation failed, rendering direct to layer");
+    }
+
     renderStamp(p);
 }
 
@@ -131,26 +239,54 @@ bool StrokeEngine::addPoint(const Point& p) {
     return rendered;
 }
 
-void StrokeEngine::endStroke()    { active_ = false; }
-void StrokeEngine::cancelStroke() { active_ = false; }
+void StrokeEngine::endStroke() {
+    active_ = false;
+    // Componer stroke buffer sobre la capa permanente
+    compositeStrokeToLayer(layerFBO_);
+    // Restaurar el FBO de la capa como destino activo
+    glBindFramebuffer(GL_FRAMEBUFFER, layerFBO_);
+    glViewport(0, 0, canvasW_, canvasH_);
+}
 
-// ── Render un stamp ────────────────────────────────────────────────────
+void StrokeEngine::cancelStroke() {
+    active_ = false;
+    // Restaurar FBO de la capa SIN componer (descartar el trazo)
+    glBindFramebuffer(GL_FRAMEBUFFER, layerFBO_);
+    glViewport(0, 0, canvasW_, canvasH_);
+}
+
+// ── Render un stamp en el strokeFBO ───────────────────────────────────
 
 void StrokeEngine::renderStamp(const Point& p, float diameterOverride) {
+    // Asegurarse de estar en el strokeFBO
+    // (Si ensureStrokeFBO falló, strokeFBO_ == 0 y renderizamos en la capa)
+    if (strokeFBO_) {
+        glBindFramebuffer(GL_FRAMEBUFFER, strokeFBO_);
+        glViewport(0, 0, canvasW_, canvasH_);
+    }
+
     float diameter = diameterOverride > 0 ? diameterOverride : brush_.size;
     diameter *= (0.7f + p.pressure * 0.3f);
 
     GLuint prog = brush_.isEraser ? eraserProgram_ : strokeProgram_;
     glUseProgram(prog);
 
-    if (brush_.isEraser) {
-        glBlendFuncSeparate(GL_ZERO, GL_ONE,
-                            GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
-    } else {
-        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
-                            GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
-    }
+    // ── Blending con GL_MAX para el canal alpha ───────────────
+    // Esto evita que los stamps se acumulen visualmente:
+    // - RGB: composición normal (src-over)
+    // - Alpha: max(src.a, dst.a) → el trazo tiene exactamente la
+    //   opacidad del slider en cada punto, sin acumulación de perlas
     glEnable(GL_BLEND);
+    if (brush_.isEraser) {
+        // El borrador borra del stroke buffer directamente
+        glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
+        glBlendFuncSeparate(GL_ZERO, GL_ONE,
+                            GL_ONE,  GL_ONE);
+    } else {
+        glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                            GL_ONE,       GL_ONE);
+    }
 
     glUniform2f(glGetUniformLocation(prog, "u_center"),     p.x, p.y);
     glUniform1f(glGetUniformLocation(prog, "u_diameter"),   diameter);
@@ -171,7 +307,10 @@ void StrokeEngine::renderStamp(const Point& p, float diameterOverride) {
     glBindVertexArray(quadVAO_);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindVertexArray(0);
+
     glDisable(GL_BLEND);
+    // Restaurar blendEquation a ADD (default)
+    glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
 }
 
 // ── Brush textures ──────────────────────────────────────────────────────
@@ -196,7 +335,6 @@ int StrokeEngine::loadBrushTexture(const uint8_t* rgba, int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindTexture(GL_TEXTURE_2D, 0);
-
     int id = nextBrushTexId_++;
     brushTextures_.push_back({id, tex, w, h});
     return id;
@@ -249,34 +387,32 @@ void StrokeEngine::generateDefaultBrushTex() {
 
 // ── GL helpers ─────────────────────────────────────────────────────────
 
-// FIX: initShaders compila shaders frescos para cada programa.
-// linkProgram() borra los shaders después de linkear — no se pueden reusar.
 bool StrokeEngine::initShaders() {
     LOGI("Compiling stroke shaders...");
 
-    // Programa de pincel (stroke)
+    // Programa pincel
     GLuint sv1 = compileShader(GL_VERTEX_SHADER,   kStrokeVert);
     GLuint sf1 = compileShader(GL_FRAGMENT_SHADER, kStrokeFrag);
-    if (!sv1 || !sf1) {
-        if (sv1) glDeleteShader(sv1);
-        if (sf1) glDeleteShader(sf1);
-        return false;
-    }
-    strokeProgram_ = linkProgram(sv1, sf1); // borra sv1, sf1
+    if (!sv1 || !sf1) { if (sv1) glDeleteShader(sv1); if (sf1) glDeleteShader(sf1); return false; }
+    strokeProgram_ = linkProgram(sv1, sf1);
     if (!strokeProgram_) return false;
     LOGI("Stroke program linked OK (%u)", strokeProgram_);
 
-    // Programa de borrador (eraser) — compilar vertex de nuevo
+    // Programa borrador
     GLuint ev1 = compileShader(GL_VERTEX_SHADER,   kStrokeVert);
     GLuint ef2 = compileShader(GL_FRAGMENT_SHADER, kEraserFrag);
-    if (!ev1 || !ef2) {
-        if (ev1) glDeleteShader(ev1);
-        if (ef2) glDeleteShader(ef2);
-        return false;
-    }
-    eraserProgram_ = linkProgram(ev1, ef2); // borra ev1, ef2
+    if (!ev1 || !ef2) { if (ev1) glDeleteShader(ev1); if (ef2) glDeleteShader(ef2); return false; }
+    eraserProgram_ = linkProgram(ev1, ef2);
     if (!eraserProgram_) return false;
     LOGI("Eraser program linked OK (%u)", eraserProgram_);
+
+    // Programa composite (stroke buffer → layer FBO)
+    GLuint cv1 = compileShader(GL_VERTEX_SHADER,   kCompositeVert);
+    GLuint cf2 = compileShader(GL_FRAGMENT_SHADER, kCompositeFrag);
+    if (!cv1 || !cf2) { if (cv1) glDeleteShader(cv1); if (cf2) glDeleteShader(cf2); return false; }
+    compositeProgram_ = linkProgram(cv1, cf2);
+    if (!compositeProgram_) return false;
+    LOGI("Composite program linked OK (%u)", compositeProgram_);
 
     return true;
 }
@@ -294,34 +430,25 @@ bool StrokeEngine::initQuad() {
                           (void*)(2*sizeof(float)));
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-
     GLenum err = glGetError();
-    if (err != GL_NO_ERROR) {
-        LOGE("GL error after quad setup: 0x%X", err);
-        return false;
-    }
+    if (err != GL_NO_ERROR) { LOGE("GL error after quad setup: 0x%X", err); return false; }
     return true;
 }
 
 GLuint StrokeEngine::compileShader(GLenum type, const char* src) {
     GLuint s = glCreateShader(type);
-    if (s == 0) {
-        LOGE("glCreateShader returned 0 (GL error: 0x%X)", glGetError());
-        return 0;
-    }
+    if (s == 0) { LOGE("glCreateShader returned 0"); return 0; }
     glShaderSource(s, 1, &src, nullptr);
     glCompileShader(s);
     GLint ok = 0;
     glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
     if (!ok) {
-        char buf[1024];
-        GLsizei len = 0;
+        char buf[1024]; GLsizei len = 0;
         glGetShaderInfoLog(s, sizeof(buf), &len, buf);
         LOGE("Shader compile FAILED (type=0x%X):\n%s", type, buf);
         glDeleteShader(s);
         return 0;
     }
-    LOGI("Shader compiled OK (type=0x%X)", type);
     return s;
 }
 
