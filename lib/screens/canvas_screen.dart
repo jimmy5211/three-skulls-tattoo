@@ -477,7 +477,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 left: 0,
                 top: _topBarHeight,
                 bottom: 0,
-                child: _buildSideBar(),
+                child: Listener(
+                  behavior: HitTestBehavior.opaque,
+                  child: _buildSideBar(),
+                ),
               ),
 
             if (!_isFullscreen)
@@ -485,7 +488,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 top: 0,
                 left: 0,
                 right: 0,
-                child: _buildTopBar(),
+                child: Listener(
+                  behavior: HitTestBehavior.opaque,
+                  child: _buildTopBar(),
+                ),
               ),
 
             if (!_isFullscreen)
@@ -500,7 +506,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 right: 0,
                 top: _topBarHeight,
                 bottom: 0,
-                child: AnimatedBuilder(
+                child: Listener(
+                  behavior: HitTestBehavior.opaque,
+                  child: AnimatedBuilder(
                   animation: _controller,
                   builder: (context, child) => LayerPanel(
                     layers: _controller.layers,
@@ -579,7 +587,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       }
                     },
                   ),
-                ),
+                ), // AnimatedBuilder
+                ), // Listener
               ),
 
             if (!_isFullscreen && !_showLayers)
@@ -594,7 +603,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
     right: _isLandscape ? 70 : 8,
     top: _isLandscape ? _topBarHeight + 8 : null,
     bottom: _isLandscape ? null : 110,
-                child: AnimatedBuilder(
+                child: Listener(
+                  behavior: HitTestBehavior.opaque,
+                  child: AnimatedBuilder(
                   animation: _controller,
                   builder: (context, child) => ColorPicker(
                     activeColor: _controller.activeColor,
@@ -607,7 +618,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       }
                     },
                   ),
-                ),
+                ), // AnimatedBuilder
+                ), // Listener
               ),
 
             if (!_isFullscreen && !_showLayers)
