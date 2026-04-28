@@ -4179,9 +4179,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _lastBridgeCoords =
                   'begin x=${_dbgX.toStringAsFixed(1)} y=${_dbgY.toStringAsFixed(1)}\n'
                   'scale=$_scale off=(${_offset.dx.toStringAsFixed(0)},${_offset.dy.toStringAsFixed(0)})\n'
-                  'brushSz=${(_brush.size/_scale).toStringAsFixed(2)}\n'
+                  'brushSz=${_brush.size.toStringAsFixed(2)} (canvas px)\n'
                   'DART canvasSize=${_controller.canvasSize.width.toInt()}x${_controller.canvasSize.height.toInt()}\n'
-                  'overlayStrokeW=${(_brush.size/_scale).toStringAsFixed(1)}dp scale=$_scale DPR=${MediaQuery.of(context).devicePixelRatio.toStringAsFixed(2)}';
+                  'scale=$_scale DPR=${MediaQuery.of(context).devicePixelRatio.toStringAsFixed(2)}';
 
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:   _nativeLayer(_controller.activeLayerId),
