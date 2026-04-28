@@ -5242,8 +5242,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
             setState(() {});
           }, enabled: _controller.hasClipboard),
           _selectionAction(Icons.delete_outline, 'Borrar', () {
+            // FIX: borrar selección en GPU (eraseRegion) + Dart
+            if (_nativeReady && _finalizedStart != null && _finalizedEnd != null) {
+              final nId = _nativeLayer(_controller.activeLayerId);
+              if (nId != null) {
+                final r = Rect.fromPoints(_finalizedStart!, _finalizedEnd!);
+                _bridgeImageCall(() => _bridge.eraseRegion(
+                  nId, r.left, r.top, r.width, r.height));
+              }
+            }
             _controller.deleteSelected();
-            setState(() {});
+            setState(() => _clearSelectionState());
           }, isDestructive: true),
           _selectionAction(Icons.color_lens_outlined, 'Color', () {
             setState(() => _showColors = !_showColors);
