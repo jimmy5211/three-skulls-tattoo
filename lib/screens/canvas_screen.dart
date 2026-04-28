@@ -3691,6 +3691,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
         },
         onScaleStart: (details) {
+          // FIX TOPBAR/OPACITY: ignorar toques fuera del área del canvas.
+          // El GestureDetector cubre Positioned.fill (toda la pantalla).
+          // Sin este guard, los toques en topbar, sliders y sidebar quedan
+          // interceptados y no llegan a sus widgets.
+          // Permitir 2 dedos (zoom) desde cualquier lugar de la pantalla.
+          if (details.pointerCount < 2 && !_zoomMode &&
+              !_isTouchOnCanvas(details.localFocalPoint)) {
+            return;
+          }
+
           // ── PRIORIDAD ABSOLUTA: 2 dedos = pan/zoom ───────
           if (details.pointerCount >= 2 || _zoomMode) {
             _controller.cancelStroke(); // FIX: cancelar (no guardar) al hacer zoom
