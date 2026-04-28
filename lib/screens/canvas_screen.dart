@@ -4313,16 +4313,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
               // en lugar del 1080×1920 * 0.35 = 378×672dp correcto.
               // OverflowBox rompe la cadena de constraints y SizedBox fija el tamaño
               // al canvas real (1080×1920dp), que después escala correctamente.
-              child: OverflowBox(
+              // FIX HIT TEST: ClipRect limita hit testing al área visible del Transform.
+              // OverflowBox en Flutter 3.19 no tiene clipBehavior, así que usamos
+              // ClipRect como wrapper para recortar tanto rendering como hit testing.
+              child: ClipRect(
+                child: OverflowBox(
                 alignment: Alignment.topLeft,
                 minWidth: 0,
                 maxWidth: double.infinity,
                 minHeight: 0,
                 maxHeight: double.infinity,
-                // FIX HIT TEST: sin Clip.hardEdge, el SizedBox(1080×1920)
-                // es hit-testable en toda su área sin escalar → absorbe toques
-                // en topbar/sidebar aunque visualmente el canvas esté escaleado.
-                clipBehavior: Clip.hardEdge,
                 child: SizedBox(
                   width:  _controller.canvasSize.width,
                   height: _controller.canvasSize.height,
@@ -4421,6 +4421,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               ),
                 ), // SizedBox(canvasSize)
               ), // OverflowBox
+              ), // ClipRect
             );
           },
         ),
