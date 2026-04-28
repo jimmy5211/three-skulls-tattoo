@@ -113,6 +113,14 @@ class NativeCanvasBridge {
 
   Future<ui.Image?> setBackground(Color color) async =>
       _toImage(await _ch.invokeMethod<Uint8List>('setBackground', {'colorARGB': color.value}));
+  /// Borra un rectángulo de píxeles en la capa (GPU, coordenadas canvas Y=0 arriba).
+  Future<ui.Image?> eraseRegion(int layerId, double x, double y, double w, double h) async {
+    if (!_ready) return null;
+    final bytes = await _ch.invokeMethod<Uint8List>('eraseRegion',
+        {'layerId': layerId, 'x': x, 'y': y, 'w': w, 'h': h});
+    return _toImage(bytes);
+  }
+
   Future<void> setCanvasSize(int w, int h) async {
     // FIX: actualizar _canvasW/_canvasH para que _toImage use las dimensiones
     // correctas. Sin esto, la imagen GPU se decodifica con el tamaño anterior
