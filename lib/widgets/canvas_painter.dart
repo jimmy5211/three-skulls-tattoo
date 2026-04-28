@@ -369,8 +369,16 @@ class CanvasPainter extends CustomPainter {
         ? Colors.white.withOpacity(0.5)
         : stroke.color.withOpacity(stroke.opacity);
 
+    // FIX CÍRCULOS: saveLayer con la opacidad total del trazo.
+    // Sin saveLayer, cada stamp se dibuja con la opacidad individual y se acumulan
+    // visiblemente en las superposiciones → círculos. Con saveLayer, todos los
+    // stamps se dibujan al 100% dentro de una capa opaca, luego se aplica la
+    // opacidad al componer la capa → mismo resultado visual que el GPU.
+    final layerOpacity = isEraser ? 0.5 : stroke.opacity;
+    canvas.saveLayer(null, Paint()..color = Color.fromRGBO(0, 0, 0, layerOpacity));
+
     final paint = Paint()
-      ..color = color
+      ..color = isEraser ? Colors.white : stroke.color  // sin opacity aquí
       ..style = PaintingStyle.fill;
 
     if (h < 0.95 && !isEraser) {
@@ -378,8 +386,6 @@ class CanvasPainter extends CustomPainter {
           BlurStyle.normal, radius * (1 - h) * 0.3);
     }
 
-    // Spacing = 8% del radio → línea suave sin scalloping visible.
-    // Cap a 500 stamps por stroke para evitar lag con pinceles gruesos.
     final minDist = max(0.5, radius * 0.08);
     int _stampCount = 0;
     const _maxStamps = 500;
@@ -405,6 +411,7 @@ class CanvasPainter extends CustomPainter {
       }
       last = p;
     }
+    canvas.restore(); // cierra el saveLayer de opacidad
   }
 
   void _drawStroke(Canvas canvas, StrokeModel stroke) {
