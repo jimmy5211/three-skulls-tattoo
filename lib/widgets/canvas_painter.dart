@@ -643,8 +643,9 @@ class CanvasOverlayPainter extends CustomPainter {
   final bool showGrid;
   final bool showCenterGuides;
   final bool showSymmetryLine;
-  // version counter para invalidar cuando cambien imágenes / estado
   final int paintVersion;
+  // Mirror stroke en tiempo real (mientras el dedo sigue en pantalla)
+  final StrokeModel? currentMirrorStroke;
 
   CanvasOverlayPainter({
     required this.controller,
@@ -652,6 +653,7 @@ class CanvasOverlayPainter extends CustomPainter {
     this.showGrid = false,
     this.showCenterGuides = false,
     this.showSymmetryLine = false,
+    this.currentMirrorStroke,
   });
 
   @override
@@ -687,6 +689,31 @@ class CanvasOverlayPainter extends CustomPainter {
           ..strokeWidth = 1.0
           ..style = PaintingStyle.stroke,
       );
+    }
+
+    // ── Mirror stroke en vivo (preview de simetría mientras se dibuja) ─
+    if (currentMirrorStroke != null && currentMirrorStroke!.points.length > 1) {
+      final pts = currentMirrorStroke!.points;
+      final sw = currentMirrorStroke!.strokeWidth;
+      final hardness = currentMirrorStroke!.hardness.clamp(0.0, 1.0);
+      final blur = sw * (1.0 - hardness) * 0.5;
+      final paint = Paint()
+        ..color = currentMirrorStroke!.color.withOpacity(currentMirrorStroke!.opacity)
+        ..strokeWidth = sw
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke;
+      if (blur > 0.5) paint.maskFilter = MaskFilter.blur(BlurStyle.normal, blur);
+      final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+      for (int i = 1; i < pts.length - 1; i++) {
+        final mid = Offset(
+          (pts[i].dx + pts[i + 1].dx) / 2,
+          (pts[i].dy + pts[i + 1].dy) / 2,
+        );
+        path.quadraticBezierTo(pts[i].dx, pts[i].dy, mid.dx, mid.dy);
+      }
+      path.lineTo(pts.last.dx, pts.last.dy);
+      canvas.drawPath(path, paint);
     }
 
     // ── Imágenes importadas ──────────────────────────────────────────────
@@ -824,6 +851,7 @@ class CanvasOverlayPainter extends CustomPainter {
     if (old.showCenterGuides != showCenterGuides) return true;
     if (old.showSymmetryLine != showSymmetryLine) return true;
     if (old.paintVersion != paintVersion) return true;
+    if (old.currentMirrorStroke != currentMirrorStroke) return true;
     if (controller.imagesChanged) {
       controller.resetImagesChanged();
       return true;
