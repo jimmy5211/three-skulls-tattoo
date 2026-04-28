@@ -4186,7 +4186,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:   _nativeLayer(_controller.activeLayerId),
                 x: _dbgX, y: _dbgY,
-                size:      _brush.size,  // FIX: tamaño absoluto en canvas (no dividir por scale). Así zoom in muestra el trazo más grueso, igual que Procreate.
+                size:      _brush.size + 5.0,  // FIX: offset +5 — slider 1→6px, 2→7px... mínimo visible en canvas 1080px
                 opacity:   _brush.opacity,
                 hardness:  _brush.hardness,
                 spacing:   0.08,
