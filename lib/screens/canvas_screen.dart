@@ -4375,6 +4375,27 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         ),
                       ),
                     ),
+                  // ── Overlay permanente: grid / guías / simetría / imágenes importadas ──
+                  // Siempre visible sobre el RawImage. Usa CanvasOverlayPainter que no
+                  // dibuja strokes (esos los maneja el GPU), solo los elementos de UI
+                  // que antes vivían en CanvasPainter (solo !nativeReady).
+                  AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, _) => CustomPaint(
+                      painter: CanvasOverlayPainter(
+                        controller: _controller,
+                        paintVersion: _controller.paintVersion,
+                        showGrid: _showGrid,
+                        showCenterGuides: _showCenterGuides,
+                        showSymmetryLine: _controller.symmetryEnabled,
+                      ),
+                      size: Size(
+                        _controller.canvasSize.width,
+                        _controller.canvasSize.height,
+                      ),
+                    ),
+                  ),
+
                   // OVERLAY ELIMINADO: el GPU exporta cada 5 puntos durante el trazo.
                   // Más fiable que el overlay Dart que nunca coincidía exactamente
                   // con el resultado GPU (diferente algoritmo de renderizado).
