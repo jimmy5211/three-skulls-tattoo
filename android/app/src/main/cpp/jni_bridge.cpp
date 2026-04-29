@@ -9,20 +9,12 @@
 
 using namespace tsk;
 
-// Prefijo jni en nombre Kotlin → función C++ con jni prefix
 #define JNINAME(name) Java_com_threeskullstattoo_app_DrawingEngineJNI_##name
 
 extern "C" {
 
 // ── Init / Destroy ─────────────────────────────────────────────────────
 
-// Error codes for jniInit return value:
-// 0 = success
-// 1 = no EGL context on GL thread
-// 2 = no EGL surface on GL thread
-// 3 = layer manager init failed (shader compile error)
-// 4 = stroke engine init failed (shader compile error)
-// 5 = unknown init error
 JNIEXPORT jint JNICALL
 JNINAME(jniInit)(JNIEnv*, jclass,
                  jlong eglDisplay, jlong sharedContext,
@@ -33,8 +25,7 @@ JNINAME(jniInit)(JNIEnv*, jclass,
     cfg.canvasHeight = canvasH;
     cfg.maxUndoSteps = maxUndo;
 
-    // Log GL state before init
-    EGLContext ctx = eglGetCurrentContext();
+    EGLContext ctx  = eglGetCurrentContext();
     EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
     LOGI("jniInit: ctx=%p surf=%p canvas=%dx%d",
          (void*)ctx, (void*)surf, canvasW, canvasH);
@@ -79,15 +70,14 @@ JNINAME(jniBeginStroke)(JNIEnv*, jclass,
     brush.size     = size;
     brush.opacity  = opacity;
     brush.hardness = hardness;
-    LOGI("beginStroke: hardness=%.3f size=%.1f opacity=%.3f isEraser=%d", hardness, size, opacity, isEraser);
     brush.spacing  = spacing;
     brush.isEraser = (bool)isEraser;
     brush.brushTextureId = brushTexId;
     Color color = Color::fromARGB((uint32_t)colorARGB);
-    // FIX OPACITY: multiplicar alpha del color por la opacidad del pincel.
-    // Sin esto, color.a = 1.0 siempre (activeColor es siempre opaco)
-    // y el shader dibuja al 100% sin importar el slider OPA.
+    // FIX OPACITY: multiplicar alpha del color por la opacidad del pincel
     color.a *= opacity;
+    LOGI("beginStroke: size=%.1f opacity=%.3f hardness=%.3f isEraser=%d",
+         size, opacity, hardness, (int)isEraser);
     DrawingEngine::get().beginStroke(layerId, p, brush, color);
 }
 
@@ -108,12 +98,22 @@ JNINAME(jniCancelStroke)(JNIEnv*, jclass) {
 }
 
 // ── History ────────────────────────────────────────────────────────────
+// NOTA: jniUndo / jniRedo solo sirven como hooks.
+// El stack real de snapshots se maneja en Kotlin (DrawingEngineJNI.kt)
+// usando jniExportPixels() + jniRestorePixels() para máximo control
+// sin depender del impl_ privado de DrawingEngine.
 
 JNIEXPORT void JNICALL
-JNINAME(jniUndo)(JNIEnv*, jclass) { DrawingEngine::get().undo(); }
+JNINAME(jniUndo)(JNIEnv*, jclass) {
+    // El undo Kotlin llama a jniRestorePixels directamente.
+    // Este hook queda para compatibilidad.
+    DrawingEngine::get().undo();
+}
 
 JNIEXPORT void JNICALL
-JNINAME(jniRedo)(JNIEnv*, jclass) { DrawingEngine::get().redo(); }
+JNINAME(jniRedo)(JNIEnv*, jclass) {
+    DrawingEngine::get().redo();
+}
 
 JNIEXPORT jboolean JNICALL
 JNINAME(jniCanUndo)(JNIEnv*, jclass) {
@@ -123,6 +123,46 @@ JNINAME(jniCanUndo)(JNIEnv*, jclass) {
 JNIEXPORT jboolean JNICALL
 JNINAME(jniCanRedo)(JNIEnv*, jclass) {
     return DrawingEngine::get().canRedo() ? JNI_TRUE : JNI_FALSE;
+}
+
+// ── NUEVO: Restaurar pixels al layer activo (undo/redo Kotlin) ─────────
+// Escribe los bytes RGBA directamente a la textura del layer activo
+// con glTexSubImage2D. El canvas queda sincronizado tras un jniExportPixels.
+// Implementación en drawing_engine.cpp:
+//   void DrawingEngine::restoreFromPixels(const uint8_t* rgba, int w, int h) {
+//       if (!impl_) return;
+//       auto* layer = impl_->layerManager_->activeLayer();
+//       if (!layer) return;
+//       glBindTexture(GL_TEXTURE_2D, layer->texture);
+//       glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h,
+//                       GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+//       glBindTexture(GL_TEXTURE_2D, 0);
+//       render();
+//   }
+
+JNIEXPORT void JNICALL
+JNINAME(jniRestorePixels)(JNIEnv* env, jclass,
+                           jbyteArray data, jint w, jint h) {
+    jsize len = env->GetArrayLength(data);
+    std::vector<uint8_t> buf(len);
+    env->GetByteArrayRegion(data, 0, len,
+                            reinterpret_cast<jbyte*>(buf.data()));
+    DrawingEngine::get().restoreFromPixels(buf.data(), w, h);
+    LOGI("jniRestorePixels: %dx%d (%zu bytes)", w, h, buf.size());
+}
+
+// ── NUEVO: Simetría ────────────────────────────────────────────────────
+// enabled=true → cada stamp del StrokeEngine dibuja también el espejo.
+// axis: 0=horizontal (espejo X), 1=vertical (espejo Y).
+// Implementación en drawing_engine.cpp:
+//   void DrawingEngine::setSymmetry(bool enabled, int axis) {
+//       if (impl_) impl_->strokeEngine_.setSymmetry(enabled, axis);
+//   }
+
+JNIEXPORT void JNICALL
+JNINAME(jniSetSymmetry)(JNIEnv*, jclass, jboolean enabled, jint axis) {
+    DrawingEngine::get().setSymmetry((bool)enabled, (int)axis);
+    LOGI("jniSetSymmetry: enabled=%d axis=%d", (int)enabled, (int)axis);
 }
 
 // ── Layers ─────────────────────────────────────────────────────────────
