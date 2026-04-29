@@ -124,14 +124,18 @@ class MainActivity : FlutterActivity() {
                     val y = (call.argument<Any>("y") as Number).toFloat()
                     val w = (call.argument<Any>("w") as Number).toFloat()
                     val h = (call.argument<Any>("h") as Number).toFloat()
-                    DrawingEngineJNI.eraseRegion(lid, x, y, w, h) { bytes -> result.success(bytes) }
+                    DrawingEngineJNI.eraseRegion(lid, x, y, w, h)
+                    result.success(null)
                 }
 
                 // ── Brush textures ────────────────────────────────────
                 "loadBrushTexture" -> {
                     val data = call.argument<ByteArray>("data")!!
-                    result.success(DrawingEngineJNI.loadBrushTexture(data,
-                        call.argument<Int>("w")!!, call.argument<Int>("h")!!))
+                    DrawingEngineJNI.loadBrushTexture(
+                        data,
+                        call.argument<Int>("w")!!,
+                        call.argument<Int>("h")!!
+                    ) { id -> result.success(id) }
                 }
                 "unloadBrushTexture" -> {
                     DrawingEngineJNI.unloadBrushTexture(call.argument<Int>("id")!!)
