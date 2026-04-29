@@ -702,8 +702,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       children: [
         const SizedBox(width: 4),
         _btn(Icons.arrow_back_ios, tooltip: 'Inicio', onTap: () => context.go('/home')),
-        _btn(Icons.undo, tooltip: 'Deshacer', onTap: () { _controller.undo(); _bridgeImageCall(() => _bridge.undo()); }),
-        _btn(Icons.redo, tooltip: 'Rehacer', onTap: () { _controller.redo(); _bridgeImageCall(() => _bridge.redo()); }),
+        _btn(Icons.undo, tooltip: 'Deshacer', onTap: () => _bridgeImageCall(() => _bridge.undo())),
+        _btn(Icons.redo, tooltip: 'Rehacer', onTap: () => _bridgeImageCall(() => _bridge.redo())),
         _btn(
           _zoomMode ? Icons.edit_outlined : Icons.zoom_in,
           isActive: _zoomMode,
@@ -753,8 +753,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
               const SizedBox(width: 4),
               _btn(Icons.arrow_back_ios,
                   onTap: () => context.go('/home')),
-              _btn(Icons.undo, tooltip: 'Deshacer', onTap: () { _controller.undo(); _bridgeImageCall(() => _bridge.undo()); }),
-              _btn(Icons.redo, tooltip: 'Rehacer', onTap: () { _controller.redo(); _bridgeImageCall(() => _bridge.redo()); }),
+              _btn(Icons.undo, tooltip: 'Deshacer', onTap: () => _bridgeImageCall(() => _bridge.undo())),
+              _btn(Icons.redo, tooltip: 'Rehacer', onTap: () => _bridgeImageCall(() => _bridge.redo())),
               _btn(
                 _zoomMode ? Icons.edit_outlined : Icons.zoom_in,
                 isActive: _zoomMode,
