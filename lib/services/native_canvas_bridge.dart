@@ -96,6 +96,16 @@ class NativeCanvasBridge {
   Future<bool> canUndo() async => await _ch.invokeMethod<bool>('canUndo') ?? false;
   Future<bool> canRedo() async => await _ch.invokeMethod<bool>('canRedo') ?? false;
 
+  // ── Simetría ──────────────────────────────────────────────────────
+  // axis: 0=horizontal (espejo en X), 1=vertical (espejo en Y)
+  Future<void> setSymmetry(bool enabled, {int axis = 0}) async {
+    if (!_ready) return;
+    await _ch.invokeMethod('setSymmetry', {'enabled': enabled, 'axis': axis});
+  }
+
+  // ── Simetría ─────────────────────────────────────────────────────
+  /// Activa/desactiva el espejo en el StrokeEngine C++.
+  /// axis: 0=horizontal (espejo en X), 1=vertical (espejo en Y).
   // ── Capas ─────────────────────────────────────────────────────────
 
   Future<int>  addLayer({String name = ''}) async =>
