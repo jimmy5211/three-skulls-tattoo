@@ -125,6 +125,9 @@ public:
     // Activa el espejo en StrokeEngine. axis: 0=horizontal, 1=vertical.
     void setSymmetry(bool enabled, int axis = 0);
 
+    // Stamp directo sin interpolación — para espejo del borrador desde Dart.
+    void stampAt(float x, float y);
+
     // ── Brush textures ─────────────────────────────────────────
     int  loadBrushTexture(const uint8_t* rgba, int w, int h);
     void unloadBrushTexture(int id);

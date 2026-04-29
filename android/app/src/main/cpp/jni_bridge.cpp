@@ -97,6 +97,15 @@ JNINAME(jniCancelStroke)(JNIEnv*, jclass) {
     DrawingEngine::get().cancelStroke();
 }
 
+// Renderiza un único stamp en (x,y) sin interpolación — para espejo del borrador.
+JNIEXPORT void JNICALL
+JNINAME(jniStampAt)(JNIEnv*, jclass, jfloat x, jfloat y) {
+    if (!DrawingEngine::get().isReady()) return;
+    // Accede al strokeEngine a través de DrawingEngine.
+    // Implementado en drawing_engine.cpp.
+    DrawingEngine::get().stampAt(x, y);
+}
+
 // ── History ────────────────────────────────────────────────────────────
 // NOTA: jniUndo / jniRedo solo sirven como hooks.
 // El stack real de snapshots se maneja en Kotlin (DrawingEngineJNI.kt)

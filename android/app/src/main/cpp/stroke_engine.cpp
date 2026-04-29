@@ -138,6 +138,13 @@ bool StrokeEngine::addPoint(const Point& p) {
 void StrokeEngine::endStroke()    { active_ = false; }
 void StrokeEngine::cancelStroke() { active_ = false; }
 
+// ── Stamp directo sin interpolación (para espejo del borrador desde Dart) ──
+
+void StrokeEngine::stampAt(float x, float y) {
+    if (!active_) return;
+    renderStampAt(x, y, 1.0f, brush_.size);
+}
+
 // ── Stamp principal + espejo ──────────────────────────────────────────
 
 void StrokeEngine::renderStamp(const Point& p, float diameterOverride) {

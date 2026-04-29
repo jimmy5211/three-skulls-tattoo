@@ -21,6 +21,11 @@ public:
 
     bool isActive() const { return active_; }
 
+    // Renderiza UN stamp en (x,y) sin afectar lastPoint_ ni accDist_.
+    // Usar para el espejo del borrador gestionado desde Dart.
+    // Solo válido mientras haya un stroke activo (entre beginStroke y endStroke).
+    void stampAt(float x, float y);
+
     int  loadBrushTexture(const uint8_t* rgba, int w, int h);
     void unloadBrushTexture(int id);
 
