@@ -720,31 +720,13 @@ class CanvasOverlayPainter extends CustomPainter {
       path.lineTo(pts.last.dx, pts.last.dy);
 
       if (isEr) {
-        // Borde exterior: stroke de sw (radio del borrador) para mostrar el ÁREA
-        // que se va a borrar. Usamos 2px de borde rojo, no relleno.
+        // Área semi-transparente roja con exactamente el diámetro del borrador.
         canvas.drawPath(path, Paint()
-          ..color = const Color(0xFFE53935).withOpacity(0.55)
-          ..strokeWidth = sw          // ancho = diámetro real del borrador
+          ..color = const Color(0xFFE53935).withOpacity(0.45)
+          ..strokeWidth = sw
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
-          ..style = PaintingStyle.stroke
-          ..blendMode = BlendMode.srcOver);
-        // Línea central blanca fina para ver el recorrido exacto dentro del área
-        canvas.drawPath(path, Paint()
-          ..color = Colors.white.withOpacity(0.8)
-          ..strokeWidth = 2.0
-          ..strokeCap = StrokeCap.round
           ..style = PaintingStyle.stroke);
-        // Círculo en el último punto (punta del borrador)
-        if (pts.isNotEmpty) {
-          canvas.drawCircle(pts.last, sw / 2, Paint()
-            ..color = const Color(0xFFE53935).withOpacity(0.3)
-            ..style = PaintingStyle.fill);
-          canvas.drawCircle(pts.last, sw / 2, Paint()
-            ..color = const Color(0xFFE53935).withOpacity(0.7)
-            ..strokeWidth = 2.0
-            ..style = PaintingStyle.stroke);
-        }
       } else {
         // Pincel: línea guía de 2px al 50% del color real.
         // No usa el grosor real del brush para no confundirse con el GPU.
