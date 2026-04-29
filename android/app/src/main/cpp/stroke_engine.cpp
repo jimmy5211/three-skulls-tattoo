@@ -142,7 +142,11 @@ void StrokeEngine::cancelStroke() { active_ = false; }
 
 void StrokeEngine::renderStamp(const Point& p, float diameterOverride) {
     float diameter = diameterOverride > 0 ? diameterOverride : brush_.size;
-    diameter *= (0.7f + p.pressure * 0.3f);
+    // El borrador usa tamaño fijo — predecible y coincide con el indicador visual.
+    // El pincel varía con presión para efecto dinámico en stylus.
+    if (!brush_.isEraser) {
+        diameter *= (0.7f + p.pressure * 0.3f);
+    }
 
     renderStampAt(p.x, p.y, p.pressure, diameter);
 
