@@ -4205,6 +4205,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
               for (final p in _pendingPoints.skip(1)) {
                 _controller.continueStroke(p);
                 _bridgeCall(() => _bridge.addPoint(p.dx, p.dy));
+                if (_brush.type == StrokeType.eraser && _controller.symmetryEnabled) {
+                  final mirrorX = _controller.canvasSize.width - p.dx;
+                  final mirrorY = _controller.symmetryType == SymmetryType.vertical
+                      ? _controller.canvasSize.height - p.dy
+                      : p.dy;
+                  _bridgeCall(() => _bridge.addPoint(mirrorX, mirrorY));
+                }
               }
               _pendingPoints.clear();
               _pendingStrokePoint = null;
@@ -4212,6 +4219,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
           } else {
             _controller.continueStroke(cp);
             _bridgeCall(() => _bridge.addPoint(cp.dx, cp.dy));
+            // ERASER + simetría: el espejo se envía explícitamente desde Dart.
+            // El C++ maneja el espejo del pincel internamente, pero para el borrador
+            // hay un bug conocido en el shader/blend — más confiable enviarlo desde Dart.
+            if (_brush.type == StrokeType.eraser && _controller.symmetryEnabled) {
+              final mirrorX = _controller.canvasSize.width - cp.dx;
+              final mirrorY = _controller.symmetryType == SymmetryType.vertical
+                  ? _controller.canvasSize.height - cp.dy
+                  : cp.dy;
+              _bridgeCall(() => _bridge.addPoint(mirrorX, mirrorY));
+            }
             // Export GPU cada 5 puntos para preview en tiempo real de TODOS los pinceles.
             // El overlay Dart era impreciso vs GPU. Export directo = resultado exacto.
             // Throttle: evita exportar más de 1 vez cada 32ms (~30fps max).
