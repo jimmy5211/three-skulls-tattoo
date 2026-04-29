@@ -66,6 +66,12 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "cancelStroke" -> { DrawingEngineJNI.cancelStroke(); result.success(null) }
+                "stampAt" -> {
+                    val x = (call.argument<Any>("x") as Number).toFloat()
+                    val y = (call.argument<Any>("y") as Number).toFloat()
+                    DrawingEngineJNI.stampAt(x, y)
+                    result.success(null)
+                }
 
                 // exportCanvas sin modificar historial
                 "exportCanvas" -> DrawingEngineJNI.exportCanvas { bytes ->

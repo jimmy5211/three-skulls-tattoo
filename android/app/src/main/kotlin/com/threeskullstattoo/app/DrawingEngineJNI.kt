@@ -151,6 +151,10 @@ object DrawingEngineJNI {
 
     fun cancelStroke() = glHandler.post { if (initialized) jniCancelStroke() }
 
+    // Stamp directo sin interpolación — para espejo del borrador.
+    fun stampAt(x: Float, y: Float) =
+        glHandler.post { if (initialized) jniStampAt(x, y) }
+
     fun exportCanvas(onDone: (ByteArray?) -> Unit) {
         glHandler.post {
             notifyBytes(if (initialized) jniExportPixels() else null, onDone)
@@ -292,6 +296,7 @@ object DrawingEngineJNI {
     @JvmStatic private external fun jniAddPoint(x: Float, y: Float, p: Float)
     @JvmStatic private external fun jniEndStroke()
     @JvmStatic private external fun jniCancelStroke()
+    @JvmStatic private external fun jniStampAt(x: Float, y: Float)
     @JvmStatic private external fun jniUndo()
     @JvmStatic private external fun jniRedo()
     @JvmStatic private external fun jniCanUndo(): Boolean
