@@ -4210,7 +4210,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   final mirrorY = _controller.symmetryType == SymmetryType.vertical
                       ? _controller.canvasSize.height - p.dy
                       : p.dy;
-                  _bridgeCall(() => _bridge.addPoint(mirrorX, mirrorY));
+                  _bridgeCall(() => _bridge.stampAt(mirrorX, mirrorY));
                 }
               }
               _pendingPoints.clear();
@@ -4227,7 +4227,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               final mirrorY = _controller.symmetryType == SymmetryType.vertical
                   ? _controller.canvasSize.height - cp.dy
                   : cp.dy;
-              _bridgeCall(() => _bridge.addPoint(mirrorX, mirrorY));
+              _bridgeCall(() => _bridge.stampAt(mirrorX, mirrorY));
             }
             // Export GPU cada 5 puntos para preview en tiempo real de TODOS los pinceles.
             // El overlay Dart era impreciso vs GPU. Export directo = resultado exacto.
