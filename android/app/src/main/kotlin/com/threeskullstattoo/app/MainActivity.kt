@@ -141,6 +141,12 @@ class MainActivity : FlutterActivity() {
                 // ── Diagnóstico ───────────────────────────────────────
                 "getLastError" -> result.success(DrawingEngineJNI.getLastError())
 
+                "setSymmetry" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    val axis    = call.argument<Int>("axis") ?: 0
+                    DrawingEngineJNI.setSymmetry(enabled, axis)
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }

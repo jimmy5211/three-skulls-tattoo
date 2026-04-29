@@ -11,10 +11,18 @@ import android.util.Log
  * Motor C++ - Arquitectura Offscreen FBO.
  * Sin SurfaceTexture, sin WindowSurface, sin DPR.
  * C++ renderiza a FBO offscreen → jniExportPixels → ByteArray → Dart.
+ *
+ * UNDO/REDO: stack de snapshots en Kotlin (ByteArray por layer activo).
+ * Antes de cada beginStroke se guarda jniExportPixels() como checkpoint.
+ * Para restaurar se usa jniRestorePixels() → glTexSubImage2D en C++.
+ *
+ * SIMETRÍA: jniSetSymmetry() activa el espejo en StrokeEngine C++.
+ * Cada stamp se duplica horizontalmente sin overhead en Dart.
  */
 object DrawingEngineJNI {
 
-    private const val TAG = "TSK_KT"
+    private const val TAG     = "TSK_KT"
+    private const val MAX_UNDO = 20
 
     private val glThread = HandlerThread("TSK-GL").also { it.start() }
     val glHandler = Handler(glThread.looper)
@@ -30,13 +38,27 @@ object DrawingEngineJNI {
     private var _lastSetupError = "not_started"
     fun getLastError(): String = _lastSetupError
 
+    // Canvas size (guardado para jniRestorePixels)
+    private var canvasW = 1080
+    private var canvasH = 1920
+
+    // ── Stack de undo/redo (ByteArray = composite RGBA del canvas) ─────────
+    // Se guarda el composite completo antes de cada trazo.
+    // Con 1080×1920×4 ≈ 8MB por snapshot, MAX_UNDO=20 → ~160MB máx.
+    // Para múltiples capas: solo se restaura la capa activa (limitación conocida).
+    private val undoStack = ArrayDeque<ByteArray>()
+    private val redoStack = ArrayDeque<ByteArray>()
+
     // ── Setup ──────────────────────────────────────────────────────────────
 
     fun setup(
         canvasW: Int, canvasH: Int,
-        maxUndoSteps: Int = 20,
+        maxUndoSteps: Int = MAX_UNDO,
         onReady: (ok: Boolean) -> Unit
     ) {
+        this.canvasW = canvasW
+        this.canvasH = canvasH
+
         if (!nativeLibLoaded) {
             _lastSetupError = "native_lib_not_loaded"
             notifyMain(false, onReady); return
@@ -80,22 +102,31 @@ object DrawingEngineJNI {
                     notifyMain(false, onReady); return@post
                 }
 
-                _lastSetupError = "ok"
                 initialized = true
+                _lastSetupError = "ok"
                 notifyMain(true, onReady)
+
             } catch (t: Throwable) {
-                _lastSetupError = "crashed: $t"
-                Log.e(TAG, _lastSetupError)
+                _lastSetupError = "setup_threw: $t"
+                Log.e(TAG, _lastSetupError, t)
                 notifyMain(false, onReady)
             }
         }
     }
 
-    private fun notifyMain(ok: Boolean, cb: (Boolean) -> Unit) =
-        Handler(android.os.Looper.getMainLooper()).post { cb(ok) }
+    private fun notifyMain(ok: Boolean, cb: (Boolean) -> Unit) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post { cb(ok) }
+    }
 
-    private fun notifyBytes(b: ByteArray?, cb: (ByteArray?) -> Unit) =
-        Handler(android.os.Looper.getMainLooper()).post { cb(b) }
+    private fun notifyBytes(bytes: ByteArray?, cb: (ByteArray?) -> Unit) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post { cb(bytes) }
+    }
+
+    private fun ensureCurrent() {
+        if (EGL14.eglGetCurrentContext() == EGL14.EGL_NO_CONTEXT) {
+            EGL14.eglMakeCurrent(eglDisplay, pbufferSurface, pbufferSurface, eglContext)
+        }
+    }
 
     // ── Stroke lifecycle ───────────────────────────────────────────────────
 
@@ -104,7 +135,18 @@ object DrawingEngineJNI {
         size: Float, opacity: Float, hardness: Float, spacing: Float,
         isEraser: Boolean, brushTexId: Int, colorARGB: Int
     ) = glHandler.post {
-        if (initialized) jniBeginStroke(
+        if (!initialized) return@post
+        ensureCurrent()
+
+        // ── Snapshot ANTES del trazo para undo ────────────────────────────
+        val snap = jniExportPixels()
+        if (snap != null) {
+            undoStack.addLast(snap)
+            if (undoStack.size > MAX_UNDO) undoStack.removeFirst()
+            redoStack.clear()   // nuevo trazo invalida el redo
+        }
+
+        jniBeginStroke(
             layerId, x, y, pressure, size, opacity, hardness, spacing,
             isEraser, brushTexId, colorARGB
         )
@@ -113,7 +155,6 @@ object DrawingEngineJNI {
     fun addPoint(x: Float, y: Float, pressure: Float = 1f) =
         glHandler.post { if (initialized) jniAddPoint(x, y, pressure) }
 
-    /** Termina el trazo y devuelve el canvas completo como RGBA. */
     fun endStrokeAndExport(onDone: (ByteArray?) -> Unit) {
         glHandler.post {
             if (!initialized) { notifyBytes(null, onDone); return@post }
@@ -125,27 +166,66 @@ object DrawingEngineJNI {
 
     fun cancelStroke() = glHandler.post { if (initialized) jniCancelStroke() }
 
-    /** Exporta el canvas actual sin modificar el historial. */
     fun exportCanvas(onDone: (ByteArray?) -> Unit) {
         glHandler.post {
             notifyBytes(if (initialized) jniExportPixels() else null, onDone)
         }
     }
 
-    // ── Historial ─────────────────────────────────────────────────────────
+    // ── Historial (stack Kotlin + restore C++) ─────────────────────────────
 
     fun undo(onDone: (ByteArray?) -> Unit) = glHandler.post {
-        if (initialized) jniUndo()
-        notifyBytes(if (initialized) jniExportPixels() else null, onDone)
+        if (!initialized) { notifyBytes(null, onDone); return@post }
+        ensureCurrent()
+
+        if (undoStack.isNotEmpty()) {
+            // Guardar estado actual en redo
+            val current = jniExportPixels()
+            if (current != null) {
+                redoStack.addLast(current)
+                if (redoStack.size > MAX_UNDO) redoStack.removeFirst()
+            }
+            // Restaurar snapshot anterior
+            val snap = undoStack.removeLast()
+            jniRestorePixels(snap, canvasW, canvasH)
+            Log.i(TAG, "undo: restored ${snap.size} bytes, undoStack=${undoStack.size}")
+        } else {
+            Log.i(TAG, "undo: stack vacío")
+        }
+
+        notifyBytes(jniExportPixels(), onDone)
     }
 
     fun redo(onDone: (ByteArray?) -> Unit) = glHandler.post {
-        if (initialized) jniRedo()
-        notifyBytes(if (initialized) jniExportPixels() else null, onDone)
+        if (!initialized) { notifyBytes(null, onDone); return@post }
+        ensureCurrent()
+
+        if (redoStack.isNotEmpty()) {
+            // Guardar estado actual en undo
+            val current = jniExportPixels()
+            if (current != null) {
+                undoStack.addLast(current)
+                if (undoStack.size > MAX_UNDO) undoStack.removeFirst()
+            }
+            // Aplicar redo
+            val snap = redoStack.removeLast()
+            jniRestorePixels(snap, canvasW, canvasH)
+            Log.i(TAG, "redo: restored ${snap.size} bytes, redoStack=${redoStack.size}")
+        } else {
+            Log.i(TAG, "redo: stack vacío")
+        }
+
+        notifyBytes(jniExportPixels(), onDone)
     }
 
-    fun canUndo(): Boolean = initialized && jniCanUndo()
-    fun canRedo(): Boolean = initialized && jniCanRedo()
+    fun canUndo(): Boolean = undoStack.isNotEmpty()
+    fun canRedo(): Boolean = redoStack.isNotEmpty()
+
+    // ── Simetría ──────────────────────────────────────────────────────────
+    // Activa/desactiva el espejo en StrokeEngine C++.
+    // axis: 0=horizontal (espejo en X), 1=vertical (espejo en Y).
+    fun setSymmetry(enabled: Boolean, axis: Int = 0) =
+        glHandler.post { if (initialized) jniSetSymmetry(enabled, axis) }
 
     // ── Capas ──────────────────────────────────────────────────────────────
 
@@ -168,37 +248,35 @@ object DrawingEngineJNI {
         notifyBytes(if (initialized) jniExportPixels() else null, onDone)
     }
 
-    fun setCanvasSize(w: Int, h: Int) = glHandler.post { if (initialized) jniSetCanvasSize(w, h) }
-
-    fun eraseRegion(layerId: Int, x: Float, y: Float, w: Float, h: Float,
-                    onDone: (ByteArray?) -> Unit) {
+    fun setCanvasSize(w: Int, h: Int) {
+        canvasW = w; canvasH = h
         glHandler.post {
-            if (!initialized) { notifyBytes(null, onDone); return@post }
             ensureCurrent()
-            jniEraseRegion(layerId, x, y, w, h)
-            notifyBytes(jniExportPixels(), onDone)
+            if (initialized) jniSetCanvasSize(w, h)
         }
     }
 
-    fun loadBrushTexture(data: ByteArray, w: Int, h: Int): Int =
-        if (initialized) jniLoadBrushTexture(data, w, h) else -1
-    fun unloadBrushTexture(id: Int) = glHandler.post { if (initialized) jniUnloadBrushTexture(id) }
+    fun eraseRegion(layerId: Int, x: Float, y: Float, w: Float, h: Float) =
+        glHandler.post { if (initialized) jniEraseRegion(layerId, x, y, w, h) }
 
-    // ── Destroy ────────────────────────────────────────────────────────────
+    // ── Brush textures ──────────────────────────────────────────────────────
 
-    /** Asegura que el contexto EGL esté activo en el GL thread. */
-    private fun ensureCurrent() {
-        if (eglDisplay != EGL14.EGL_NO_DISPLAY &&
-            pbufferSurface != EGL14.EGL_NO_SURFACE &&
-            eglContext != EGL14.EGL_NO_CONTEXT) {
-            EGL14.eglMakeCurrent(eglDisplay, pbufferSurface, pbufferSurface, eglContext)
+    fun loadBrushTexture(data: ByteArray, w: Int, h: Int, onDone: (Int) -> Unit) {
+        glHandler.post {
+            val id = if (initialized) jniLoadBrushTexture(data, w, h) else -1
+            android.os.Handler(android.os.Looper.getMainLooper()).post { onDone(id) }
         }
     }
+
+    fun unloadBrushTexture(id: Int) =
+        glHandler.post { if (initialized) jniUnloadBrushTexture(id) }
 
     fun destroy() {
         glHandler.post {
             if (initialized) jniDestroy()
             initialized = false
+            undoStack.clear()
+            redoStack.clear()
             destroyEGL()
         }
     }
@@ -274,7 +352,11 @@ object DrawingEngineJNI {
     @JvmStatic private external fun jniSetBackground(col: Int)
     @JvmStatic private external fun jniSetCanvasSize(w: Int, h: Int)
     @JvmStatic private external fun jniEraseRegion(layerId: Int, x: Float, y: Float, w: Float, h: Float)
-    @JvmStatic external fun jniExportPixels(): ByteArray?
+    @JvmStatic          external fun jniExportPixels(): ByteArray?
     @JvmStatic private external fun jniLoadBrushTexture(data: ByteArray, w: Int, h: Int): Int
     @JvmStatic private external fun jniUnloadBrushTexture(id: Int)
+    // NUEVO: restaurar pixels (undo/redo)
+    @JvmStatic private external fun jniRestorePixels(data: ByteArray, w: Int, h: Int)
+    // NUEVO: simetría
+    @JvmStatic private external fun jniSetSymmetry(enabled: Boolean, axis: Int)
 }
