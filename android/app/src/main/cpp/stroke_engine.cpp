@@ -150,7 +150,9 @@ void StrokeEngine::renderStamp(const Point& p, float diameterOverride) {
 
     renderStampAt(p.x, p.y, p.pressure, diameter);
 
-    if (symmetryEnabled_) {
+    // El espejo del BORRADOR se maneja desde Dart (addPoint explícito).
+    // El espejo del PINCEL se maneja aquí en C++ (más eficiente).
+    if (symmetryEnabled_ && !brush_.isEraser) {
         float mx, my;
         if (symmetryAxis_ == 0) {
             mx = (float)canvasW_ - p.x;
