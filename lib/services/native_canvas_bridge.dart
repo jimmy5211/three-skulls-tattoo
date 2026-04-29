@@ -69,10 +69,17 @@ class NativeCanvasBridge {
     return _toImage(fallback);
   }
 
+  Future<void> stampAt(double x, double y) =>
+      _ch.invokeMethod('stampAt', {'x': x, 'y': y});
+
   Future<void> cancelStroke() async {
     if (!_ready) return;
     await _ch.invokeMethod('cancelStroke');
   }
+
+  /// Stamp directo sin interpolación — para espejo del borrador desde Dart.
+  Future<void> stampAt(double x, double y) =>
+      _ch.invokeMethod('stampAt', {'x': x, 'y': y});
 
   /// Exporta el canvas sin modificar historial.
   Future<ui.Image?> exportCanvas() async {
