@@ -3834,7 +3834,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
               // Handle de rotación (rojo)
               final rotHandle = bounds.topCenter - const Offset(0, 36);
               if ((rotHandle - cpLocal).distance < 20.0 / _scale) {
-                _controller.saveSelectionMoveToHistory();
                 _isResizingHandle = true;
                 _activeResizeHandle = 8;
                 _resizeStartBounds = rawBounds;
@@ -3856,7 +3855,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
               final hitRadius = 20.0 / _scale;
               for (int i = 0; i < handles.length; i++) {
                 if ((handles[i] - cpLocal).distance < hitRadius) {
-                  _controller.saveSelectionMoveToHistory();
                   _isResizingHandle = true;
                   _activeResizeHandle = i;
                   _resizeStartBounds = rawBounds;
@@ -3874,7 +3872,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
               // Rotar punto inversamente para detectar si está dentro
               final cpLocal = _rotatePointAround(cp, bounds.center, -_selectionAngle);
               if (bounds.inflate(40 / _scale).contains(cpLocal)) {
-                _controller.saveSelectionMoveToHistory();
                 _isDraggingSelection = true;
                 _selectionMoveStart = cp;
                 return;
