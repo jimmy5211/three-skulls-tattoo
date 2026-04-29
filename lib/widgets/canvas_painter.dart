@@ -661,6 +661,10 @@ class CanvasOverlayPainter extends CustomPainter {
     final w = controller.canvasSize.width;
     final h = controller.canvasSize.height;
 
+    // Clipear al bounds del canvas para que ningún stroke (borrador, simetría,
+    // imágenes) desborde visualmente hacia el fondo oscuro fuera del canvas.
+    canvas.clipRect(Rect.fromLTWH(0, 0, w, h));
+
     // ── Grilla ──────────────────────────────────────────────────────────
     if (showGrid) {
       final p = Paint()
