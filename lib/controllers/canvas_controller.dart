@@ -116,11 +116,11 @@ class CanvasController extends ChangeNotifier {
     return result;
   }
 
-  void startStroke(Offset point, {double viewScale = 1.0}) {
+  void startStroke(Offset point) {
     if (activeLayer.isLocked) return;
     _bumpVersion();
     // FIX: tamaño del pincel independiente del zoom
-    final strokeW = (activeBrush.size + 5.0) / viewScale; // FIX: offset +5 para mínimo visible
+    final strokeW = activeBrush.size + 5.0; // canvas-px absolutos, igual que el GPU
 
     currentStroke = StrokeModel(
       points: [point],
