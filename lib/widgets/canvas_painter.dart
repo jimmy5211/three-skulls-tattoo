@@ -692,28 +692,50 @@ class CanvasOverlayPainter extends CustomPainter {
     }
 
     // ── Mirror stroke en vivo (preview de simetría mientras se dibuja) ─
+    // El GPU ya dibuja el espejo real. Este overlay solo muestra una guía visual.
+    // Para el BORRADOR: nunca dibujar blanco sólido — usar contorno punteado.
     if (currentMirrorStroke != null && currentMirrorStroke!.points.length > 1) {
-      final pts = currentMirrorStroke!.points;
-      final sw = currentMirrorStroke!.strokeWidth;
-      final hardness = currentMirrorStroke!.hardness.clamp(0.0, 1.0);
-      final blur = sw * (1.0 - hardness) * 0.5;
-      final paint = Paint()
-        ..color = currentMirrorStroke!.color.withOpacity(currentMirrorStroke!.opacity)
-        ..strokeWidth = sw
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke;
-      if (blur > 0.5) paint.maskFilter = MaskFilter.blur(BlurStyle.normal, blur);
-      final path = Path()..moveTo(pts.first.dx, pts.first.dy);
-      for (int i = 1; i < pts.length - 1; i++) {
-        final mid = Offset(
-          (pts[i].dx + pts[i + 1].dx) / 2,
-          (pts[i].dy + pts[i + 1].dy) / 2,
-        );
-        path.quadraticBezierTo(pts[i].dx, pts[i].dy, mid.dx, mid.dy);
+      final pts  = currentMirrorStroke!.points;
+      final sw   = currentMirrorStroke!.strokeWidth;
+      final isEr = currentMirrorStroke!.type == StrokeType.eraser;
+
+      if (isEr) {
+        // Borrador: mostrar contorno punteado semi-transparente en lugar de
+        // relleno blanco que taparía el contenido del canvas.
+        final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+        for (int i = 1; i < pts.length; i++) {
+          path.lineTo(pts[i].dx, pts[i].dy);
+        }
+        canvas.drawPath(path, Paint()
+          ..color = Colors.red.withOpacity(0.5)
+          ..strokeWidth = sw
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke
+          ..blendMode = BlendMode.srcOver);
+      } else {
+        // Pincel: dibujar el trazo espejado con el color real (opacidad leve para
+        // indicar que es una previsualización, el GPU lo confirmará al soltar).
+        final hardness = currentMirrorStroke!.hardness.clamp(0.0, 1.0);
+        final blur = sw * (1.0 - hardness) * 0.5;
+        final paint = Paint()
+          ..color = currentMirrorStroke!.color.withOpacity(
+              (currentMirrorStroke!.opacity * 0.7).clamp(0.0, 1.0))
+          ..strokeWidth = sw
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..style = PaintingStyle.stroke;
+        if (blur > 0.5) paint.maskFilter = MaskFilter.blur(BlurStyle.normal, blur);
+        final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+        for (int i = 1; i < pts.length - 1; i++) {
+          final mid = Offset(
+            (pts[i].dx + pts[i + 1].dx) / 2,
+            (pts[i].dy + pts[i + 1].dy) / 2,
+          );
+          path.quadraticBezierTo(pts[i].dx, pts[i].dy, mid.dx, mid.dy);
+        }
+        path.lineTo(pts.last.dx, pts.last.dy);
+        canvas.drawPath(path, paint);
       }
-      path.lineTo(pts.last.dx, pts.last.dy);
-      canvas.drawPath(path, paint);
     }
 
     // ── Imágenes importadas ──────────────────────────────────────────────
