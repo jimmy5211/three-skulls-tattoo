@@ -593,4 +593,14 @@ std::vector<int> DrawingEngine::getLayerIds() const {
     return ids;
 }
 
+
+// ── Simetría ────────────────────────────────────────────────────────────────
+// Delega al StrokeEngine. Cada stamp se duplica en espejo automáticamente.
+// axis: 0=horizontal (espejo en X), 1=vertical (espejo en Y).
+
+void DrawingEngine::setSymmetry(bool enabled, int axis) {
+    if (impl_ && impl_->strokeEng)
+        impl_->strokeEng->setSymmetry(enabled, axis);
+}
+
 } // namespace tsk

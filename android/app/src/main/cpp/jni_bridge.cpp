@@ -125,32 +125,6 @@ JNINAME(jniCanRedo)(JNIEnv*, jclass) {
     return DrawingEngine::get().canRedo() ? JNI_TRUE : JNI_FALSE;
 }
 
-// ── NUEVO: Restaurar pixels al layer activo (undo/redo Kotlin) ─────────
-// Escribe los bytes RGBA directamente a la textura del layer activo
-// con glTexSubImage2D. El canvas queda sincronizado tras un jniExportPixels.
-// Implementación en drawing_engine.cpp:
-//   void DrawingEngine::restoreFromPixels(const uint8_t* rgba, int w, int h) {
-//       if (!impl_) return;
-//       auto* layer = impl_->layerManager_->activeLayer();
-//       if (!layer) return;
-//       glBindTexture(GL_TEXTURE_2D, layer->texture);
-//       glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h,
-//                       GL_RGBA, GL_UNSIGNED_BYTE, rgba);
-//       glBindTexture(GL_TEXTURE_2D, 0);
-//       render();
-//   }
-
-JNIEXPORT void JNICALL
-JNINAME(jniRestorePixels)(JNIEnv* env, jclass,
-                           jbyteArray data, jint w, jint h) {
-    jsize len = env->GetArrayLength(data);
-    std::vector<uint8_t> buf(len);
-    env->GetByteArrayRegion(data, 0, len,
-                            reinterpret_cast<jbyte*>(buf.data()));
-    DrawingEngine::get().restoreFromPixels(buf.data(), w, h);
-    LOGI("jniRestorePixels: %dx%d (%zu bytes)", w, h, buf.size());
-}
-
 // ── NUEVO: Simetría ────────────────────────────────────────────────────
 // enabled=true → cada stamp del StrokeEngine dibuja también el espejo.
 // axis: 0=horizontal (espejo X), 1=vertical (espejo Y).

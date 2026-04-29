@@ -121,11 +121,6 @@ public:
     // Devuelve RGBA raw del canvas compuesto (corre en GL thread)
     std::vector<uint8_t> exportPixels(int* outWidth, int* outHeight);
 
-    // ── Undo / Redo (restaurar desde Kotlin snapshot) ─────────────
-    // Sube bytes RGBA directamente a la textura del layer activo.
-    // Llamar siempre en GL thread.
-    void restoreFromPixels(const uint8_t* rgba, int w, int h);
-
     // ── Simetría ───────────────────────────────────────────────────
     // Activa el espejo en StrokeEngine. axis: 0=horizontal, 1=vertical.
     void setSymmetry(bool enabled, int axis = 0);
