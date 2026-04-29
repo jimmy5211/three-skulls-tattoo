@@ -702,8 +702,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       children: [
         const SizedBox(width: 4),
         _btn(Icons.arrow_back_ios, tooltip: 'Inicio', onTap: () => context.go('/home')),
-        _btn(Icons.undo, tooltip: 'Deshacer', onTap: _controller.undo),
-        _btn(Icons.redo, tooltip: 'Rehacer', onTap: _controller.redo),
+        _btn(Icons.undo, tooltip: 'Deshacer', onTap: () { _controller.undo(); _bridgeImageCall(() => _bridge.undo()); }),
+        _btn(Icons.redo, tooltip: 'Rehacer', onTap: () { _controller.redo(); _bridgeImageCall(() => _bridge.redo()); }),
         _btn(
           _zoomMode ? Icons.edit_outlined : Icons.zoom_in,
           isActive: _zoomMode,
@@ -720,7 +720,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
             Icons.flip,
             tooltip: 'Simetría',
             isActive: _controller.symmetryEnabled,
-            onTap: _controller.toggleSymmetry,
+            onTap: () {
+              _controller.toggleSymmetry();
+              _bridgeCall(() => _bridge.setSymmetry(
+                _controller.symmetryEnabled,
+                axis: _controller.symmetryType == SymmetryType.vertical ? 1 : 0,
+              ));
+            },
           ),
         ),
         const Spacer(),
@@ -768,7 +774,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 builder: (c, _) => _btn(
                   Icons.flip,
                   isActive: _controller.symmetryEnabled,
-                  onTap: _controller.toggleSymmetry,
+                  onTap: () {
+                    _controller.toggleSymmetry();
+                    _bridgeCall(() => _bridge.setSymmetry(
+                      _controller.symmetryEnabled,
+                      axis: _controller.symmetryType == SymmetryType.vertical ? 1 : 0,
+                    ));
+                  },
                 ),
               ),
               const Spacer(),
@@ -4286,9 +4298,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     // que llegue _nativeCanvasImage → el trazo "parpadea".
                     // Solución: bridge obtiene la imagen, LUEGO endStroke limpia el overlay.
                     final _strokeSnapshot = _controller.currentStroke;
+                    // FIX SIMETRÍA: el mirror ya lo maneja StrokeEngine C++
+                    // (jniSetSymmetry → renderStampAt duplicado). No hay replay Dart.
                     _bridge.endStroke().then((img) {
                       if (!mounted) return;
-                      _controller.endStroke();  // limpia currentStroke DESPUÉS de tener imagen
+                      _controller.endStroke();
                       if (img != null) setState(() => _nativeCanvasImage = img);
                     }).catchError((_) {
                       if (mounted) _controller.endStroke();
@@ -4388,6 +4402,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         showGrid: _showGrid,
                         showCenterGuides: _showCenterGuides,
                         showSymmetryLine: _controller.symmetryEnabled,
+                        currentMirrorStroke: _controller.currentMirrorStroke,
                       ),
                       size: Size(
                         _controller.canvasSize.width,
