@@ -14,7 +14,7 @@ import android.util.Log
  *
  * UNDO/REDO: stack de snapshots en Kotlin (ByteArray por layer activo).
  * Antes de cada beginStroke se guarda jniExportPixels() como checkpoint.
- * Para restaurar se usa jniRestorePixels() → glTexSubImage2D en C++.
+ * Undo/redo ROI-based en C++ (Command struct con before/after pixels).
  *
  * SIMETRÍA: jniSetSymmetry() activa el espejo en StrokeEngine C++.
  * Cada stamp se duplica horizontalmente sin overhead en Dart.
@@ -38,16 +38,9 @@ object DrawingEngineJNI {
     private var _lastSetupError = "not_started"
     fun getLastError(): String = _lastSetupError
 
-    // Canvas size (guardado para jniRestorePixels)
+    // Canvas size
     private var canvasW = 1080
     private var canvasH = 1920
-
-    // ── Stack de undo/redo (ByteArray = composite RGBA del canvas) ─────────
-    // Se guarda el composite completo antes de cada trazo.
-    // Con 1080×1920×4 ≈ 8MB por snapshot, MAX_UNDO=20 → ~160MB máx.
-    // Para múltiples capas: solo se restaura la capa activa (limitación conocida).
-    private val undoStack = ArrayDeque<ByteArray>()
-    private val redoStack = ArrayDeque<ByteArray>()
 
     // ── Setup ──────────────────────────────────────────────────────────────
 
@@ -138,14 +131,6 @@ object DrawingEngineJNI {
         if (!initialized) return@post
         ensureCurrent()
 
-        // ── Snapshot ANTES del trazo para undo ────────────────────────────
-        val snap = jniExportPixels()
-        if (snap != null) {
-            undoStack.addLast(snap)
-            if (undoStack.size > MAX_UNDO) undoStack.removeFirst()
-            redoStack.clear()   // nuevo trazo invalida el redo
-        }
-
         jniBeginStroke(
             layerId, x, y, pressure, size, opacity, hardness, spacing,
             isEraser, brushTexId, colorARGB
@@ -177,49 +162,19 @@ object DrawingEngineJNI {
     fun undo(onDone: (ByteArray?) -> Unit) = glHandler.post {
         if (!initialized) { notifyBytes(null, onDone); return@post }
         ensureCurrent()
-
-        if (undoStack.isNotEmpty()) {
-            // Guardar estado actual en redo
-            val current = jniExportPixels()
-            if (current != null) {
-                redoStack.addLast(current)
-                if (redoStack.size > MAX_UNDO) redoStack.removeFirst()
-            }
-            // Restaurar snapshot anterior
-            val snap = undoStack.removeLast()
-            jniRestorePixels(snap, canvasW, canvasH)
-            Log.i(TAG, "undo: restored ${snap.size} bytes, undoStack=${undoStack.size}")
-        } else {
-            Log.i(TAG, "undo: stack vacío")
-        }
-
+        jniUndo()
         notifyBytes(jniExportPixels(), onDone)
     }
 
     fun redo(onDone: (ByteArray?) -> Unit) = glHandler.post {
         if (!initialized) { notifyBytes(null, onDone); return@post }
         ensureCurrent()
-
-        if (redoStack.isNotEmpty()) {
-            // Guardar estado actual en undo
-            val current = jniExportPixels()
-            if (current != null) {
-                undoStack.addLast(current)
-                if (undoStack.size > MAX_UNDO) undoStack.removeFirst()
-            }
-            // Aplicar redo
-            val snap = redoStack.removeLast()
-            jniRestorePixels(snap, canvasW, canvasH)
-            Log.i(TAG, "redo: restored ${snap.size} bytes, redoStack=${redoStack.size}")
-        } else {
-            Log.i(TAG, "redo: stack vacío")
-        }
-
+        jniRedo()
         notifyBytes(jniExportPixels(), onDone)
     }
 
-    fun canUndo(): Boolean = undoStack.isNotEmpty()
-    fun canRedo(): Boolean = redoStack.isNotEmpty()
+    fun canUndo(): Boolean = initialized && jniCanUndo()
+    fun canRedo(): Boolean = initialized && jniCanRedo()
 
     // ── Simetría ──────────────────────────────────────────────────────────
     // Activa/desactiva el espejo en StrokeEngine C++.
@@ -275,8 +230,6 @@ object DrawingEngineJNI {
         glHandler.post {
             if (initialized) jniDestroy()
             initialized = false
-            undoStack.clear()
-            redoStack.clear()
             destroyEGL()
         }
     }
@@ -355,8 +308,6 @@ object DrawingEngineJNI {
     @JvmStatic          external fun jniExportPixels(): ByteArray?
     @JvmStatic private external fun jniLoadBrushTexture(data: ByteArray, w: Int, h: Int): Int
     @JvmStatic private external fun jniUnloadBrushTexture(id: Int)
-    // NUEVO: restaurar pixels (undo/redo)
-    @JvmStatic private external fun jniRestorePixels(data: ByteArray, w: Int, h: Int)
     // NUEVO: simetría
     @JvmStatic private external fun jniSetSymmetry(enabled: Boolean, axis: Int)
 }
