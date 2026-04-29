@@ -4205,7 +4205,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               for (final p in _pendingPoints.skip(1)) {
                 _controller.continueStroke(p);
                 _bridgeCall(() => _bridge.addPoint(p.dx, p.dy));
-                if (_brush.type == StrokeType.eraser && _controller.symmetryEnabled) {
+                if (_controller.activeBrush.type == StrokeType.eraser && _controller.symmetryEnabled) {
                   final mirrorX = _controller.canvasSize.width - p.dx;
                   final mirrorY = _controller.symmetryType == SymmetryType.vertical
                       ? _controller.canvasSize.height - p.dy
@@ -4222,7 +4222,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             // ERASER + simetría: el espejo se envía explícitamente desde Dart.
             // El C++ maneja el espejo del pincel internamente, pero para el borrador
             // hay un bug conocido en el shader/blend — más confiable enviarlo desde Dart.
-            if (_brush.type == StrokeType.eraser && _controller.symmetryEnabled) {
+            if (_controller.activeBrush.type == StrokeType.eraser && _controller.symmetryEnabled) {
               final mirrorX = _controller.canvasSize.width - cp.dx;
               final mirrorY = _controller.symmetryType == SymmetryType.vertical
                   ? _controller.canvasSize.height - cp.dy
