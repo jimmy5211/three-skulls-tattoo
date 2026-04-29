@@ -12,8 +12,6 @@ class CanvasController extends ChangeNotifier {
   Color activeColor = Colors.black;
   StrokeModel? currentStroke;
   StrokeModel? currentMirrorStroke;
-  List<List<LayerModel>> _undoHistory = [];
-  List<List<LayerModel>> _redoHistory = [];
   bool symmetryEnabled = false;
   SymmetryType symmetryType = SymmetryType.horizontal;
   Color backgroundColor = Colors.transparent;
@@ -120,7 +118,6 @@ class CanvasController extends ChangeNotifier {
 
   void startStroke(Offset point, {double viewScale = 1.0}) {
     if (activeLayer.isLocked) return;
-    _saveToHistory();
     _bumpVersion();
     // FIX: tamaño del pincel independiente del zoom
     final strokeW = (activeBrush.size + 5.0) / viewScale; // FIX: offset +5 para mínimo visible
@@ -251,10 +248,6 @@ class CanvasController extends ChangeNotifier {
 
   void cancelStroke() {
     if (currentStroke == null) return;
-    // Revertir el _saveToHistory() que se hizo en startStroke
-    if (_undoHistory.isNotEmpty) {
-      layers = _undoHistory.removeLast();
-    }
     currentStroke = null;
     currentMirrorStroke = null;
     // no notifyListeners — el canvas no cambió visualmente
@@ -294,22 +287,6 @@ class CanvasController extends ChangeNotifier {
           List<StrokeModel>.from(layers[layerIndex].strokes)
             ..add(simplifiedStroke);
 
-      if (symmetryEnabled && currentMirrorStroke != null) {
-        final simplifiedMirrorPoints = _simplifyPoints(
-          currentMirrorStroke!.points,
-          tolerance.clamp(0.5, 3.0),
-        );
-        updatedStrokes.add(StrokeModel(
-          points: simplifiedMirrorPoints,
-          color: currentMirrorStroke!.color,
-          strokeWidth: currentMirrorStroke!.strokeWidth,
-          opacity: currentMirrorStroke!.opacity,
-          type: currentMirrorStroke!.type,
-          layerId: currentMirrorStroke!.layerId,
-          brushId: currentMirrorStroke!.brushId,
-        ));
-      }
-
       layers[layerIndex] =
           layers[layerIndex].copyWith(strokes: updatedStrokes);
       invalidateLayerCache(activeLayerId);
@@ -331,46 +308,6 @@ class CanvasController extends ChangeNotifier {
         return Offset(canvasSize.width - point.dx,
             canvasSize.height - point.dy);
     }
-  }
-
-  void _saveToHistory() {
-    _undoHistory.add(
-      layers
-          .map((l) => l.copyWith(
-                strokes: List<StrokeModel>.from(l.strokes),
-              ))
-          .toList(),
-    );
-    _redoHistory.clear();
-    if (_undoHistory.length > 30) {
-      _undoHistory.removeAt(0);
-    }
-  }
-
-  void undo() {
-    if (_undoHistory.isEmpty) return;
-    _bumpVersion();
-    _redoHistory.add(layers
-        .map((l) => l.copyWith(
-              strokes: List<StrokeModel>.from(l.strokes),
-            ))
-        .toList());
-    layers = _undoHistory.removeLast();
-    invalidateAllCache();
-    notifyListeners();
-  }
-
-  void redo() {
-    if (_redoHistory.isEmpty) return;
-    _bumpVersion();
-    _undoHistory.add(layers
-        .map((l) => l.copyWith(
-              strokes: List<StrokeModel>.from(l.strokes),
-            ))
-        .toList());
-    layers = _redoHistory.removeLast();
-    invalidateAllCache();
-    notifyListeners();
   }
 
   void addLayer() {
@@ -396,7 +333,6 @@ class CanvasController extends ChangeNotifier {
     final index =
         layers.indexWhere((l) => l.id == layerId);
     if (index == -1) return;
-    _saveToHistory();
     final newId = layers.last.id + 1;
     final original = layers[index];
     final duplicate = LayerModel(
@@ -416,7 +352,6 @@ class CanvasController extends ChangeNotifier {
     final index =
         layers.indexWhere((l) => l.id == layerId);
     if (index <= 0) return;
-    _saveToHistory();
     final current = layers[index];
     final below = layers[index - 1];
     final mergedStrokes = [
@@ -476,7 +411,6 @@ class CanvasController extends ChangeNotifier {
 
   void flattenLayers() {
     if (layers.length <= 1) return;
-    _saveToHistory();
     final allStrokes =
         layers.expand((l) => l.strokes).toList();
     layers = [
@@ -591,8 +525,7 @@ class CanvasController extends ChangeNotifier {
     final index =
         layers.indexWhere((l) => l.id == activeLayerId);
     if (index != -1) {
-      _saveToHistory();
-      layers[index] =
+        layers[index] =
           layers[index].copyWith(strokes: []);
       invalidateLayerCache(activeLayerId);
       notifyListeners();
@@ -845,7 +778,6 @@ class CanvasController extends ChangeNotifier {
   }
 
   void clearCanvas() {
-    _saveToHistory();
     layers =
         layers.map((l) => l.copyWith(strokes: [])).toList();
     invalidateAllCache();
@@ -970,7 +902,6 @@ class CanvasController extends ChangeNotifier {
 
   void cutSelected() {
     if (selectedStrokeIndices.isEmpty) return;
-    _saveToHistory();
     _clipboard = selectedStrokes
         .map((s) => s.copyWith(points: List<Offset>.from(s.points)))
         .toList();
@@ -986,7 +917,6 @@ class CanvasController extends ChangeNotifier {
 
   void paste() {
     if (_clipboard.isEmpty) return;
-    _saveToHistory();
     final idx = layers.indexWhere((l) => l.id == activeLayerId);
     if (idx == -1) return;
     const delta = Offset(30, 30);
@@ -1005,7 +935,6 @@ class CanvasController extends ChangeNotifier {
 
   void deleteSelected() {
     if (selectedStrokeIndices.isEmpty) return;
-    _saveToHistory();
     _removeSelected();
   }
 
@@ -1048,7 +977,6 @@ class CanvasController extends ChangeNotifier {
 
   void colorSelected(Color color) {
     if (selectedStrokeIndices.isEmpty) return;
-    _saveToHistory();
     final idx = layers.indexWhere((l) => l.id == activeLayerId);
     if (idx == -1) return;
     final strokes = List<StrokeModel>.from(layers[idx].strokes);
@@ -1062,7 +990,6 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void saveSelectionMoveToHistory() => _saveToHistory();
 }
 
 enum SymmetryType { horizontal, vertical, radial }
