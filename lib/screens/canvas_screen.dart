@@ -4179,7 +4179,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             if (_pendingPoints.length >= 3) {
               // 🔥 Stroke nace aquí — 3+ puntos con 1 dedo = intención real
               _isDrawing = true;
-              _controller.startStroke(_pendingPoints.first, viewScale: _scale);
+              _controller.startStroke(_pendingPoints.first);
               // ── Fase 2: enviar al motor nativo ──
               final _brush = _controller.activeBrush;
               // DIAGNOSTIC: guardar coords para dialog Motor GPU
