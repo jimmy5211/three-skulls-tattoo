@@ -5032,7 +5032,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
     final dx = mirror.dx - _mirrorLastPoint!.dx;
     final dy = mirror.dy - _mirrorLastPoint!.dy;
-    final dist = (dx * dx + dy * dy).sqrt();
+    final dist = math.sqrt(dx * dx + dy * dy);
     _mirrorAccDist += dist;
 
     while (_mirrorAccDist >= spacing) {
