@@ -114,6 +114,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   // ─── BORRADOR EN IMAGEN ──────────────────────────────────
   String? _erasingImageId;
+  // Tracking de espaciado para el espejo del borrador (simetría).
+  // Sin esto, stampAt se llama en cada evento táctil → mucho más denso que el trazo principal.
+  Offset? _mirrorLastPoint;
+  double  _mirrorAccDist = 0.0;
   DateTime? _strokeStartTime; // para detectar dots accidentales al hacer pan
   int _activePointers = 0;
   bool _cancelStrokeImmediately = false;
@@ -3895,9 +3899,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
             final imgUnder = _controller.imageAtPoint(cp);
             if (imgUnder != null && imgUnder.layerId == _controller.activeLayerId) {
               _erasingImageId = imgUnder.id;
+              // Limpiar pendingPoints para que no se envíen como stamps fantasma
+              // al canvas cuando el gesto termina.
+              _pendingPoints.clear();
+              _pendingStrokePoint = null;
               _controller.startEraseOnImage(
                 imgUnder.id, cp,
-                _controller.activeBrush.size / _scale, // FIX: tamaño independiente del zoom
+                _controller.activeBrush.size / _scale,
                 hardness: _controller.activeBrush.hardness,
               );
               return;
@@ -4192,10 +4200,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   'DART canvasSize=${_controller.canvasSize.width.toInt()}x${_controller.canvasSize.height.toInt()}\n'
                   'scale=$_scale DPR=${MediaQuery.of(context).devicePixelRatio.toStringAsFixed(2)}';
 
+              _mirrorLastPoint = null;
+              _mirrorAccDist  = 0.0;
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:   _nativeLayer(_controller.activeLayerId),
                 x: _dbgX, y: _dbgY,
-                size:      _brush.size + 5.0,  // FIX: offset +5 — slider 1→6px, 2→7px... mínimo visible en canvas 1080px
+                size:      _brush.size + 5.0,
                 opacity:   _brush.opacity,
                 hardness:  _brush.hardness,
                 spacing:   0.08,
@@ -4206,11 +4216,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 _controller.continueStroke(p);
                 _bridgeCall(() => _bridge.addPoint(p.dx, p.dy));
                 if (_controller.activeBrush.type == StrokeType.eraser && _controller.symmetryEnabled) {
-                  final mirrorX = _controller.canvasSize.width - p.dx;
-                  final mirrorY = _controller.symmetryType == SymmetryType.vertical
-                      ? _controller.canvasSize.height - p.dy
-                      : p.dy;
-                  _bridgeCall(() => _bridge.stampAt(mirrorX, mirrorY));
+                  _sendMirrorStamp(p);
                 }
               }
               _pendingPoints.clear();
@@ -4223,11 +4229,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             // El C++ maneja el espejo del pincel internamente, pero para el borrador
             // hay un bug conocido en el shader/blend — más confiable enviarlo desde Dart.
             if (_controller.activeBrush.type == StrokeType.eraser && _controller.symmetryEnabled) {
-              final mirrorX = _controller.canvasSize.width - cp.dx;
-              final mirrorY = _controller.symmetryType == SymmetryType.vertical
-                  ? _controller.canvasSize.height - cp.dy
-                  : cp.dy;
-              _bridgeCall(() => _bridge.stampAt(mirrorX, mirrorY));
+              _sendMirrorStamp(cp);
             }
             // Export GPU cada 5 puntos para preview en tiempo real de TODOS los pinceles.
             // El overlay Dart era impreciso vs GPU. Export directo = resultado exacto.
@@ -4314,6 +4316,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     final _strokeSnapshot = _controller.currentStroke;
                     // FIX SIMETRÍA: el mirror ya lo maneja StrokeEngine C++
                     // (jniSetSymmetry → renderStampAt duplicado). No hay replay Dart.
+                    _mirrorLastPoint = null;
+                    _mirrorAccDist  = 0.0;
                     _bridge.endStroke().then((img) {
                       if (!mounted) return;
                       _controller.endStroke();
@@ -5006,6 +5010,42 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   dynamic _getImagePicker() => null; // obsoleto, no usar
+
+  /// Envía un stamp al espejo del borrador con espaciado correcto.
+  /// Replica el spacing del StrokeEngine C++: size * 0.08.
+  /// Sin esto stampAt se llama cada evento táctil → mucho más denso que el trazo principal.
+  void _sendMirrorStamp(Offset p) {
+    final cw = _controller.canvasSize.width;
+    final ch = _controller.canvasSize.height;
+    final isVert = _controller.symmetryType == SymmetryType.vertical;
+    final mx = isVert ? p.dx : cw - p.dx;
+    final my = isVert ? ch - p.dy : p.dy;
+    final mirror = Offset(mx, my);
+    final spacing = (_controller.activeBrush.size + 5.0) * 0.08;
+
+    if (_mirrorLastPoint == null) {
+      _mirrorLastPoint = mirror;
+      _mirrorAccDist = 0.0;
+      _bridgeCall(() => _bridge.stampAt(mx, my));
+      return;
+    }
+
+    final dx = mirror.dx - _mirrorLastPoint!.dx;
+    final dy = mirror.dy - _mirrorLastPoint!.dy;
+    final dist = (dx * dx + dy * dy).sqrt();
+    _mirrorAccDist += dist;
+
+    while (_mirrorAccDist >= spacing) {
+      final t = (dist - (_mirrorAccDist - spacing)) / dist.clamp(0.001, double.infinity);
+      final sx = _mirrorLastPoint!.dx + dx * t;
+      final sy = _mirrorLastPoint!.dy + dy * t;
+      final capSx = sx; final capSy = sy;
+      _bridgeCall(() => _bridge.stampAt(capSx, capSy));
+      _mirrorAccDist -= spacing;
+    }
+
+    _mirrorLastPoint = mirror;
+  }
 
   Future<void> _loadImageFile(String path) async {
     final bytes = await File(path).readAsBytes();
