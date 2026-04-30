@@ -179,19 +179,6 @@ void StrokeEngine::beginStroke(const Point& p, const BrushParams& brush,
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &currentFBO);
     layerFBO_ = (GLuint)currentFBO;
 
-    if (brush_.isEraser) {
-        // Borrador: usar stroke buffer para acumular máscara con GL_MAX.
-        // Esto elimina los círculos visibles en stamps superpuestos con opacidad parcial.
-        if (ensureStrokeFBO(cw, ch) && strokeFBO_) {
-            glBindFramebuffer(GL_FRAMEBUFFER, strokeFBO_);
-            glViewport(0, 0, cw, ch);
-            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-        } else {
-            // Fallback: render directo (acepta círculos)
-        }
-    }
-
     renderStamp(p);
 }
 
@@ -223,13 +210,7 @@ bool StrokeEngine::addPoint(const Point& p) {
 
 void StrokeEngine::endStroke() {
     active_ = false;
-    if (brush_.isEraser && strokeFBO_ && compositeProgram_) {
-        // Componer la máscara de borrado acumulada sobre la capa real.
-        compositeStrokeToLayer(layerFBO_);
-        // Restaurar FBO de la capa como destino activo.
-        glBindFramebuffer(GL_FRAMEBUFFER, layerFBO_);
-        glViewport(0, 0, canvasW_, canvasH_);
-    }
+    // Direct dstOut rendering — no composite needed.
 }
 void StrokeEngine::cancelStroke() { active_ = false; }
 
@@ -277,39 +258,8 @@ void StrokeEngine::renderStampAt(float x, float y, float /*pressure*/, float dia
 
     glEnable(GL_BLEND);
     if (brush_.isEraser) {
-        // ── PASO 1: acumular máscara en strokeFBO con GL_MAX ────────────
-        // Stamps superpuestos toman el máximo (no se acumulan).
-        if (strokeFBO_) {
-            glBindFramebuffer(GL_FRAMEBUFFER, strokeFBO_);
-            glViewport(0, 0, canvasW_, canvasH_);
-
-            glUseProgram(eraserProgram_);
-            glEnable(GL_BLEND);
-            glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
-            glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ONE);
-
-            glUniform2f(glGetUniformLocation(eraserProgram_, "u_center"),     x, y);
-            glUniform1f(glGetUniformLocation(eraserProgram_, "u_diameter"),   diameter);
-            glUniform2f(glGetUniformLocation(eraserProgram_, "u_canvasSize"), (float)canvasW_, (float)canvasH_);
-            glUniform1f(glGetUniformLocation(eraserProgram_, "u_hardness"),   brush_.hardness);
-            glUniform1f(glGetUniformLocation(eraserProgram_, "u_opacity"),    1.0f); // sin opacidad aquí
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, getBrushTexture());
-            glUniform1i(glGetUniformLocation(eraserProgram_, "u_brush"), 0);
-            glBindVertexArray(quadVAO_);
-            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-            glBindVertexArray(0);
-            glDisable(GL_BLEND);
-            glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
-
-            // Restaurar layerFBO para el paso 2 (preview en tiempo real)
-            glBindFramebuffer(GL_FRAMEBUFFER, layerFBO_);
-            glViewport(0, 0, canvasW_, canvasH_);
-        }
-
-        // ── PASO 2: preview directo en layerFBO (con dstOut normal) ─────
-        // El usuario ve el progreso en tiempo real. En endStroke se revierte
-        // y se aplica el strokeFBO limpio (sin círculos).
+        // Borrador: dstOut directo en layerFBO.
+        // Lo que se ve en tiempo real = resultado final exacto. WYSIWYG.
         glEnable(GL_BLEND);
         glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
         glBlendFuncSeparate(GL_ZERO, GL_ONE,
