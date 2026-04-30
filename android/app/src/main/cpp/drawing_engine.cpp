@@ -88,6 +88,7 @@ struct DrawingEngine::Impl {
     std::deque<Command> redoStack;
     Command pendingCmd;          // captura "before" al inicio del trazo
     bool    capturingStroke = false;
+    bool    pendingIsEraser = false;  // para orquestar revert+composite en endStroke
 
     // Bounding box acumulado del trazo actual
     float strokeMinX = 1e9f, strokeMinY = 1e9f;
@@ -314,6 +315,22 @@ void DrawingEngine::beginStroke(int layerId, const Point& p,
     impl_->strokeMaxX = p.x; impl_->strokeMaxY = p.y;
     impl_->capturingStroke = true;
 
+    // Para el borrador: capturar el estado pre-stroke completo.
+    // En endStroke se revierte + composita el strokeFBO limpio.
+    impl_->pendingIsEraser = brush.isEraser;
+    if (brush.isEraser) {
+        int cw = impl_->cfg.canvasWidth;
+        int ch = impl_->cfg.canvasHeight;
+        impl_->layerMgr->bindActiveLayer();
+        impl_->pendingCmd.captureRegion(
+            layer->fbo,
+            cw / 2, ch / 2, cw, ch,
+            cw, ch,
+            impl_->pendingCmd.before
+        );
+        impl_->layerMgr->unbindLayer();
+    }
+
     impl_->layerMgr->bindActiveLayer();
 
     // DIAGNOSTIC: capturar viewport real ANTES de renderizar el stamp
@@ -358,6 +375,22 @@ void DrawingEngine::endStroke() {
     if (!impl_->makeCurrent()) return;
 
     impl_->strokeEng->endStroke();
+
+    // Para el borrador: revertir el preview directo y aplicar el strokeFBO limpio.
+    // El preview en tiempo real tenía círculos (dstOut directo); el strokeFBO
+    // acumuló GL_MAX → resultado limpio. Se revierte y composita de una vez.
+    if (impl_->pendingIsEraser && !impl_->pendingCmd.before.empty()) {
+        auto* layer = impl_->layerMgr->getLayer(impl_->pendingCmd.layerId);
+        if (layer) {
+            impl_->layerMgr->bindActiveLayer();
+            // Revertir layer al estado pre-stroke
+            impl_->pendingCmd.restoreRegion(layer->fbo, impl_->pendingCmd.before);
+            // Aplicar strokeFBO (máscara GL_MAX) con la opacidad del usuario
+            impl_->strokeEng->compositeStrokeToLayer(layer->fbo);
+            impl_->layerMgr->unbindLayer();
+        }
+        impl_->pendingIsEraser = false;
+    }
 
     // Guardar en undo stack
     if (impl_->capturingStroke) {

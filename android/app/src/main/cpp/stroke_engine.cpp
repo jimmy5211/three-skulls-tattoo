@@ -272,28 +272,48 @@ void StrokeEngine::renderStamp(const Point& p, float diameterOverride) {
 // RGB: src-over normal. Alpha: GL_MAX → sin acumulación "perlada".
 
 void StrokeEngine::renderStampAt(float x, float y, float /*pressure*/, float diameter) {
-    // Para el borrador con stroke buffer: asegurar que se dibuje en strokeFBO, no en layerFBO.
-    if (brush_.isEraser && strokeFBO_) {
-        glBindFramebuffer(GL_FRAMEBUFFER, strokeFBO_);
-        glViewport(0, 0, canvasW_, canvasH_);
-    }
     GLuint prog = brush_.isEraser ? eraserProgram_ : strokeProgram_;
     glUseProgram(prog);
 
     glEnable(GL_BLEND);
     if (brush_.isEraser) {
+        // ── PASO 1: acumular máscara en strokeFBO con GL_MAX ────────────
+        // Stamps superpuestos toman el máximo (no se acumulan).
         if (strokeFBO_) {
-            // Dentro del stroke buffer: acumular la máscara Gaussian con GL_MAX.
-            // Stamps superpuestos solo toman el valor máximo → sin acumulación.
+            glBindFramebuffer(GL_FRAMEBUFFER, strokeFBO_);
+            glViewport(0, 0, canvasW_, canvasH_);
+
+            glUseProgram(eraserProgram_);
+            glEnable(GL_BLEND);
             glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
-            glBlendFuncSeparate(GL_ONE, GL_ZERO,   // RGB: no importa
-                                GL_ONE, GL_ONE);   // Alpha: max(src.a, dst.a)
-        } else {
-            // Fallback directo sin stroke buffer
+            glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ONE);
+
+            glUniform2f(glGetUniformLocation(eraserProgram_, "u_center"),     x, y);
+            glUniform1f(glGetUniformLocation(eraserProgram_, "u_diameter"),   diameter);
+            glUniform2f(glGetUniformLocation(eraserProgram_, "u_canvasSize"), (float)canvasW_, (float)canvasH_);
+            glUniform1f(glGetUniformLocation(eraserProgram_, "u_hardness"),   brush_.hardness);
+            glUniform1f(glGetUniformLocation(eraserProgram_, "u_opacity"),    1.0f); // sin opacidad aquí
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, getBrushTexture());
+            glUniform1i(glGetUniformLocation(eraserProgram_, "u_brush"), 0);
+            glBindVertexArray(quadVAO_);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            glBindVertexArray(0);
+            glDisable(GL_BLEND);
             glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
-            glBlendFuncSeparate(GL_ZERO, GL_ONE,
-                                GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+
+            // Restaurar layerFBO para el paso 2 (preview en tiempo real)
+            glBindFramebuffer(GL_FRAMEBUFFER, layerFBO_);
+            glViewport(0, 0, canvasW_, canvasH_);
         }
+
+        // ── PASO 2: preview directo en layerFBO (con dstOut normal) ─────
+        // El usuario ve el progreso en tiempo real. En endStroke se revierte
+        // y se aplica el strokeFBO limpio (sin círculos).
+        glEnable(GL_BLEND);
+        glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+        glBlendFuncSeparate(GL_ZERO, GL_ONE,
+                            GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
     } else {
         glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
