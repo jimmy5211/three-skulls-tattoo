@@ -603,4 +603,14 @@ void DrawingEngine::setSymmetry(bool enabled, int axis) {
         impl_->strokeEng->setSymmetry(enabled, axis);
 }
 
+void DrawingEngine::stampAt(float x, float y) {
+    // stampAt se llama desde el GL thread (glHandler) mientras un stroke está activo.
+    // El contexto ya está activo — no se necesita makeCurrent/doneCurrent.
+    // bindActiveLayer restaura el FBO de la capa para que renderStampAt escriba en ella.
+    if (!ready_ || !impl_->strokeEng->isActive()) return;
+    impl_->layerMgr->bindActiveLayer();
+    impl_->strokeEng->stampAt(x, y);
+    impl_->layerMgr->unbindLayer();
+}
+
 } // namespace tsk
