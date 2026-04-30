@@ -57,6 +57,35 @@ static const char* kEraserFrag =
 "    fragColor  = vec4(0.0, 0.0, 0.0, u_opacity * soft);\n"
 "}\n";
 
+// Composite shader para borrador: aplica el stroke buffer como dstOut uniforme.
+// El stroke buffer acumula la máscara de borrado (GL_MAX), luego se aplica de una vez
+// con la opacidad del usuario → sin círculos visibles por superposición de stamps.
+static const char* kCompositeVert =
+"#version 300 es\n"
+"precision highp float;\n"
+"layout(location = 0) in vec2 a_pos;\n"
+"layout(location = 1) in vec2 a_uv;\n"
+"out vec2 v_uv;\n"
+"void main() {\n"
+"    gl_Position = vec4(a_pos * 2.0, 0.0, 1.0);\n"
+"    v_uv = a_uv;\n"
+"}\n";
+
+// Lee la máscara acumulada del stroke buffer y aplica dstOut con opacidad.
+// result.a = dst.a * (1.0 - mask * u_opacity)
+static const char* kCompositeEraserFrag =
+"#version 300 es\n"
+"precision highp float;\n"
+"uniform sampler2D u_mask;\n"  // stroke buffer (máscara de borrado acumulada)
+"uniform float     u_opacity;\n"
+"layout(location = 0) out vec4 fragColor;\n"
+"in vec2 v_uv;\n"
+"void main() {\n"
+"    float mask = texture(u_mask, v_uv).a;\n"
+"    // dstOut uniforme: borra exactamente u_opacity en toda la zona del stamp\n"
+"    fragColor = vec4(0.0, 0.0, 0.0, mask * u_opacity);\n"
+"}\n";
+
 static const float kQuad[] = {
     -0.5f, -0.5f,  0.0f, 0.0f,
      0.5f, -0.5f,  1.0f, 0.0f,
@@ -85,14 +114,57 @@ void StrokeEngine::destroy() {
     brushTextures_.clear();
 }
 
-bool StrokeEngine::ensureStrokeFBO(int, int) { return true; }
+bool StrokeEngine::ensureStrokeFBO(int w, int h) {
+    if (strokeFBO_ && strokeW_ == w && strokeH_ == h) return true;
+    destroyStrokeFBO();
+    glGenFramebuffers(1, &strokeFBO_);
+    glGenTextures(1, &strokeTex_);
+    glBindTexture(GL_TEXTURE_2D, strokeTex_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindFramebuffer(GL_FRAMEBUFFER, strokeFBO_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, strokeTex_, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        destroyStrokeFBO(); return false;
+    }
+    strokeW_ = w; strokeH_ = h;
+    return true;
+}
 void StrokeEngine::destroyStrokeFBO() {
     if (strokeTex_) { glDeleteTextures(1, &strokeTex_);     strokeTex_ = 0; }
     if (strokeFBO_) { glDeleteFramebuffers(1, &strokeFBO_); strokeFBO_ = 0; }
     strokeW_ = strokeH_ = 0;
 }
-void StrokeEngine::compositeStrokeToLayer(GLuint) {}
-bool StrokeEngine::initCompositeShader() { return true; }
+void StrokeEngine::compositeStrokeToLayer(GLuint layerFBO) {
+    if (!compositeProgram_ || !strokeFBO_ || !strokeTex_) return;
+    glBindFramebuffer(GL_FRAMEBUFFER, layerFBO);
+    glViewport(0, 0, strokeW_, strokeH_);
+    glUseProgram(compositeProgram_);
+    // dstOut: result.a = dst.a * (1 - mask * opacity)
+    glEnable(GL_BLEND);
+    glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+    glBlendFuncSeparate(GL_ZERO, GL_ONE,           // RGB: mantener color destino
+                        GL_ZERO, GL_ONE_MINUS_SRC_ALPHA); // Alpha: dst.a * (1-src.a)
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, strokeTex_);
+    glUniform1i(glGetUniformLocation(compositeProgram_, "u_mask"), 0);
+    glUniform1f(glGetUniformLocation(compositeProgram_, "u_opacity"), color_.a);
+    glBindVertexArray(quadVAO_);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+    glDisable(GL_BLEND);
+    glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+}
+bool StrokeEngine::initCompositeShader() {
+    GLuint cv = compileShader(GL_VERTEX_SHADER,   kCompositeVert);
+    GLuint cf = compileShader(GL_FRAGMENT_SHADER, kCompositeEraserFrag);
+    if (!cv || !cf) { if (cv) glDeleteShader(cv); if (cf) glDeleteShader(cf); return false; }
+    compositeProgram_ = linkProgram(cv, cf);
+    return compositeProgram_ != 0;
+}
 
 void StrokeEngine::beginStroke(const Point& p, const BrushParams& brush,
                                 const Color& color, int cw, int ch) {
@@ -106,6 +178,20 @@ void StrokeEngine::beginStroke(const Point& p, const BrushParams& brush,
     GLint currentFBO = 0;
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &currentFBO);
     layerFBO_ = (GLuint)currentFBO;
+
+    if (brush_.isEraser) {
+        // Borrador: usar stroke buffer para acumular máscara con GL_MAX.
+        // Esto elimina los círculos visibles en stamps superpuestos con opacidad parcial.
+        if (ensureStrokeFBO(cw, ch) && strokeFBO_) {
+            glBindFramebuffer(GL_FRAMEBUFFER, strokeFBO_);
+            glViewport(0, 0, cw, ch);
+            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+        } else {
+            // Fallback: render directo (acepta círculos)
+        }
+    }
+
     renderStamp(p);
 }
 
@@ -135,10 +221,20 @@ bool StrokeEngine::addPoint(const Point& p) {
     return rendered;
 }
 
-void StrokeEngine::endStroke()    { active_ = false; }
+void StrokeEngine::endStroke() {
+    active_ = false;
+    if (brush_.isEraser && strokeFBO_ && compositeProgram_) {
+        // Componer la máscara de borrado acumulada sobre la capa real.
+        compositeStrokeToLayer(layerFBO_);
+        // Restaurar FBO de la capa como destino activo.
+        glBindFramebuffer(GL_FRAMEBUFFER, layerFBO_);
+        glViewport(0, 0, canvasW_, canvasH_);
+    }
+}
 void StrokeEngine::cancelStroke() { active_ = false; }
 
 // ── Stamp directo sin interpolación (para espejo del borrador desde Dart) ──
+// renderStampAt ya maneja el binding al strokeFBO si brush_.isEraser.
 
 void StrokeEngine::stampAt(float x, float y) {
     if (!active_) return;
@@ -176,14 +272,28 @@ void StrokeEngine::renderStamp(const Point& p, float diameterOverride) {
 // RGB: src-over normal. Alpha: GL_MAX → sin acumulación "perlada".
 
 void StrokeEngine::renderStampAt(float x, float y, float /*pressure*/, float diameter) {
+    // Para el borrador con stroke buffer: asegurar que se dibuje en strokeFBO, no en layerFBO.
+    if (brush_.isEraser && strokeFBO_) {
+        glBindFramebuffer(GL_FRAMEBUFFER, strokeFBO_);
+        glViewport(0, 0, canvasW_, canvasH_);
+    }
     GLuint prog = brush_.isEraser ? eraserProgram_ : strokeProgram_;
     glUseProgram(prog);
 
     glEnable(GL_BLEND);
     if (brush_.isEraser) {
-        glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
-        glBlendFuncSeparate(GL_ZERO, GL_ONE,
-                            GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+        if (strokeFBO_) {
+            // Dentro del stroke buffer: acumular la máscara Gaussian con GL_MAX.
+            // Stamps superpuestos solo toman el valor máximo → sin acumulación.
+            glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
+            glBlendFuncSeparate(GL_ONE, GL_ZERO,   // RGB: no importa
+                                GL_ONE, GL_ONE);   // Alpha: max(src.a, dst.a)
+        } else {
+            // Fallback directo sin stroke buffer
+            glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+            glBlendFuncSeparate(GL_ZERO, GL_ONE,
+                                GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+        }
     } else {
         glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
@@ -286,7 +396,10 @@ bool StrokeEngine::initShaders() {
     eraserProgram_ = make(kStrokeVert, kEraserFrag);
     if (!eraserProgram_) return false;
     LOGI("Eraser program OK (%u)", eraserProgram_);
-    compositeProgram_ = 0;
+    if (!initCompositeShader()) {
+        LOGE("Composite shader failed — eraser will still work without stroke buffer");
+        // No fatal: el borrador fallback usa el blend directo
+    }
     return true;
 }
 
