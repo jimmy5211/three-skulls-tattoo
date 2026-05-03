@@ -3466,8 +3466,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       color: isActive
                           ? Colors.white.withOpacity(0.9)
                           : _textSecondary,
-                      strokeWidth:
-                          brush.size.clamp(1, 8),
+                      strokeWidth: brush.size.clamp(2, 7),
+                      brushId: brush.id,
                       isDotwork: brush.type ==
                           StrokeType.dotwork,
                     ),
@@ -5578,49 +5578,131 @@ class _BrushLinePainter extends CustomPainter {
   final Color color;
   final double strokeWidth;
   final bool isDotwork;
+  final String brushId;
 
   _BrushLinePainter({
     required this.color,
     required this.strokeWidth,
     this.isDotwork = false,
+    this.brushId = '',
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-        ..color = this.color
-        ..strokeWidth = this.strokeWidth
-        ..strokeCap = StrokeCap.round
-        ..style = PaintingStyle.stroke;
+    final w = size.width;
+    final h = size.height;
+    final mid = h / 2;
 
-    if (this.isDotwork){
-      paint.style = PaintingStyle.fill;
-      double x = 2;
-      while (x < size.width - 2) {
-        canvas.drawCircle(
-          Offset(x, size.height / 2),
-          this.strokeWidth / 2,
-          paint,
-        );
-        x += this.strokeWidth * 2.5;
+    // Base path — curva suave que cruza el widget
+    final path = Path();
+    path.moveTo(0, h * 0.7);
+    path.cubicTo(w * 0.25, h * 0.1, w * 0.55, h * 0.9, w * 0.82, h * 0.2);
+    path.lineTo(w, mid);
+
+    final id = brushId;
+
+    if (isDotwork) {
+      // Dotwork: puntos equidistantes
+      final p = Paint()..color = color..style = PaintingStyle.fill;
+      double x = 3;
+      while (x < w - 3) {
+        canvas.drawCircle(Offset(x, mid), strokeWidth / 2, p);
+        x += strokeWidth * 2.8;
       }
       return;
     }
 
-    final path = Path();
-    path.moveTo(0, size.height * 0.75);
-    path.cubicTo(
-      size.width * 0.2, size.height * 0.1,
-      size.width * 0.5, size.height * 0.95,
-      size.width * 0.8, size.height * 0.2,
-    );
-    path.lineTo(size.width, size.height * 0.5);
-    canvas.drawPath(path, paint);
+    // ── Categoría-specific rendering ─────────────────────────────
+    if (id.startsWith('aero_')) {
+      // Aerógrafo: borde difuso (capas con opacidad decreciente)
+      for (double r = strokeWidth * 1.5; r >= 1; r -= 2) {
+        canvas.drawPath(path, Paint()
+          ..color = color.withOpacity(0.08)
+          ..strokeWidth = r * 2
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke);
+      }
+      canvas.drawPath(path, Paint()
+        ..color = color.withOpacity(0.6)
+        ..strokeWidth = strokeWidth * 0.5
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke);
+
+    } else if (id.startsWith('car_')) {
+      // Carboncillo: trazo irregular (varias líneas con offset)
+      final rng = [0.3, -0.5, 0.8, -0.2, 0.6];
+      for (int i = 0; i < 3; i++) {
+        final off = rng[i] * strokeWidth * 0.4;
+        final p2 = Path();
+        p2.moveTo(0, h * 0.7 + off);
+        p2.cubicTo(w*0.25, h*0.1+off, w*0.55, h*0.9+off, w*0.82, h*0.2+off);
+        p2.lineTo(w, mid + off);
+        canvas.drawPath(p2, Paint()
+          ..color = color.withOpacity(0.55 + i * 0.15)
+          ..strokeWidth = strokeWidth * (0.4 + i * 0.2)
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke);
+      }
+
+    } else if (id.startsWith('cal_')) {
+      // Caligrafía: trazo con grosor variable (presión simulada)
+      final metrics = path.computeMetrics().first;
+      final total = metrics.length;
+      int segments = 20;
+      for (int i = 0; i < segments; i++) {
+        final t0 = (i / segments) * total;
+        final t1 = ((i + 1) / segments) * total;
+        final seg = metrics.extractPath(t0, t1);
+        // Grosor varía: más grueso en el centro
+        final pressure = math.sin((i / segments) * math.pi);
+        canvas.drawPath(seg, Paint()
+          ..color = color
+          ..strokeWidth = strokeWidth * (0.3 + pressure * 0.9)
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke);
+      }
+
+    } else if (id.startsWith('lum_')) {
+      // Luminancia: trazo con glow (halo brillante)
+      canvas.drawPath(path, Paint()
+        ..color = color.withOpacity(0.15)
+        ..strokeWidth = strokeWidth * 3
+        ..strokeCap = StrokeCap.round
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4)
+        ..style = PaintingStyle.stroke);
+      canvas.drawPath(path, Paint()
+        ..color = color.withOpacity(0.9)
+        ..strokeWidth = strokeWidth * 0.6
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke);
+
+    } else if (id.startsWith('ret_')) {
+      // Retoque: trazo suave con blur leve
+      canvas.drawPath(path, Paint()
+        ..color = color.withOpacity(0.25)
+        ..strokeWidth = strokeWidth * 2
+        ..strokeCap = StrokeCap.round
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2)
+        ..style = PaintingStyle.stroke);
+      canvas.drawPath(path, Paint()
+        ..color = color.withOpacity(0.75)
+        ..strokeWidth = strokeWidth * 0.7
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke);
+
+    } else {
+      // Default: trazo limpio estándar
+      canvas.drawPath(path, Paint()
+        ..color = color
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke);
+    }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) =>
-      false;
+  bool shouldRepaint(_BrushLinePainter old) =>
+      old.brushId != brushId || old.strokeWidth != strokeWidth;
 }
 
 // ─── SELECTION OVERLAY PAINTER ───────────────────────────────
