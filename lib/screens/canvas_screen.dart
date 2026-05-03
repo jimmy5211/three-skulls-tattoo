@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import '../services/native_canvas_bridge.dart';
+import '../services/gpu_brush_loader.dart';
 import '../controllers/canvas_controller.dart';
 import '../widgets/canvas_painter.dart';
 import '../widgets/layer_panel.dart';
@@ -326,6 +327,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
       // de delay para que el motor GL complete la inicialización.
       // Sin esto: canvas oscuro al inicio hasta que el usuario dibuje.
       _retryExportCanvas(attempts: 5, delayMs: 80);
+
+      // Fase 4: cargar brush tips PNG al GPU en background
+      // No bloquea el inicio — si un pincel se usa antes de que cargue
+      // el motor usa el Gaussian default automáticamente.
+      GpuBrushLoader.loadAll(_bridge).then((_) {
+        if (mounted) setState(() {}); // repaint brush panel
+      });
 
       debugPrint('[NativeEngine] ✅ Motor C++ Offscreen listo');
       FirebaseCrashlytics.instance.setCustomKey('renderer', 'gpu_cpp_offscreen');
@@ -4221,15 +4229,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 _confirmedSingleUpdates = 0; // reset — 1 update confirmado es suficiente
               _mirrorLastPoint = null;
               _mirrorAccDist  = 0.0;
+              final _gpuTexId = GpuBrushLoader.shapeTexId(_brush.id);
               _bridgeCall(() => _bridge.beginStroke(
-                layerId:   _nativeLayer(_controller.activeLayerId),
+                layerId:    _nativeLayer(_controller.activeLayerId),
                 x: _dbgX, y: _dbgY,
-                size:      _brush.size + 5.0,
-                opacity:   _brush.opacity,
-                hardness:  _brush.hardness,
-                spacing:   0.08,
-                isEraser:  _brush.type == StrokeType.eraser,
-                color:     _controller.activeColor,
+                size:       _brush.size + 5.0,
+                opacity:    _brush.opacity,
+                hardness:   _brush.hardness,
+                spacing:    _brush.spacing * 0.1, // BrushModel.spacing → GPU fraction
+                isEraser:   _brush.type == StrokeType.eraser,
+                brushTexId: _gpuTexId,             // -1 = Gaussian default
+                color:      _controller.activeColor,
               ));
               for (final p in _pendingPoints.skip(1)) {
                 _controller.continueStroke(p);
