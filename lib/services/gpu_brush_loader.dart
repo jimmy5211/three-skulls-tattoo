@@ -71,9 +71,15 @@ class GpuBrushLoader {
       final texId = await bridge.loadBrushTexture(dst, 256, 256);
       if (texId >= 0) {
         _shapeTexIds[brushId] = texId;
+        // ignore: avoid_print
+        print('[GpuBrushLoader] ✅ $brushId → texId=$texId');
+      } else {
+        // ignore: avoid_print
+        print('[GpuBrushLoader] ⚠️ $brushId → texId=-1 (upload falló)');
       }
-    } catch (_) {
-      // Textura no disponible → el motor usará el Gaussian default
+    } catch (e) {
+      // ignore: avoid_print
+      print('[GpuBrushLoader] ❌ $brushId → error: $e');
     }
   }
 
