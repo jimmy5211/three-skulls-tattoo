@@ -222,7 +222,9 @@ object DrawingEngineJNI {
 
     fun loadBrushTexture(data: ByteArray, w: Int, h: Int, onDone: (Int) -> Unit) {
         glHandler.post {
+            ensureCurrent() // FIX: GL context debe estar activo para glGenTextures/glTexImage2D
             val id = if (initialized) jniLoadBrushTexture(data, w, h) else -1
+            Log.i(TAG, "loadBrushTexture: ${w}x${h} → texId=$id")
             android.os.Handler(android.os.Looper.getMainLooper()).post { onDone(id) }
         }
     }
