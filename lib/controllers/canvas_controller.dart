@@ -733,17 +733,16 @@ class CanvasController extends ChangeNotifier {
     if (idx == -1) return;
     final current = canvasImages[idx].currentEraseStroke;
     if (current == null) return;
-    if (current.points.length >= 200) return; // safety
+    if (current.points.length >= 500) return; // safety
     final last = current.points.last;
-    // Distancia mínima: 30% del radio o 4px mínimo para suavidad
-    final minDist = max(current.radius * 0.3, 4.0);
+    // Distancia mínima: 2px en canvas. A zoom alto el dedo mueve poco en coords canvas
+    // → minDist grande causaba lag severo. Con 2px el overlay es fluido a cualquier zoom.
+    const minDist = 2.0;
     if ((last - point).distance < minDist) return;
     current.points.add(point);
-    // Solo notificar cada 3 puntos para reducir repaints sin perder fluidez
-    if (current.points.length % 3 == 0) {
-      _imagesChanged = true;
-      notifyListeners();
-    }
+    // Notificar en CADA punto para overlay 100% en tiempo real
+    _imagesChanged = true;
+    notifyListeners();
   }
 
   void endEraseOnImage(String id) {
