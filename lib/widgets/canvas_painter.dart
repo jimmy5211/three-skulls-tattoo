@@ -214,6 +214,8 @@ class CanvasPainter extends CustomPainter {
     if (erase.points.isEmpty) return;
     final hardness = erase.hardness.clamp(0.0, 1.0);
     // Una sola operación drawPath — evita cientos de drawCircle/gradientes
+    // opacity = hardness (0=suave, 1=duro). El OPA del slider afecta el radio
+    // del borrador (enviado como radius desde canvas_screen).
     final opacity = hardness >= 0.99 ? 1.0 : hardness.clamp(0.1, 1.0);
     final paint = Paint()
       ..blendMode = BlendMode.dstOut
