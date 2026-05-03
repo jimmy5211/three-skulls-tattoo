@@ -758,6 +758,15 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Cancela el borrado en curso sin guardarlo (para cuando el gesto se convierte en zoom).
+  void cancelEraseOnImage(String id) {
+    final idx = canvasImages.indexWhere((img) => img.id == id);
+    if (idx == -1) return;
+    canvasImages[idx].currentEraseStroke = null; // descartar sin añadir a eraseStrokes
+    _imagesChanged = true;
+    notifyListeners();
+  }
+
   void undoLastEraseOnImage(String id) {
     final idx = canvasImages.indexWhere((img) => img.id == id);
     if (idx == -1) return;
