@@ -114,6 +114,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   // ─── BORRADOR EN IMAGEN ──────────────────────────────────
   String? _erasingImageId;
+  // Contador de updates consecutivos con 1 solo dedo confirmado.
+  // beginStroke GPU solo se envía cuando >= 2 updates confirmados → elimina phantoms
+  // sin necesidad de capturar/revertir pixels (que es lento).
+  int _confirmedSingleUpdates = 0;
+
   // Tracking de espaciado para el espejo del borrador (simetría).
   // Sin esto, stampAt se llama en cada evento táctil → mucho más denso que el trazo principal.
   Offset? _mirrorLastPoint;
@@ -3663,7 +3668,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _mirrorLastPoint = null;
             _mirrorAccDist   = 0.0;
             _controller.cancelStroke();
-            // Cancelar GPU — cancelStroke ahora revierte el stamp inicial (anti-phantom)
+            _confirmedSingleUpdates = 0;
             if (_nativeReady) _bridgeCall(() => _bridge.cancelStroke());
             // Limpiar erasingImageId para que onScaleUpdate no siga borrando la imagen
             if (_erasingImageId != null) {
@@ -3914,7 +3919,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _pendingStrokePoint = null;
               _controller.startEraseOnImage(
                 imgUnder.id, cp,
-                _controller.activeBrush.size / _scale,
+                // El slider OPA afecta el radio efectivo del borrador sobre imágenes.
+                // opacity=0.5 → radio a la mitad → efecto más suave y preciso.
+                (_controller.activeBrush.size / _scale) *
+                    _controller.activeBrush.opacity.clamp(0.05, 1.0),
                 hardness: _controller.activeBrush.hardness,
               );
               return;
@@ -4181,7 +4189,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _erasingImageId = imgUnder.id;
               _controller.startEraseOnImage(
                 imgUnder.id, cp,
-                _controller.activeBrush.size / _scale,
+                // El slider OPA afecta el radio efectivo del borrador sobre imágenes.
+                // opacity=0.5 → radio a la mitad → efecto más suave y preciso.
+                (_controller.activeBrush.size / _scale) *
+                    _controller.activeBrush.opacity.clamp(0.05, 1.0),
                 hardness: _controller.activeBrush.hardness,
               );
               return;
@@ -4215,6 +4226,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   'DART canvasSize=${_controller.canvasSize.width.toInt()}x${_controller.canvasSize.height.toInt()}\n'
                   'scale=$_scale DPR=${MediaQuery.of(context).devicePixelRatio.toStringAsFixed(2)}';
 
+              _confirmedSingleUpdates++;
+              if (_confirmedSingleUpdates < 2) {
+                // No enviamos beginStroke todavía — esperamos un update más para
+                // confirmar que es realmente un trazo y no el inicio de un zoom.
+                _controller.startStroke(_pendingPoints.first);
+                for (final p in _pendingPoints.skip(1)) _controller.continueStroke(p);
+                return;
+              }
+              _confirmedSingleUpdates = 0;
               _mirrorLastPoint = null;
               _mirrorAccDist  = 0.0;
               _bridgeCall(() => _bridge.beginStroke(
@@ -4331,6 +4351,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     final _strokeSnapshot = _controller.currentStroke;
                     // FIX SIMETRÍA: el mirror ya lo maneja StrokeEngine C++
                     // (jniSetSymmetry → renderStampAt duplicado). No hay replay Dart.
+                    _confirmedSingleUpdates = 0;
                     _mirrorLastPoint = null;
                     _mirrorAccDist  = 0.0;
                     _bridge.endStroke().then((img) {
