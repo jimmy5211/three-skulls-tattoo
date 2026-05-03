@@ -3919,11 +3919,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _pendingStrokePoint = null;
               _controller.startEraseOnImage(
                 imgUnder.id, cp,
-                // El slider OPA afecta el radio efectivo del borrador sobre imágenes.
-                // opacity=0.5 → radio a la mitad → efecto más suave y preciso.
-                (_controller.activeBrush.size / _scale) *
-                    _controller.activeBrush.opacity.clamp(0.05, 1.0),
-                hardness: _controller.activeBrush.hardness,
+                _controller.activeBrush.size / _scale,
+                // hardness * opacity = fuerza real del borrado (sin modificar el modelo EraseStroke)
+                hardness: (_controller.activeBrush.hardness *
+                    _controller.activeBrush.opacity).clamp(0.05, 1.0),
               );
               return;
             }
@@ -4189,11 +4188,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _erasingImageId = imgUnder.id;
               _controller.startEraseOnImage(
                 imgUnder.id, cp,
-                // El slider OPA afecta el radio efectivo del borrador sobre imágenes.
-                // opacity=0.5 → radio a la mitad → efecto más suave y preciso.
-                (_controller.activeBrush.size / _scale) *
-                    _controller.activeBrush.opacity.clamp(0.05, 1.0),
-                hardness: _controller.activeBrush.hardness,
+                _controller.activeBrush.size / _scale,
+                // hardness * opacity = fuerza real del borrado (sin modificar el modelo EraseStroke)
+                hardness: (_controller.activeBrush.hardness *
+                    _controller.activeBrush.opacity).clamp(0.05, 1.0),
               );
               return;
             }
@@ -4226,15 +4224,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   'DART canvasSize=${_controller.canvasSize.width.toInt()}x${_controller.canvasSize.height.toInt()}\n'
                   'scale=$_scale DPR=${MediaQuery.of(context).devicePixelRatio.toStringAsFixed(2)}';
 
-              _confirmedSingleUpdates++;
-              if (_confirmedSingleUpdates < 2) {
-                // No enviamos beginStroke todavía — esperamos un update más para
-                // confirmar que es realmente un trazo y no el inicio de un zoom.
-                _controller.startStroke(_pendingPoints.first);
-                for (final p in _pendingPoints.skip(1)) _controller.continueStroke(p);
-                return;
-              }
-              _confirmedSingleUpdates = 0;
+                _confirmedSingleUpdates = 0; // reset — 1 update confirmado es suficiente
               _mirrorLastPoint = null;
               _mirrorAccDist  = 0.0;
               _bridgeCall(() => _bridge.beginStroke(
