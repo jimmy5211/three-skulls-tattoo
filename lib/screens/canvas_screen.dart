@@ -5654,7 +5654,7 @@ class _BrushLinePainter extends CustomPainter {
         final t1 = ((i + 1) / segments) * total;
         final seg = metrics.extractPath(t0, t1);
         // Grosor varía: más grueso en el centro
-        final pressure = math.sin((i / segments) * math.pi);
+        final pressure = sin((i / segments) * pi);
         canvas.drawPath(seg, Paint()
           ..color = color
           ..strokeWidth = strokeWidth * (0.3 + pressure * 0.9)
