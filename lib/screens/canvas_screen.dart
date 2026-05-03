@@ -3920,9 +3920,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _controller.startEraseOnImage(
                 imgUnder.id, cp,
                 _controller.activeBrush.size / _scale,
-                // hardness * opacity = fuerza real del borrado (sin modificar el modelo EraseStroke)
-                hardness: (_controller.activeBrush.hardness *
-                    _controller.activeBrush.opacity).clamp(0.05, 1.0),
+                // hardness field = OPA slider (fuerza del borrado)
+                // El DUR (edge blur) se aplica fijo en _drawEraseStroke hasta que
+                // canvas_image_model.dart tenga campo opacity separado.
+                hardness: _controller.activeBrush.opacity.clamp(0.05, 1.0),
               );
               return;
             }
@@ -4189,9 +4190,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _controller.startEraseOnImage(
                 imgUnder.id, cp,
                 _controller.activeBrush.size / _scale,
-                // hardness * opacity = fuerza real del borrado (sin modificar el modelo EraseStroke)
-                hardness: (_controller.activeBrush.hardness *
-                    _controller.activeBrush.opacity).clamp(0.05, 1.0),
+                // hardness field = OPA slider (fuerza del borrado)
+                // El DUR (edge blur) se aplica fijo en _drawEraseStroke hasta que
+                // canvas_image_model.dart tenga campo opacity separado.
+                hardness: _controller.activeBrush.opacity.clamp(0.05, 1.0),
               );
               return;
             }
