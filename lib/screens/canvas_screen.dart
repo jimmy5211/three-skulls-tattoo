@@ -3660,7 +3660,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _isDrawing = false;
             _pendingPoints.clear();
             _pendingStrokePoint = null;
+            _mirrorLastPoint = null;
+            _mirrorAccDist   = 0.0;
             _controller.cancelStroke();
+            // Cancelar también en el GPU para que no queden puntos fantasma
+            // cuando el segundo dedo detectado convierte el gesto en pan/zoom.
+            if (_nativeReady) _bridgeCall(() => _bridge.cancelStroke());
           }
         },
         onPointerUp: (event) {
