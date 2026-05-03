@@ -314,20 +314,6 @@ void DrawingEngine::beginStroke(int layerId, const Point& p,
     impl_->strokeMaxX = p.x; impl_->strokeMaxY = p.y;
     impl_->capturingStroke = true;
 
-    // Snapshot "before" al inicio: captureRegion de un área grande alrededor del punto.
-    // Se usa en cancelStroke para revertir el stamp inicial si el gesto se convierte en zoom.
-    // El área se expande en endStroke con el bounding box real del trazo.
-    {
-        int cw = impl_->cfg.canvasWidth;
-        int ch = impl_->cfg.canvasHeight;
-        float r = brush.size * 0.5f + 8.0f; // radio + margen
-        impl_->pendingCmd.captureRegion(layer->fbo,
-            (int)p.x, (int)p.y,
-            (int)(r * 2 + 4), (int)(r * 2 + 4),
-            cw, ch,
-            impl_->pendingCmd.before);
-    }
-
     impl_->layerMgr->bindActiveLayer();
 
     // DIAGNOSTIC: capturar viewport real ANTES de renderizar el stamp
@@ -401,23 +387,11 @@ void DrawingEngine::endStroke() {
 
 void DrawingEngine::cancelStroke() {
     if (!ready_) return;
-    if (!impl_->makeCurrent()) {
-        impl_->strokeEng->cancelStroke();
-        impl_->capturingStroke = false;
-        return;
-    }
     impl_->strokeEng->cancelStroke();
-    // Revertir el stamp inicial pintado en beginStroke para eliminar puntos fantasma.
-    // Esto ocurre cuando el usuario hace zoom justo después de tocar con un dedo.
-    if (impl_->capturingStroke && !impl_->pendingCmd.before.empty()) {
-        auto* layer = impl_->layerMgr->getLayer(impl_->pendingCmd.layerId);
-        if (layer) {
-            impl_->pendingCmd.restoreRegion(layer->fbo, impl_->pendingCmd.before);
-        }
-    }
     impl_->capturingStroke = false;
-    impl_->doneCurrent();
-    render();
+    // Sin glReadPixels ni render() — cancelStroke debe ser instantáneo.
+    // Los phantoms se previenen en Dart retrasando beginStroke GPU hasta
+    // confirmar 2 updates consecutivos con un solo dedo.
 }
 
 // ── Undo / Redo ────────────────────────────────────────────────────────
