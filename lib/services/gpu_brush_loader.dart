@@ -42,19 +42,33 @@ class GpuBrushLoader {
   static Future<void> _uploadTexture(
       NativeCanvasBridge bridge, String brushId, String assetPath) async {
     try {
-      final data   = await rootBundle.load(assetPath);
-      final bytes  = data.buffer.asUint8List();
-      // Decodificar PNG → RGBA 256×256
-      final codec  = await ui.instantiateImageCodec(
-          bytes, targetWidth: 256, targetHeight: 256);
-      final frame  = await codec.getNextFrame();
-      final img    = frame.image;
-      final rgba   = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
-      img.dispose();
-      if (rgba == null) return;
+      final data  = await rootBundle.load(assetPath);
+      final bytes = data.buffer.asUint8List();
 
-      final texId = await bridge.loadBrushTexture(
-          rgba.buffer.asUint8List(), 256, 256);
+      // Decodificar PNG → RGBA 256×256
+      final codec = await ui.instantiateImageCodec(
+          bytes, targetWidth: 256, targetHeight: 256);
+      final frame = await codec.getNextFrame();
+      final img   = frame.image;
+      final byteData = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+      img.dispose();
+      if (byteData == null) return;
+
+      // FIX CRÍTICO: el shader GPU lee el canal Alpha (texture.a) como máscara.
+      // Nuestras brush tips son PNGs grises: el shape está en R/G/B, pero Alpha=255.
+      // → Mover luminosidad (canal R) al canal Alpha para que el shader funcione.
+      // Resultado: blanco (255) = opaco, negro (0) = transparente.
+      final src  = byteData.buffer.asUint8List();
+      final dst  = Uint8List(src.length);
+      for (int i = 0; i < src.length; i += 4) {
+        final lum = src[i]; // R = luminosidad en PNG grayscale-as-RGBA
+        dst[i]     = 255;   // R (no importa — el shader usa solo A)
+        dst[i + 1] = 255;   // G
+        dst[i + 2] = 255;   // B
+        dst[i + 3] = lum;   // A = shape mask ← esto es lo que lee el shader
+      }
+
+      final texId = await bridge.loadBrushTexture(dst, 256, 256);
       if (texId >= 0) {
         _shapeTexIds[brushId] = texId;
       }
@@ -144,6 +158,23 @@ class GpuBrushLoader {
     'lumi_13': 'assets/brushes/luminancia/lumi_13_shape.png',
     'lumi_14': 'assets/brushes/luminancia/lumi_14_shape.png',
     'lumi_15': 'assets/brushes/luminancia/lumi_15_shape.png',
+
+    // ── AERÓGRAFO (aero_xx → mismas texturas de aerosoles reutilizadas) ─
+    'aero_01': 'assets/brushes/aerosoles/aers_14_shape.png', // suave
+    'aero_02': 'assets/brushes/aerosoles/aers_01_shape.png', // medio
+    'aero_03': 'assets/brushes/aerosoles/aers_03_shape.png', // duro
+    'aero_04': 'assets/brushes/aerosoles/aers_14_shape.png', // difuminado
+    'aero_05': 'assets/brushes/aerosoles/aers_14_shape.png', // niebla
+    'aero_06': 'assets/brushes/aerosoles/aers_03_shape.png', // spray fino
+    'aero_07': 'assets/brushes/aerosoles/aers_04_shape.png', // spray grueso
+    'aero_08': 'assets/brushes/aerosoles/aers_14_shape.png', // degradado
+    'aero_09': 'assets/brushes/aerosoles/aers_14_shape.png', // sombra suave
+    'aero_10': 'assets/brushes/aerosoles/aers_07_shape.png', // luz suave
+    'aero_11': 'assets/brushes/aerosoles/aers_06_shape.png', // contorno
+    'aero_12': 'assets/brushes/aerosoles/aers_14_shape.png', // nube
+    'aero_13': 'assets/brushes/aerosoles/aers_03_shape.png', // puntual
+    'aero_14': 'assets/brushes/aerosoles/aers_14_shape.png', // bruma
+    'aero_15': 'assets/brushes/aerosoles/aers_13_shape.png', // flash/chrome
 
     // ── RETOQUE ──────────────────────────────────────────────────────
     'ret_01': 'assets/brushes/retoque/ret_01_shape.png',
