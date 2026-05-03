@@ -212,11 +212,9 @@ class CanvasPainter extends CustomPainter {
 
   void _drawEraseStroke(Canvas canvas, EraseStroke erase) {
     if (erase.points.isEmpty) return;
-    final hardness = erase.hardness.clamp(0.0, 1.0);
-    // Una sola operación drawPath — evita cientos de drawCircle/gradientes
-    // opacity = hardness (0=suave, 1=duro). El OPA del slider afecta el radio
-    // del borrador (enviado como radius desde canvas_screen).
-    final opacity = hardness >= 0.99 ? 1.0 : hardness.clamp(0.1, 1.0);
+    // erase.hardness = OPA slider (canvas_screen lo pasa así temporalmente).
+    // Controla qué tanto se borra por pasada, no el suavizado del borde.
+    final opacity = erase.hardness.clamp(0.05, 1.0);
     final paint = Paint()
       ..blendMode = BlendMode.dstOut
       ..color = Colors.white.withOpacity(opacity)
@@ -825,7 +823,7 @@ class CanvasOverlayPainter extends CustomPainter {
 
   void _drawEraseStroke(Canvas canvas, EraseStroke erase) {
     if (erase.points.isEmpty) return;
-    final opacity = (erase.hardness.clamp(0.1, 1.0));
+    final opacity = erase.hardness.clamp(0.05, 1.0); // OPA slider
     final paint = Paint()
       ..blendMode = BlendMode.dstOut
       ..color = Colors.white.withOpacity(opacity)
