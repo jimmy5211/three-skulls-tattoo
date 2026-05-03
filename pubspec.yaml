@@ -84,6 +84,11 @@ flutter:
     - assets/stamps/elementos/
     - assets/stamps/industriales/
     - assets/stamps/organicos/
+    - assets/brushes/aerosoles/
+    - assets/brushes/carboncillo/
+    - assets/brushes/caligrafia/
+    - assets/brushes/luminancia/
+    - assets/brushes/retoque/
 
   fonts:
     - family: BlackOpsOne
