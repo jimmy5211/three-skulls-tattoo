@@ -3147,33 +3147,25 @@ class _CanvasScreenState extends State<CanvasScreen> {
   void _drawEraseOnCanvasNative(ui.Canvas canvas, EraseStroke erase,
       Offset imgPos, double scaleX, double scaleY) {
     if (erase.points.isEmpty) return;
-    final hardness = erase.hardness.clamp(0.0, 1.0);
-    final r = erase.radius * scaleX; // escalar radio a píxeles nativos
+    // erase.hardness = OPA slider (así lo envía canvas_screen).
+    // Controla cuánto se borra por pasada: 0.05=muy suave, 1.0=borra todo.
+    // FIX: antes se usaba como gradient stop → actuaba como dureza, no opacidad.
+    final eraseOpacity = erase.hardness.clamp(0.05, 1.0);
+    final r = erase.radius * scaleX;
 
-    // Transformar puntos de canvas coords a píxeles nativos
     Offset toNative(Offset p) => Offset(
         (p.dx - imgPos.dx) * scaleX,
         (p.dy - imgPos.dy) * scaleY,
     );
 
-    // Precompute h outside local function (math.pow not visible inside closures)
-    // Match shader: edge0 = 0.5*hardness, edge1 = 0.5 → stop = hardness
-    final _stop1 = hardness.clamp(0.0, 0.99);
     void stamp(Offset p) {
-      final np   = toNative(p);
-      final stop = _stop1;
-      if (stop <= 0.01) {
-        canvas.drawCircle(np, r,
-            Paint()..blendMode = BlendMode.dstOut
-                   ..color = Colors.white
-                   ..style = PaintingStyle.fill);
-      } else {
-        canvas.drawCircle(np, r, Paint()
-          ..shader = ui.Gradient.radial(np, r, [
-            Colors.white, Colors.white, Colors.transparent,
-          ], [0.0, stop, 1.0])
-          ..blendMode = BlendMode.dstOut);
-      }
+      final np = toNative(p);
+      // dstOut con opacity parcial: borra exactamente eraseOpacity del alpha destino.
+      // Coincide con el overlay en _drawEraseStroke (Colors.white.withOpacity(opacity)).
+      canvas.drawCircle(np, r, Paint()
+        ..blendMode = BlendMode.dstOut
+        ..color = Colors.white.withOpacity(eraseOpacity)
+        ..style = PaintingStyle.fill);
     }
 
     if (erase.points.length == 1) { stamp(erase.points.first); return; }
