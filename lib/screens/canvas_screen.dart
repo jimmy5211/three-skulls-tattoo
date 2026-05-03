@@ -3663,9 +3663,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _mirrorLastPoint = null;
             _mirrorAccDist   = 0.0;
             _controller.cancelStroke();
-            // Cancelar también en el GPU para que no queden puntos fantasma
-            // cuando el segundo dedo detectado convierte el gesto en pan/zoom.
+            // Cancelar GPU — cancelStroke ahora revierte el stamp inicial (anti-phantom)
             if (_nativeReady) _bridgeCall(() => _bridge.cancelStroke());
+            // Limpiar erasingImageId para que onScaleUpdate no siga borrando la imagen
+            if (_erasingImageId != null) {
+              _controller.cancelEraseOnImage(_erasingImageId!);
+              setState(() => _erasingImageId = null);
+            }
           }
         },
         onPointerUp: (event) {
@@ -4158,6 +4162,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
           // ── Continuar borrado sobre imagen ───────────────
           if (_erasingImageId != null) {
+            if (_cancelStrokeImmediately || _activePointers > 1) {
+              // Segundo dedo detectado — abortar borrado de imagen
+              _controller.cancelEraseOnImage(_erasingImageId!);
+              setState(() => _erasingImageId = null);
+              return;
+            }
             _controller.continueEraseOnImage(_erasingImageId!, cp);
             return;
           }
