@@ -160,5 +160,31 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // ── Canal de optimización de batería / segundo plano ──────────────────
+        MethodChannel(messenger, "com.threeskullstattoo.app/battery")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isIgnoringBatteryOptimization" -> {
+                        val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+                        result.success(pm.isIgnoringBatteryOptimizations(packageName))
+                    }
+                    "requestIgnoreBatteryOptimization" -> {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+                            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                                val intent = android.content.Intent(
+                                    android.provider.Settings
+                                        .ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    android.net.Uri.parse("package:$packageName")
+                                )
+                                startActivity(intent)
+                            }
+                        }
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 }
