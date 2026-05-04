@@ -39,7 +39,8 @@ struct BrushParams {
     bool  isEraser = false;
     int   brushTextureId = -1;
     int   grainTextureId = -1;  // -1 = sin grano
-    float grainDepth     = 0.0f; // 0=sin grano, 1=grano total // -1 = circular por defecto
+    float grainDepth     = 0.0f; // 0=sin grano, 1=grano total
+    float flow           = 0.55f; // 0.3-0.8 acumulación (flow) // -1 = circular por defecto
 };
 
 enum class BlendMode : int {

@@ -44,9 +44,14 @@ private:
     Color       color_     = {0,0,0,1};
     int         canvasW_   = 1;
     int         canvasH_   = 1;
-    Point       lastPoint_ = {};
-    float       accDist_   = 0.0f;
-    float       lastSpeed_ = 0.0f;
+    Point       lastPoint_  = {};
+    float       accDist_    = 0.0f;
+    float       lastSpeed_  = 0.0f;
+    std::vector<Point> pointBuf_; // buffer Catmull-Rom (4 últimos puntos)
+    // Historial de 4 puntos para Catmull-Rom + suavizado
+    Point       pts_[4]     = {};
+    int         ptsCount_   = 0;
+    Point       smoothPrev_ = {};
 
     bool symmetryEnabled_ = false;
     int  symmetryAxis_    = 0;
@@ -63,6 +68,14 @@ private:
     int    strokeH_          = 0;
     GLuint compositeProgram_ = 0;
 
+    // Texturas orgánicas generadas internamente — sin depender de archivos externos
+    GLuint airbrushTex_   = 0;
+    GLuint charcoalTex_   = 0;
+    GLuint inkTex_        = 0;
+    GLuint pencilTex_     = 0;
+    GLuint glowTex_       = 0;
+    GLuint watercolorTex_ = 0;
+
     struct BrushTexEntry { int id; GLuint tex; int w, h; };
     std::vector<BrushTexEntry> brushTextures_;
     int nextBrushTexId_ = 1;
@@ -72,6 +85,8 @@ private:
     GLuint getGrainTexture() const;
 
     bool   ensureStrokeFBO(int w, int h);
+    Point  smoothPoint(const Point& prev, const Point& curr) const;
+    void   emitSegment(const Point& a, const Point& b, float size);
     void   destroyStrokeFBO();
     bool   initCompositeShader();
 
@@ -81,6 +96,7 @@ private:
     bool   initShaders();
     bool   initQuad();
     GLuint getBrushTexture() const;
+    GLuint getBrushTextureForCategory() const;
 };
 
 } // namespace tsk
