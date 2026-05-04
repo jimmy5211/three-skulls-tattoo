@@ -5942,7 +5942,7 @@ class _BrushTexturePreviewState extends State<_BrushTexturePreview> {
   @override
   void initState() {
     super.initState();
-    _loadTip();
+    // PNG tips no se usan en preview — fallback por categoría se ve mejor
   }
 
   Future<void> _loadTip() async {
