@@ -24,6 +24,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
 import '../models/stamp_model.dart';
 import '../services/device_profile.dart';
+import 'background_service_dialog.dart';
 import 'package:flutter/services.dart';
 
 enum BrushPanelTab { todos, descargados, creados, sellos }
@@ -120,6 +121,9 @@ class _CanvasScreenState extends State<CanvasScreen>
   // beginStroke GPU solo se envía cuando >= 2 updates confirmados → elimina phantoms
   // sin necesidad de capturar/revertir pixels (que es lento).
   int _confirmedSingleUpdates = 0;
+
+  // Auto-save periódico cada 2 minutos
+  Timer? _autoSaveTimer;
 
   // Tracking de espaciado para el espejo del borrador (simetría).
   // Sin esto, stampAt se llama en cada evento táctil → mucho más denso que el trazo principal.
@@ -331,6 +335,13 @@ class _CanvasScreenState extends State<CanvasScreen>
       _retryExportCanvas(attempts: 5, delayMs: 80);
       // Auto-restaurar canvas si la app fue cerrada por el sistema
       Future.delayed(const Duration(milliseconds: 500), _autoRestoreCanvas);
+      // Auto-save periódico cada 2 minutos
+      _autoSaveTimer = Timer.periodic(
+        const Duration(minutes: 2),
+        (_) => _autoSaveCanvas(),
+      );
+      // Mostrar diálogo de segundo plano la primera vez
+      Future.delayed(const Duration(seconds: 3), _checkBackgroundPermission);
 
       // Fase 4: cargar brush tips PNG al GPU en background
       // No bloquea el inicio — si un pincel se usa antes de que cargue
@@ -400,6 +411,7 @@ class _CanvasScreenState extends State<CanvasScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _autoSaveTimer?.cancel();
     _controller.removeListener(_syncLayerOpacities);
     if (_nativeReady) _bridge.destroy();
     _brushScrollController.dispose();
@@ -497,7 +509,51 @@ class _CanvasScreenState extends State<CanvasScreen>
     }
   }
 
-  static const _kAutoSaveFile = 'canvas_autosave.png';
+  static const _kAutoSaveFile        = 'canvas_autosave.png';
+  static const _kBgPermAskedKey     = 'bg_permission_asked';
+
+  /// Muestra el diálogo de segundo plano solo la primera vez.
+  Future<void> _checkBackgroundPermission() async {
+    if (!mounted) return;
+    // Verificar si ya pedimos permiso antes
+    final prefs = await _getPrefs();
+    final alreadyAsked = prefs['bg_asked'] == 'true';
+    if (alreadyAsked) return;
+    // Ya está ignorando optimización → no preguntar
+    final alreadyIgnoring =
+        await BackgroundServiceDialog.isIgnoringBatteryOptimization();
+    if (alreadyIgnoring) return;
+    if (!mounted) return;
+    final accepted = await BackgroundServiceDialog.show(context);
+    // Marcar como preguntado independiente de la respuesta
+    await _savePrefs({'bg_asked': 'true'});
+    if (accepted) {
+      await BackgroundServiceDialog.requestIgnoreBatteryOptimization();
+    }
+  }
+
+  // Prefs simples usando un archivo JSON (sin dependencia shared_preferences)
+  Future<Map<String, String>> _getPrefs() async {
+    try {
+      final dir  = await getApplicationDocumentsDirectory();
+      final file = File('\${dir.path}/prefs.json');
+      if (!await file.exists()) return {};
+      final json = await file.readAsString();
+      final map  = Map<String, dynamic>.from(
+          (json.isNotEmpty ? (jsonDecode(json) as Map) : {}));
+      return map.map((k, v) => MapEntry(k.toString(), v.toString()));
+    } catch (_) { return {}; }
+  }
+
+  Future<void> _savePrefs(Map<String, String> data) async {
+    try {
+      final dir   = await getApplicationDocumentsDirectory();
+      final file  = File('\${dir.path}/prefs.json');
+      final prefs = await _getPrefs();
+      prefs.addAll(data);
+      await file.writeAsString(jsonEncode(prefs));
+    } catch (_) {}
+  }
 
   Future<void> _autoSaveCanvas() async {
     if (!_nativeReady || !mounted) return;
