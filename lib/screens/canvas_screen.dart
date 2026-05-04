@@ -3406,18 +3406,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return 0.08; // default
   }
 
-  /// Grosor fijo del trazo de preview en el panel de pinceles.
-  /// Independiente del slider TAM — muestra cómo se ve el pincel a tamaño medio.
-  static double _previewStrokeWidth(String id) {
-    if (id.startsWith('car_')) return 5.0; // carboncillo: trazo medio visible
-    if (id.startsWith('cal_')) return 4.5; // caligrafía: variable visible
-    if (id.startsWith('aero_')) return 4.0; // aerógrafo: difuso
-    if (id.startsWith('lum_')) return 3.5; // luminancia: glow
-    if (id.startsWith('ret_')) return 4.0; // retoque: suave
-    return 3.0; // default
-  }
-
-
   /// Ancho fijo para la preview del pincel — independiente del TAM actual.
   static double _previewStrokeWidth(String id) {
     if (id.startsWith('aero_'))  return 6.0;  // aerógrafo: trazo grueso suave
