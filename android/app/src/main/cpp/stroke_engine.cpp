@@ -1,6 +1,7 @@
 #include "stroke_engine.h"
 #include <android/log.h>
 #include <cmath>
+#include <cstdlib>
 #include <algorithm>
 
 #define LOG_TAG "TSK_Stroke"
@@ -9,6 +10,8 @@
 
 namespace tsk {
 
+// ── GLSL: vertex con rotación UV ─────────────────────────────────────────────
+// u_rotation rota la textura alrededor del centro del stamp → naturalidad real
 static const char* kStrokeVert =
 "#version 300 es\n"
 "precision highp float;\n"
@@ -17,20 +20,34 @@ static const char* kStrokeVert =
 "uniform vec2  u_center;\n"
 "uniform float u_diameter;\n"
 "uniform vec2  u_canvasSize;\n"
+"uniform float u_rotation;\n"   // radianes — jitter por stamp
 "out vec2 v_uv;\n"
 "void main() {\n"
-"    vec2 pos = u_center + a_pos * u_diameter;\n"
+"    // Rotar el quad alrededor de su centro\n"
+"    float c = cos(u_rotation), s = sin(u_rotation);\n"
+"    vec2 rpos = vec2(c*a_pos.x - s*a_pos.y,\n"
+"                    s*a_pos.x + c*a_pos.y);\n"
+"    vec2 pos = u_center + rpos * u_diameter;\n"
 "    vec2 ndc = (pos / u_canvasSize) * 2.0 - 1.0;\n"
 "    gl_Position = vec4(ndc, 0.0, 1.0);\n"
-"    v_uv = a_uv;\n"
+"    // Rotar también las UVs para que la textura gire con el quad\n"
+"    vec2 uv = a_uv - 0.5;\n"
+"    v_uv = vec2(c*uv.x - s*uv.y, s*uv.x + c*uv.y) + 0.5;\n"
 "}\n";
 
+// ── GLSL: fragment con grano secundario ──────────────────────────────────────
+// u_grain es la textura de grano (papel/carbón/tela).
+// u_grainDepth controla cuánto grano se mezcla: 0=sin grano, 1=grano total.
 static const char* kStrokeFrag =
 "#version 300 es\n"
 "precision highp float;\n"
-"uniform sampler2D u_brush;\n"
+"uniform sampler2D u_brush;\n"   // shape PNG (alpha mask)
+"uniform sampler2D u_grain;\n"   // grain PNG (texture roller)
 "uniform vec4      u_color;\n"
 "uniform float     u_hardness;\n"
+"uniform float     u_grainDepth;\n"  // 0..1
+"uniform vec2      u_grainScale;\n"  // escala del grano en canvas
+"uniform vec2      u_canvasPos;\n"   // posición del stamp en canvas (para anchoring)
 "layout(location = 0) out vec4 fragColor;\n"
 "in vec2 v_uv;\n"
 "void main() {\n"
@@ -38,7 +55,13 @@ static const char* kStrokeFrag =
 "    float h    = min(u_hardness, 0.999);\n"
 "    float edge = 0.5 * h;\n"
 "    float soft = smoothstep(edge, 1.0 - edge, mask);\n"
-"    fragColor  = vec4(u_color.rgb, u_color.a * soft);\n"
+"    // Grano: anchored en canvas (grain UVs = posición canvas, no stamp)\n"
+"    vec2 grainUV = fract(u_canvasPos * u_grainScale);\n"
+"    float grain  = texture(u_grain, grainUV).r;\n"
+"    // Mezclar grano multiplicativamente: grano oscuro → más transparente\n"
+"    float grainMask = mix(1.0, grain, u_grainDepth);\n"
+"    float finalAlpha = u_color.a * soft * grainMask;\n"
+"    fragColor = vec4(u_color.rgb, finalAlpha);\n"
 "}\n";
 
 static const char* kEraserFrag =
@@ -57,9 +80,6 @@ static const char* kEraserFrag =
 "    fragColor  = vec4(0.0, 0.0, 0.0, u_opacity * soft);\n"
 "}\n";
 
-// Composite shader para borrador: aplica el stroke buffer como dstOut uniforme.
-// El stroke buffer acumula la máscara de borrado (GL_MAX), luego se aplica de una vez
-// con la opacidad del usuario → sin círculos visibles por superposición de stamps.
 static const char* kCompositeVert =
 "#version 300 es\n"
 "precision highp float;\n"
@@ -71,18 +91,15 @@ static const char* kCompositeVert =
 "    v_uv = a_uv;\n"
 "}\n";
 
-// Lee la máscara acumulada del stroke buffer y aplica dstOut con opacidad.
-// result.a = dst.a * (1.0 - mask * u_opacity)
 static const char* kCompositeEraserFrag =
 "#version 300 es\n"
 "precision highp float;\n"
-"uniform sampler2D u_mask;\n"  // stroke buffer (máscara de borrado acumulada)
+"uniform sampler2D u_mask;\n"
 "uniform float     u_opacity;\n"
 "layout(location = 0) out vec4 fragColor;\n"
 "in vec2 v_uv;\n"
 "void main() {\n"
 "    float mask = texture(u_mask, v_uv).a;\n"
-"    // dstOut uniforme: borra exactamente u_opacity en toda la zona del stamp\n"
 "    fragColor = vec4(0.0, 0.0, 0.0, mask * u_opacity);\n"
 "}\n";
 
@@ -93,12 +110,24 @@ static const float kQuad[] = {
      0.5f,  0.5f,  1.0f, 1.0f,
 };
 
+// ── RNG simple determinista (no necesita stdlib rand para reproducibilidad) ──
+static uint32_t s_seed = 12345;
+static float fastRand() {
+    s_seed ^= s_seed << 13;
+    s_seed ^= s_seed >> 17;
+    s_seed ^= s_seed << 5;
+    return (s_seed & 0x7FFFFFFF) / (float)0x7FFFFFFF;
+}
+static float randRange(float lo, float hi) { return lo + fastRand() * (hi - lo); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 bool StrokeEngine::init() {
     while (glGetError() != GL_NO_ERROR) {}
     if (!initShaders()) { LOGE("StrokeEngine: initShaders failed"); return false; }
     if (!initQuad())    { LOGE("StrokeEngine: initQuad failed");    return false; }
     generateDefaultBrushTex();
-    LOGI("StrokeEngine initialized");
+    LOGI("StrokeEngine initialized (with rotation + grain support)");
     return true;
 }
 
@@ -123,15 +152,10 @@ bool StrokeEngine::ensureStrokeFBO(int w, int h) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindFramebuffer(GL_FRAMEBUFFER, strokeFBO_);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, strokeTex_, 0);
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        destroyStrokeFBO(); return false;
-    }
     strokeW_ = w; strokeH_ = h;
-    return true;
+    return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
 }
 void StrokeEngine::destroyStrokeFBO() {
     if (strokeTex_) { glDeleteTextures(1, &strokeTex_);     strokeTex_ = 0; }
@@ -143,11 +167,9 @@ void StrokeEngine::compositeStrokeToLayer(GLuint layerFBO) {
     glBindFramebuffer(GL_FRAMEBUFFER, layerFBO);
     glViewport(0, 0, strokeW_, strokeH_);
     glUseProgram(compositeProgram_);
-    // dstOut: result.a = dst.a * (1 - mask * opacity)
     glEnable(GL_BLEND);
     glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
-    glBlendFuncSeparate(GL_ZERO, GL_ONE,           // RGB: mantener color destino
-                        GL_ZERO, GL_ONE_MINUS_SRC_ALPHA); // Alpha: dst.a * (1-src.a)
+    glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, strokeTex_);
     glUniform1i(glGetUniformLocation(compositeProgram_, "u_mask"), 0);
@@ -156,7 +178,6 @@ void StrokeEngine::compositeStrokeToLayer(GLuint layerFBO) {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindVertexArray(0);
     glDisable(GL_BLEND);
-    glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
 }
 bool StrokeEngine::initCompositeShader() {
     GLuint cv = compileShader(GL_VERTEX_SHADER,   kCompositeVert);
@@ -174,25 +195,30 @@ void StrokeEngine::beginStroke(const Point& p, const BrushParams& brush,
     canvasH_   = ch;
     lastPoint_ = p;
     accDist_   = 0.0f;
+    lastSpeed_ = 0.0f;
     active_    = true;
+    s_seed     = (uint32_t)(p.x * 1000 + p.y);  // seed determinista por trazo
     GLint currentFBO = 0;
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &currentFBO);
     layerFBO_ = (GLuint)currentFBO;
-
     renderStamp(p);
 }
 
 bool StrokeEngine::addPoint(const Point& p) {
     if (!active_) return false;
-
     float dx   = p.x - lastPoint_.x;
     float dy   = p.y - lastPoint_.y;
     float dist = std::sqrt(dx*dx + dy*dy);
-    accDist_  += dist;
 
-    float spacing = std::max(1.0f, brush_.size * brush_.spacing);
-    bool  rendered = false;
+    // Velocidad → influye en spacing dinámico
+    // Alta velocidad → stamps más separados (más natural)
+    float speed   = dist;  // px por evento — approx velocidad
+    lastSpeed_    = speed * 0.3f + lastSpeed_ * 0.7f;  // smooth
+    float dynSpacing = brush_.spacing * (1.0f + lastSpeed_ * 0.015f);
+    float spacing = std::max(1.0f, brush_.size * dynSpacing);
 
+    accDist_ += dist;
+    bool rendered = false;
     while (accDist_ >= spacing) {
         float t = (dist - (accDist_ - spacing)) / std::max(dist, 0.001f);
         Point stamp;
@@ -201,87 +227,89 @@ bool StrokeEngine::addPoint(const Point& p) {
         stamp.pressure = lastPoint_.pressure + (p.pressure - lastPoint_.pressure) * t;
         renderStamp(stamp);
         accDist_ -= spacing;
-        rendered  = true;
+        rendered = true;
     }
-
     lastPoint_ = p;
     return rendered;
 }
 
-void StrokeEngine::endStroke() {
-    active_ = false;
-    // Direct dstOut rendering — no composite needed.
-}
+void StrokeEngine::endStroke()    { active_ = false; }
 void StrokeEngine::cancelStroke() { active_ = false; }
-
-// ── Stamp directo sin interpolación (para espejo del borrador desde Dart) ──
-// renderStampAt ya maneja el binding al strokeFBO si brush_.isEraser.
 
 void StrokeEngine::stampAt(float x, float y) {
     if (!active_) return;
-    renderStampAt(x, y, 1.0f, brush_.size);
+    renderStampAt(x, y, 1.0f, brush_.size, 0.0f);
 }
 
-// ── Stamp principal + espejo ──────────────────────────────────────────
-
+// ── Stamp principal: aplica dinámicas (presión, jitter, rotación) ─────────────
 void StrokeEngine::renderStamp(const Point& p, float diameterOverride) {
     float diameter = diameterOverride > 0 ? diameterOverride : brush_.size;
-    // El borrador usa tamaño fijo — predecible y coincide con el indicador visual.
-    // El pincel varía con presión para efecto dinámico en stylus.
+
     if (!brush_.isEraser) {
+        // Presión → tamaño (0.7 base + 0.3 por presión) — idéntico a Procreate
         diameter *= (0.7f + p.pressure * 0.3f);
+
+        // Jitter de tamaño: ±10% variación aleatoria → imperfección natural
+        diameter *= (1.0f + randRange(-0.10f, 0.10f));
     }
 
-    renderStampAt(p.x, p.y, p.pressure, diameter);
+    // Rotación aleatoria por stamp (0..2π) → texturas irregulares no repiten patrón
+    float rotation = randRange(0.0f, 6.2832f);
 
-    // El espejo del BORRADOR se maneja desde Dart (addPoint explícito).
-    // El espejo del PINCEL se maneja aquí en C++ (más eficiente).
+    renderStampAt(p.x, p.y, p.pressure, diameter, rotation);
+
+    // Espejo (simetría) para pinceles — no para borrador
     if (symmetryEnabled_ && !brush_.isEraser) {
-        float mx, my;
-        if (symmetryAxis_ == 0) {
-            mx = (float)canvasW_ - p.x;
-            my = p.y;
-        } else {
-            mx = p.x;
-            my = (float)canvasH_ - p.y;
-        }
-        renderStampAt(mx, my, p.pressure, diameter);
+        float mx = symmetryAxis_ == 0 ? (float)canvasW_ - p.x : p.x;
+        float my = symmetryAxis_ == 0 ? p.y : (float)canvasH_ - p.y;
+        renderStampAt(mx, my, p.pressure, diameter, -rotation);
     }
 }
 
-// ── Renderiza un stamp en (x,y) con blend correcto ─────────────────────
-// RGB: src-over normal. Alpha: GL_MAX → sin acumulación "perlada".
-
-void StrokeEngine::renderStampAt(float x, float y, float /*pressure*/, float diameter) {
+// ── Render un stamp con rotación y grano ──────────────────────────────────────
+void StrokeEngine::renderStampAt(float x, float y, float pressure, float diameter, float rotation) {
     GLuint prog = brush_.isEraser ? eraserProgram_ : strokeProgram_;
     glUseProgram(prog);
 
     glEnable(GL_BLEND);
     if (brush_.isEraser) {
-        // Borrador: dstOut directo en layerFBO.
-        // Lo que se ve en tiempo real = resultado final exacto. WYSIWYG.
-        glEnable(GL_BLEND);
         glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
-        glBlendFuncSeparate(GL_ZERO, GL_ONE,
-                            GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+        glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
     } else {
         glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
-        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
-                            GL_ONE,       GL_ONE);
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
     }
+
+    // Jitter de opacidad: ±8% → elimina "marca de sello" visible
+    float opacityJitter = brush_.isEraser ? 1.0f : (1.0f + randRange(-0.08f, 0.08f));
+    float finalAlpha    = std::min(1.0f, color_.a * opacityJitter);
 
     glUniform2f(glGetUniformLocation(prog, "u_center"),     x, y);
     glUniform1f(glGetUniformLocation(prog, "u_diameter"),   diameter);
     glUniform2f(glGetUniformLocation(prog, "u_canvasSize"), (float)canvasW_, (float)canvasH_);
     glUniform1f(glGetUniformLocation(prog, "u_hardness"),   brush_.hardness);
+    glUniform1f(glGetUniformLocation(prog, "u_rotation"),   rotation);
 
     if (brush_.isEraser) {
         glUniform1f(glGetUniformLocation(prog, "u_opacity"), color_.a);
     } else {
         glUniform4f(glGetUniformLocation(prog, "u_color"),
-                    color_.r, color_.g, color_.b, color_.a);
+                    color_.r, color_.g, color_.b, finalAlpha);
+
+        // Grano: escala relativa al canvas (1/200 = grain repetido ~200 veces)
+        // grainDepth del brush controla intensidad: 0=sin grano, 1=grano total
+        glUniform1f(glGetUniformLocation(prog, "u_grainDepth"), brush_.grainDepth);
+        glUniform2f(glGetUniformLocation(prog, "u_grainScale"),
+                    1.0f / 200.0f, 1.0f / 200.0f);
+        glUniform2f(glGetUniformLocation(prog, "u_canvasPos"), x, y);
+
+        // Texture unit 1 = grain
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, getGrainTexture());
+        glUniform1i(glGetUniformLocation(prog, "u_grain"), 1);
     }
 
+    // Texture unit 0 = shape
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, getBrushTexture());
     glUniform1i(glGetUniformLocation(prog, "u_brush"), 0);
@@ -292,6 +320,9 @@ void StrokeEngine::renderStampAt(float x, float y, float /*pressure*/, float dia
 
     glDisable(GL_BLEND);
     glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+
+    // Restaurar texture unit 0 como activa por defecto
+    glActiveTexture(GL_TEXTURE0);
 }
 
 GLuint StrokeEngine::getBrushTexture() const {
@@ -299,6 +330,16 @@ GLuint StrokeEngine::getBrushTexture() const {
         for (auto& e : brushTextures_)
             if (e.id == brush_.brushTextureId) return e.tex;
     return defaultBrushTex_;
+}
+
+GLuint StrokeEngine::getGrainTexture() const {
+    // El grainTextureId se almacena como brushTextureId + 1 por convención.
+    // Si no hay grain, usar el defaultBrushTex_ (Gaussian = grano invisible).
+    int grainId = brush_.grainTextureId;
+    if (grainId >= 0)
+        for (auto& e : brushTextures_)
+            if (e.id == grainId) return e.tex;
+    return defaultBrushTex_;  // Gaussian como fallback → sin grano visible
 }
 
 int StrokeEngine::loadBrushTexture(const uint8_t* rgba, int w, int h) {
@@ -309,11 +350,12 @@ int StrokeEngine::loadBrushTexture(const uint8_t* rgba, int w, int h) {
     glGenerateMipmap(GL_TEXTURE_2D);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);  // grain = repeat
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glBindTexture(GL_TEXTURE_2D, 0);
     int id = nextBrushTexId_++;
     brushTextures_.push_back({id, tex, w, h});
+    LOGI("loadBrushTexture: %dx%d → id=%d (total=%zu)", w, h, id, brushTextures_.size());
     return id;
 }
 
@@ -326,34 +368,36 @@ void StrokeEngine::unloadBrushTexture(int id) {
     }
 }
 
+// ── Círculo Gaussian 64×64 por defecto ────────────────────────────────────────
 void StrokeEngine::generateDefaultBrushTex() {
-    constexpr int SIZE = 64;
-    constexpr float CENTER = SIZE / 2.0f, RADIUS = SIZE / 2.0f;
-    std::vector<uint8_t> pixels(SIZE * SIZE * 4);
-    for (int y = 0; y < SIZE; y++) {
-        for (int x = 0; x < SIZE; x++) {
-            float dx = (x + 0.5f) - CENTER, dy = (y + 0.5f) - CENTER;
-            float d  = std::sqrt(dx*dx + dy*dy) / RADIUS;
-            float a  = std::max(0.0f, std::min(1.0f, std::exp(-4.0f * d * d)));
-            int i = (y * SIZE + x) * 4;
-            pixels[i+0] = pixels[i+1] = pixels[i+2] = 255;
-            pixels[i+3] = (uint8_t)(a * 255);
+    constexpr int S = 64;
+    constexpr float C = S / 2.0f, R = S / 2.0f;
+    std::vector<uint8_t> px(S * S * 4);
+    for (int y = 0; y < S; y++) {
+        for (int x = 0; x < S; x++) {
+            float dx = (x + 0.5f) - C, dy = (y + 0.5f) - C;
+            float d = std::sqrt(dx*dx + dy*dy) / R;
+            float a = std::max(0.0f, std::exp(-4.0f * d * d));
+            int i = (y * S + x) * 4;
+            px[i]=px[i+1]=px[i+2]=255;
+            px[i+3] = (uint8_t)(a * 255);
         }
     }
     glGenTextures(1, &defaultBrushTex_);
     glBindTexture(GL_TEXTURE_2D, defaultBrushTex_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, SIZE, SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, S, S, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
     glGenerateMipmap(GL_TEXTURE_2D);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindTexture(GL_TEXTURE_2D, 0);
-    LOGI("Default brush texture generated (%dx%d)", SIZE, SIZE);
+    LOGI("Default brush Gaussian 64x64 OK");
 }
 
+// ── GL helpers ────────────────────────────────────────────────────────────────
 bool StrokeEngine::initShaders() {
-    LOGI("Compiling stroke shaders...");
+    LOGI("Compiling stroke shaders (rotation + grain)...");
     auto make = [&](const char* v, const char* f) -> GLuint {
         GLuint vs = compileShader(GL_VERTEX_SHADER, v);
         GLuint fs = compileShader(GL_FRAGMENT_SHADER, f);
@@ -366,10 +410,7 @@ bool StrokeEngine::initShaders() {
     eraserProgram_ = make(kStrokeVert, kEraserFrag);
     if (!eraserProgram_) return false;
     LOGI("Eraser program OK (%u)", eraserProgram_);
-    if (!initCompositeShader()) {
-        LOGE("Composite shader failed — eraser will still work without stroke buffer");
-        // No fatal: el borrador fallback usa el blend directo
-    }
+    initCompositeShader();
     return true;
 }
 
@@ -384,21 +425,19 @@ bool StrokeEngine::initQuad() {
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)(2*sizeof(float)));
     glBindVertexArray(0); glBindBuffer(GL_ARRAY_BUFFER, 0);
-    GLenum err = glGetError();
-    if (err != GL_NO_ERROR) { LOGE("GL error after quad setup: 0x%X", err); return false; }
-    return true;
+    return glGetError() == GL_NO_ERROR;
 }
 
 GLuint StrokeEngine::compileShader(GLenum type, const char* src) {
     GLuint s = glCreateShader(type);
-    if (!s) { LOGE("glCreateShader returned 0"); return 0; }
+    if (!s) return 0;
     glShaderSource(s, 1, &src, nullptr);
     glCompileShader(s);
     GLint ok = 0; glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
     if (!ok) {
         char buf[1024]; GLsizei len = 0;
         glGetShaderInfoLog(s, sizeof(buf), &len, buf);
-        LOGE("Shader compile FAILED (type=0x%X):\n%s", type, buf);
+        LOGE("Shader FAILED (0x%X):\n%s", type, buf);
         glDeleteShader(s); return 0;
     }
     return s;

@@ -67,7 +67,8 @@ private:
     int nextBrushTexId_ = 1;
 
     void renderStamp(const Point& p, float diameterOverride = -1.0f);
-    void renderStampAt(float x, float y, float pressure, float diameter);
+    void renderStampAt(float x, float y, float pressure, float diameter, float rotation = 0.0f);
+    GLuint getGrainTexture() const;
 
     bool   ensureStrokeFBO(int w, int h);
     void   destroyStrokeFBO();

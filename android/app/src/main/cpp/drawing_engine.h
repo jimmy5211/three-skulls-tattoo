@@ -37,7 +37,9 @@ struct BrushParams {
     float hardness = 1.0f;   // 0.0=suave, 1.0=duro
     float spacing  = 0.1f;   // fracción del diámetro entre stamps
     bool  isEraser = false;
-    int   brushTextureId = -1; // -1 = circular por defecto
+    int   brushTextureId = -1;
+    int   grainTextureId = -1;  // -1 = sin grano
+    float grainDepth     = 0.0f; // 0=sin grano, 1=grano total // -1 = circular por defecto
 };
 
 enum class BlendMode : int {
