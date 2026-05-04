@@ -10,7 +10,6 @@ class GpuBrushLoader {
 
   static bool get isLoaded => _loaded;
   static int  get loadedCount => _shapeTexIds.length;
-  static int  get loadedCount => _shapeTexIds.length;
   static int shapeTexId(String brushId) => _shapeTexIds[brushId] ?? -1;
 
   static Future<void> loadAll(NativeCanvasBridge bridge) async {
