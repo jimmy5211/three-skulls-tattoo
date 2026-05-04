@@ -3623,8 +3623,8 @@ class _CanvasScreenState extends State<CanvasScreen>
                   // Mostrar el PNG real de la textura como preview
                   _BrushTexturePreview(
                     brushId: brush.id,
+                    brush: brush,
                     isActive: isActive,
-                    isDotwork: brush.type == StrokeType.dotwork,
                     strokeColor: isActive
                         ? Colors.white.withOpacity(0.9)
                         : _textSecondary,
@@ -5743,220 +5743,197 @@ class _CanvasBorderPainter extends CustomPainter {
 
 /// Preview que muestra el PNG real de la textura del pincel.
 /// Si la textura no está disponible, cae al trazo Dart por categoría.
-class _BrushTexturePreview extends StatelessWidget {
+class _BrushTexturePreview extends StatefulWidget {
   final String brushId;
+  final BrushModel brush;
   final bool isActive;
-  final bool isDotwork;
   final Color strokeColor;
 
   const _BrushTexturePreview({
     required this.brushId,
+    required this.brush,
     required this.isActive,
-    required this.isDotwork,
     required this.strokeColor,
   });
 
-  String? get _assetPath {
-    // Misma lógica de GpuBrushLoader para encontrar el asset
-    final map = {
-      'aero': 'assets/Brushes/aerosoles/aers_01_shape.png',
-      'cal' : 'assets/Brushes/caligrafia/cali_01_shape.png',
-      'car' : 'assets/Brushes/carboncillo/carb_01_shape.png',
-      'lum' : 'assets/Brushes/luminancia/lumi_01_shape.png',
-      'ret' : 'assets/Brushes/retoque/ret_01_shape.png',
-      'abs' : 'assets/Brushes/aerosoles/aers_09_shape.png',
-      'tex' : 'assets/Brushes/carboncillo/carb_03_shape.png',
-      'org' : 'assets/Brushes/carboncillo/carb_08_shape.png',
-      'agua': 'assets/Brushes/aerosoles/aers_14_shape.png',
-      'ind' : 'assets/Brushes/caligrafia/cali_12_shape.png',
-      'imp' : 'assets/Brushes/caligrafia/cali_01_shape.png',
-    };
-    // Extraer el prefijo del brushId (e.g. 'aero' de 'aero_01')
-    final prefix = brushId.contains('_')
-        ? brushId.split('_').first
-        : brushId;
-    // Buscar el número del pincel para mostrar su textura específica
-    final num = int.tryParse(brushId.split('_').last) ?? 1;
-    final numStr = num.toString().padLeft(2, '0');
+  @override
+  State<_BrushTexturePreview> createState() => _BrushTexturePreviewState();
+}
 
-    if (brushId.startsWith('aero'))
-      return 'assets/Brushes/aerosoles/aers_${numStr}_shape.png';
-    if (brushId.startsWith('cal'))
-      return 'assets/Brushes/caligrafia/cali_${numStr}_shape.png';
-    if (brushId.startsWith('car'))
-      return 'assets/Brushes/carboncillo/carb_${numStr}_shape.png';
-    if (brushId.startsWith('lum'))
-      return 'assets/Brushes/luminancia/lumi_${numStr}_shape.png';
-    if (brushId.startsWith('ret'))
-      return 'assets/Brushes/retoque/ret_${numStr}_shape.png';
-    return map[prefix];
+class _BrushTexturePreviewState extends State<_BrushTexturePreview> {
+  ui.Image? _tip;
+
+  static String? _shapePath(String brushId) {
+    final num = int.tryParse(brushId.split('_').last) ?? 1;
+    final n = num.toString().padLeft(2, '0');
+    if (brushId.startsWith('aero_') || brushId.startsWith('aers_'))
+      return 'assets/Brushes/aerosoles/aers_${n}_shape.png';
+    if (brushId.startsWith('cal_'))
+      return 'assets/Brushes/caligrafia/cali_${n}_shape.png';
+    if (brushId.startsWith('carb_') || brushId.startsWith('car_'))
+      return 'assets/Brushes/carboncillo/carb_${n}_shape.png';
+    if (brushId.startsWith('lum_'))
+      return 'assets/Brushes/luminancia/lumi_${n}_shape.png';
+    if (brushId.startsWith('ret_'))
+      return 'assets/Brushes/retoque/ret_${n}_shape.png';
+    return null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTip();
+  }
+
+  Future<void> _loadTip() async {
+    final path = _shapePath(widget.brushId);
+    if (path == null) return;
+    try {
+      final data = await rootBundle.load(path);
+      final codec = await ui.instantiateImageCodec(
+        data.buffer.asUint8List(),
+        targetWidth: 128,
+        targetHeight: 128,
+      );
+      final frame = await codec.getNextFrame();
+      if (mounted) setState(() => _tip = frame.image);
+    } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
-    final path = _assetPath;
-
-    // Si tenemos el asset, mostrarlo como imagen real
-    if (path != null) {
-      return SizedBox(
-        height: 22,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: Image.asset(
-            path,
-            fit: BoxFit.cover,
-            color: strokeColor,
-            colorBlendMode: BlendMode.srcIn,
-            errorBuilder: (_, __, ___) => _fallbackPaint(),
-          ),
+    return SizedBox(
+      height: 28,
+      child: CustomPaint(
+        size: const Size(double.infinity, 28),
+        painter: _BrushStrokePreviewPainter(
+          tip: _tip,
+          color: widget.strokeColor,
+          brush: widget.brush,
         ),
-      );
-    }
-    return _fallbackPaint();
+      ),
+    );
   }
-
-  Widget _fallbackPaint() => CustomPaint(
-    size: const Size(double.infinity, 18),
-    painter: _BrushLinePainter(
-      color: strokeColor,
-      strokeWidth: 4.0,
-      brushId: brushId,
-      isDotwork: isDotwork,
-    ),
-  );
 }
 
-class _BrushLinePainter extends CustomPainter {
+class _BrushStrokePreviewPainter extends CustomPainter {
+  final ui.Image? tip;
   final Color color;
-  final double strokeWidth;
-  final bool isDotwork;
-  final String brushId;
+  final BrushModel brush;
 
-  _BrushLinePainter({
+  _BrushStrokePreviewPainter({
+    required this.tip,
     required this.color,
-    required this.strokeWidth,
-    this.isDotwork = false,
-    this.brushId = '',
+    required this.brush,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width;
     final h = size.height;
-    final mid = h / 2;
 
-    // Base path — curva suave que cruza el widget
     final path = Path();
-    path.moveTo(0, h * 0.7);
-    path.cubicTo(w * 0.25, h * 0.1, w * 0.55, h * 0.9, w * 0.82, h * 0.2);
-    path.lineTo(w, mid);
+    path.moveTo(w * 0.02, h * 0.78);
+    path.cubicTo(w * 0.25, h * 0.05, w * 0.55, h * 0.95, w * 0.80, h * 0.15);
+    path.lineTo(w * 0.98, h * 0.45);
 
-    final id = brushId;
+    if (tip != null) {
+      _stampAlongPath(canvas, path, size);
+    } else {
+      _drawFallback(canvas, path, size);
+    }
+  }
 
-    if (isDotwork) {
-      // Dotwork: puntos equidistantes
+  void _stampAlongPath(Canvas canvas, Path path, Size size) {
+    final tipSize = size.height * 1.5;
+    final spacing = (tipSize * 0.28).clamp(1.0, double.infinity);
+    final paint = Paint()
+      ..colorFilter = ColorFilter.mode(color, BlendMode.srcATop)
+      ..filterQuality = FilterQuality.medium;
+
+    for (final metric in path.computeMetrics()) {
+      double pos = 0;
+      while (pos <= metric.length) {
+        final tangent = metric.getTangentForOffset(pos);
+        if (tangent != null) {
+          final dst = Rect.fromCenter(
+              center: tangent.position, width: tipSize, height: tipSize);
+          final src = Rect.fromLTWH(
+              0, 0, tip!.width.toDouble(), tip!.height.toDouble());
+          canvas.drawImageRect(tip!, src, dst, paint);
+        }
+        pos += spacing;
+      }
+    }
+  }
+
+  void _drawFallback(Canvas canvas, Path path, Size size) {
+    final id = brush.id;
+    final sw = size.height * 0.35;
+
+    if (brush.type == StrokeType.dotwork) {
       final p = Paint()..color = color..style = PaintingStyle.fill;
       double x = 3;
-      while (x < w - 3) {
-        canvas.drawCircle(Offset(x, mid), strokeWidth / 2, p);
-        x += strokeWidth * 2.8;
+      while (x < size.width - 3) {
+        canvas.drawCircle(Offset(x, size.height / 2), sw / 2, p);
+        x += sw * 2.8;
       }
       return;
     }
 
-    // ── Categoría-specific rendering ─────────────────────────────
     if (id.startsWith('aero_')) {
-      // Aerógrafo: borde difuso (capas con opacidad decreciente)
-      for (double r = strokeWidth * 1.5; r >= 1; r -= 2) {
+      for (double r = sw * 2; r >= 1; r -= 2) {
         canvas.drawPath(path, Paint()
-          ..color = color.withOpacity(0.08)
-          ..strokeWidth = r * 2
+          ..color = color.withOpacity(0.07)
+          ..strokeWidth = r
           ..strokeCap = StrokeCap.round
           ..style = PaintingStyle.stroke);
       }
       canvas.drawPath(path, Paint()
-        ..color = color.withOpacity(0.6)
-        ..strokeWidth = strokeWidth * 0.5
+        ..color = color.withOpacity(0.5)
+        ..strokeWidth = sw * 0.4
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke);
-
-    } else if (id.startsWith('car_')) {
-      // Carboncillo: trazo irregular (varias líneas con offset)
-      final rng = [0.3, -0.5, 0.8, -0.2, 0.6];
-      for (int i = 0; i < 3; i++) {
-        final off = rng[i] * strokeWidth * 0.4;
-        final p2 = Path();
-        p2.moveTo(0, h * 0.7 + off);
-        p2.cubicTo(w*0.25, h*0.1+off, w*0.55, h*0.9+off, w*0.82, h*0.2+off);
-        p2.lineTo(w, mid + off);
-        canvas.drawPath(p2, Paint()
-          ..color = color.withOpacity(0.55 + i * 0.15)
-          ..strokeWidth = strokeWidth * (0.4 + i * 0.2)
-          ..strokeCap = StrokeCap.round
-          ..style = PaintingStyle.stroke);
-      }
-
     } else if (id.startsWith('cal_')) {
-      // Caligrafía: trazo con grosor variable (presión simulada)
-      final metrics = path.computeMetrics().first;
-      final total = metrics.length;
-      int segments = 20;
-      for (int i = 0; i < segments; i++) {
-        final t0 = (i / segments) * total;
-        final t1 = ((i + 1) / segments) * total;
-        final seg = metrics.extractPath(t0, t1);
-        // Grosor varía: más grueso en el centro
-        final pressure = sin((i / segments) * pi);
+      final metric = path.computeMetrics().first;
+      const segs = 20;
+      for (int i = 0; i < segs; i++) {
+        final seg = metric.extractPath(
+            (i / segs) * metric.length,
+            ((i + 1) / segs) * metric.length);
+        final p = sin((i / segs) * pi);
         canvas.drawPath(seg, Paint()
           ..color = color
-          ..strokeWidth = strokeWidth * (0.3 + pressure * 0.9)
+          ..strokeWidth = sw * (0.2 + p * 0.9)
           ..strokeCap = StrokeCap.round
           ..style = PaintingStyle.stroke);
       }
-
     } else if (id.startsWith('lum_')) {
-      // Luminancia: trazo con glow (halo brillante)
       canvas.drawPath(path, Paint()
         ..color = color.withOpacity(0.15)
-        ..strokeWidth = strokeWidth * 3
+        ..strokeWidth = sw * 3
         ..strokeCap = StrokeCap.round
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3)
         ..style = PaintingStyle.stroke);
       canvas.drawPath(path, Paint()
         ..color = color.withOpacity(0.9)
-        ..strokeWidth = strokeWidth * 0.6
+        ..strokeWidth = sw * 0.5
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke);
-
-    } else if (id.startsWith('ret_')) {
-      // Retoque: trazo suave con blur leve
-      canvas.drawPath(path, Paint()
-        ..color = color.withOpacity(0.25)
-        ..strokeWidth = strokeWidth * 2
-        ..strokeCap = StrokeCap.round
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2)
-        ..style = PaintingStyle.stroke);
-      canvas.drawPath(path, Paint()
-        ..color = color.withOpacity(0.75)
-        ..strokeWidth = strokeWidth * 0.7
-        ..strokeCap = StrokeCap.round
-        ..style = PaintingStyle.stroke);
-
     } else {
-      // Default: trazo limpio estándar
       canvas.drawPath(path, Paint()
         ..color = color
-        ..strokeWidth = strokeWidth
+        ..strokeWidth = sw
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke);
     }
   }
 
   @override
-  bool shouldRepaint(_BrushLinePainter old) =>
-      old.brushId != brushId || old.strokeWidth != strokeWidth;
+  bool shouldRepaint(_BrushStrokePreviewPainter old) =>
+      old.tip != tip || old.color != color || old.brush.id != brush.id;
 }
-
+     
 // ─── SELECTION OVERLAY PAINTER ───────────────────────────────
 class _SelectionOverlayPainter extends CustomPainter {
   final SelectionMode mode;
