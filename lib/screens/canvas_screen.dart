@@ -3394,6 +3394,46 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
+  /// Spacing GPU por categoría de pincel.
+  /// El spacing controla qué tan separados están los stamps:
+  /// 0.03 = muy denso (línea sólida) | 0.25 = suelto (textura visible)
+  static double _spacingForBrush(String id) {
+    if (id.startsWith('car_'))  return 0.22; // carboncillo: stamps separados → textura rugosa visible
+    if (id.startsWith('cal_'))  return 0.04; // caligrafía: muy denso → línea sólida de tinta
+    if (id.startsWith('aero_')) return 0.06; // aerógrafo: denso → borde suave pero visible
+    if (id.startsWith('lum_'))  return 0.06; // luminancia: denso → glow continuo
+    if (id.startsWith('ret_'))  return 0.08; // retoque: normal
+    return 0.08; // default
+  }
+
+  /// Grosor fijo del trazo de preview en el panel de pinceles.
+  /// Independiente del slider TAM — muestra cómo se ve el pincel a tamaño medio.
+  static double _previewStrokeWidth(String id) {
+    if (id.startsWith('car_')) return 5.0; // carboncillo: trazo medio visible
+    if (id.startsWith('cal_')) return 4.5; // caligrafía: variable visible
+    if (id.startsWith('aero_')) return 4.0; // aerógrafo: difuso
+    if (id.startsWith('lum_')) return 3.5; // luminancia: glow
+    if (id.startsWith('ret_')) return 4.0; // retoque: suave
+    return 3.0; // default
+  }
+
+
+  /// Ancho fijo para la preview del pincel — independiente del TAM actual.
+  static double _previewStrokeWidth(String id) {
+    if (id.startsWith('aero_'))  return 6.0;  // aerógrafo: trazo grueso suave
+    if (id.startsWith('car_'))   return 5.0;  // carboncillo: grosor medio
+    if (id.startsWith('cal_'))   return 4.0;  // caligrafía: trazo variable
+    if (id.startsWith('lum_'))   return 3.0;  // luminancia: trazo fino brillante
+    if (id.startsWith('ret_'))   return 5.0;  // retoque: trazo suave
+    if (id.startsWith('abs_'))   return 5.0;
+    if (id.startsWith('tex_'))   return 5.0;
+    if (id.startsWith('org_'))   return 4.0;
+    if (id.startsWith('agua_'))  return 6.0;
+    if (id.startsWith('ind_'))   return 4.0;
+    if (id.startsWith('imp_'))   return 4.0;
+    return 4.0;
+  }
+
   Widget _buildBrushItem(BrushModel brush, bool isActive) {
     return GestureDetector(
       onTap: () {
@@ -3460,17 +3500,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  CustomPaint(
-                    size: const Size(double.infinity, 12),
-                    painter: _BrushLinePainter(
-                      color: isActive
-                          ? Colors.white.withOpacity(0.9)
-                          : _textSecondary,
-                      strokeWidth: brush.size.clamp(2, 7),
-                      brushId: brush.id,
-                      isDotwork: brush.type ==
-                          StrokeType.dotwork,
-                    ),
+                  // Mostrar el PNG real de la textura como preview
+                  _BrushTexturePreview(
+                    brushId: brush.id,
+                    isActive: isActive,
+                    isDotwork: brush.type == StrokeType.dotwork,
+                    strokeColor: isActive
+                        ? Colors.white.withOpacity(0.9)
+                        : _textSecondary,
                   ),
                 ],
               ),
@@ -4230,15 +4267,19 @@ class _CanvasScreenState extends State<CanvasScreen> {
               _mirrorLastPoint = null;
               _mirrorAccDist  = 0.0;
               final _gpuTexId = GpuBrushLoader.shapeTexId(_brush.id);
+              // Spacing per categoría: más separado → stamps visibles → textura real
+              // Aerógrafo: 0.05 (denso = suave) | Carboncillo: 0.20 (suelto = rugoso)
+              // Caligrafía: 0.04 (muy denso = línea sólida) | Luminancia: 0.06
+              final _gpuSpacing = _spacingForBrush(_brush.id);
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:    _nativeLayer(_controller.activeLayerId),
                 x: _dbgX, y: _dbgY,
                 size:       _brush.size + 5.0,
                 opacity:    _brush.opacity,
                 hardness:   _brush.hardness,
-                spacing:    _brush.spacing * 0.1, // BrushModel.spacing → GPU fraction
+                spacing:    _gpuSpacing,
                 isEraser:   _brush.type == StrokeType.eraser,
-                brushTexId: _gpuTexId,             // -1 = Gaussian default
+                brushTexId: _gpuTexId,
                 color:      _controller.activeColor,
               ));
               for (final p in _pendingPoints.skip(1)) {
@@ -5572,6 +5613,92 @@ class _CanvasBorderPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+
+/// Preview que muestra el PNG real de la textura del pincel.
+/// Si la textura no está disponible, cae al trazo Dart por categoría.
+class _BrushTexturePreview extends StatelessWidget {
+  final String brushId;
+  final bool isActive;
+  final bool isDotwork;
+  final Color strokeColor;
+
+  const _BrushTexturePreview({
+    required this.brushId,
+    required this.isActive,
+    required this.isDotwork,
+    required this.strokeColor,
+  });
+
+  String? get _assetPath {
+    // Misma lógica de GpuBrushLoader para encontrar el asset
+    final map = {
+      'aero': 'assets/brushes/aerosoles/aers_01_shape.png',
+      'cal' : 'assets/brushes/caligrafia/cali_01_shape.png',
+      'car' : 'assets/brushes/carboncillo/carb_01_shape.png',
+      'lum' : 'assets/brushes/luminancia/lumi_01_shape.png',
+      'ret' : 'assets/brushes/retoque/ret_01_shape.png',
+      'abs' : 'assets/brushes/aerosoles/aers_09_shape.png',
+      'tex' : 'assets/brushes/carboncillo/carb_03_shape.png',
+      'org' : 'assets/brushes/carboncillo/carb_08_shape.png',
+      'agua': 'assets/brushes/aerosoles/aers_14_shape.png',
+      'ind' : 'assets/brushes/caligrafia/cali_12_shape.png',
+      'imp' : 'assets/brushes/caligrafia/cali_01_shape.png',
+    };
+    // Extraer el prefijo del brushId (e.g. 'aero' de 'aero_01')
+    final prefix = brushId.contains('_')
+        ? brushId.split('_').first
+        : brushId;
+    // Buscar el número del pincel para mostrar su textura específica
+    final num = int.tryParse(brushId.split('_').last) ?? 1;
+    final numStr = num.toString().padLeft(2, '0');
+
+    if (brushId.startsWith('aero'))
+      return 'assets/brushes/aerosoles/aers_${numStr}_shape.png';
+    if (brushId.startsWith('cal'))
+      return 'assets/brushes/caligrafia/cali_${numStr}_shape.png';
+    if (brushId.startsWith('car'))
+      return 'assets/brushes/carboncillo/carb_${numStr}_shape.png';
+    if (brushId.startsWith('lum'))
+      return 'assets/brushes/luminancia/lumi_${numStr}_shape.png';
+    if (brushId.startsWith('ret'))
+      return 'assets/brushes/retoque/ret_${numStr}_shape.png';
+    return map[prefix];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final path = _assetPath;
+
+    // Si tenemos el asset, mostrarlo como imagen real
+    if (path != null) {
+      return SizedBox(
+        height: 22,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Image.asset(
+            path,
+            fit: BoxFit.cover,
+            color: strokeColor,
+            colorBlendMode: BlendMode.srcIn,
+            errorBuilder: (_, __, ___) => _fallbackPaint(),
+          ),
+        ),
+      );
+    }
+    return _fallbackPaint();
+  }
+
+  Widget _fallbackPaint() => CustomPaint(
+    size: const Size(double.infinity, 18),
+    painter: _BrushLinePainter(
+      color: strokeColor,
+      strokeWidth: 4.0,
+      brushId: brushId,
+      isDotwork: isDotwork,
+    ),
+  );
 }
 
 class _BrushLinePainter extends CustomPainter {
