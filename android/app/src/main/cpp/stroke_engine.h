@@ -46,6 +46,7 @@ private:
     int         canvasH_   = 1;
     Point       lastPoint_ = {};
     float       accDist_   = 0.0f;
+    float       lastSpeed_ = 0.0f;
 
     bool symmetryEnabled_ = false;
     int  symmetryAxis_    = 0;
