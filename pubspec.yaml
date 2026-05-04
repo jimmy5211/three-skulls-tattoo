@@ -77,18 +77,17 @@ flutter:
   assets:
     - assets/images/
     - assets/fonts/
-    # 🖌️ BRUSH TIPS (PNG por categoría)
-    - assets/brushes/aerosoles/
     # 🎭 SELLOS (stamps por categoría)
     - assets/stamps/abstractos/
     - assets/stamps/elementos/
     - assets/stamps/industriales/
     - assets/stamps/organicos/
-    - assets/brushes/aerosoles/
-    - assets/brushes/carboncillo/
-    - assets/brushes/caligrafia/
-    - assets/brushes/luminancia/
-    - assets/brushes/retoque/
+    # 🖌️ BRUSH TIPS PNG (mayúscula B = ruta real en el repo)
+    - assets/Brushes/aerosoles/
+    - assets/Brushes/carboncillo/
+    - assets/Brushes/caligrafia/
+    - assets/Brushes/luminancia/
+    - assets/Brushes/retoque/
 
   fonts:
     - family: BlackOpsOne
