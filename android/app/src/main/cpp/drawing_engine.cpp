@@ -281,18 +281,28 @@ void DrawingEngine::render() {
     if (!ready_) return;
     if (!impl_->makeCurrent()) return;
 
-    // Offscreen: compositar al outputFBO (no FBO 0).
-    // exportPixels() lee el outputFBO y devuelve RGBA a Flutter.
     int cW = impl_->cfg.canvasWidth;
     int cH = impl_->cfg.canvasHeight;
-
     glViewport(0, 0, cW, cH);
 
+    // Compositar capas al outputFBO
     impl_->layerMgr->composite(
         impl_->outputFBO, impl_->outputTexture,
         cW, cH,
         impl_->background
     );
+
+    // ── Preview del stroke en curso ───────────────────────────────────────
+    // Durante un trazo activo, el strokeFBO contiene los stamps acumulados
+    // con src-over → fusionados en trazo continuo.
+    // Los compositar sobre el outputFBO con la opacidad del usuario da
+    // preview en tiempo real SIN bolitas.
+    if (impl_->strokeEng && impl_->strokeEng->isActive()) {
+        impl_->strokeEng->compositeStrokeToLayer(impl_->outputFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, impl_->outputFBO);
+        glViewport(0, 0, cW, cH);
+    }
+
     glFlush();
     impl_->doneCurrent();
 }
@@ -331,9 +341,11 @@ void DrawingEngine::beginStroke(int layerId, const Point& p,
         LOGI("DIAG: %s", dbg);
     }
 
+    // stroke engine v3 captura el layerFBO actual en beginStroke (glGetIntegerv)
+    // y luego redirige stamps al strokeFBO_ interno → no desligar hasta endStroke
     impl_->strokeEng->beginStroke(p, brush, color,
                                    impl_->cfg.canvasWidth, impl_->cfg.canvasHeight);
-    impl_->layerMgr->unbindLayer();
+    // No llamar unbindLayer aquí — stroke engine maneja el FBO internamente
     impl_->updateStrokeBB(p, brush.size * 0.5f);
 
     impl_->doneCurrent();
@@ -343,12 +355,13 @@ void DrawingEngine::addPoint(const Point& p) {
     if (!ready_ || !impl_->strokeEng->isActive()) return;
     if (!impl_->makeCurrent()) return;
 
-    impl_->layerMgr->bindActiveLayer();
+    // FIX stroke buffer v3: NO rebindear layerFBO en addPoint.
+    // El stroke engine dirige los stamps al strokeFBO_ interno con src-over.
+    // Rebindear aquí interrumpía el stroke buffer entre cada punto.
     impl_->strokeEng->addPoint(p);
-    impl_->layerMgr->unbindLayer();
 
     if (impl_->capturingStroke)
-        impl_->updateStrokeBB(p, impl_->strokeEng ? 10.0f : 10.0f);
+        impl_->updateStrokeBB(p, 10.0f);
 
     impl_->doneCurrent();
 }
@@ -357,7 +370,11 @@ void DrawingEngine::endStroke() {
     if (!ready_) return;
     if (!impl_->makeCurrent()) return;
 
+    // Ligar la capa activa ANTES de endStroke para que compositeStrokeToLayer
+    // escriba en el FBO correcto de la capa (no en outputFBO)
+    impl_->layerMgr->bindActiveLayer();
     impl_->strokeEng->endStroke();
+    impl_->layerMgr->unbindLayer();
 
     // Guardar en undo stack
     if (impl_->capturingStroke) {
