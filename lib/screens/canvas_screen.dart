@@ -3557,6 +3557,10 @@ class _CanvasScreenState extends State<CanvasScreen>
   Widget _buildBrushItem(BrushModel brush, bool isActive) {
     return GestureDetector(
       onTap: () {
+        if (isActive) {
+          _showBrushAdjustSheet(brush);
+          return;
+        }
         _controller.setActiveBrush(brush);
         setState(() {
           // FIX: desactivar sello y transform mode al seleccionar pincel
@@ -3638,6 +3642,162 @@ class _CanvasScreenState extends State<CanvasScreen>
           ],
         ),
       ),
+    );
+  }
+
+  void _showBrushAdjustSheet(BrushModel brush) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _cardColor,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => StatefulBuilder(
+        builder: (context, setSheet) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36, height: 4,
+                  decoration: BoxDecoration(
+                    color: _borderColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(children: [
+                  Text(brush.emoji, style: const TextStyle(fontSize: 20)),
+                  const SizedBox(width: 10),
+                  Text(
+                    brush.name.toUpperCase(),
+                    style: const TextStyle(
+                      fontFamily: 'BlackOpsOne',
+                      fontSize: 13,
+                      color: _textPrimary,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 20),
+                _buildSheetSlider(
+                  label: 'TAM',
+                  value: brush.size,
+                  min: 1.0, max: 200.0,
+                  displayValue: '${brush.size.round()}px',
+                  onChanged: (v) => setSheet(() {
+                    brush.size = v;
+                    _controller.setActiveBrush(brush);
+                    setState(() {});
+                  }),
+                ),
+                _buildSheetSlider(
+                  label: 'OPA',
+                  value: brush.opacity,
+                  min: 0.01, max: 1.0,
+                  displayValue: '${(brush.opacity * 100).round()}%',
+                  onChanged: (v) => setSheet(() {
+                    brush.opacity = v;
+                    _controller.setActiveBrush(brush);
+                    setState(() {});
+                  }),
+                ),
+                _buildSheetSlider(
+                  label: 'DUR',
+                  value: brush.hardness,
+                  min: 0.0, max: 1.0,
+                  displayValue: '${(brush.hardness * 100).round()}%',
+                  onChanged: (v) => setSheet(() {
+                    brush.hardness = v;
+                    _controller.setActiveBrush(brush);
+                    setState(() {});
+                  }),
+                ),
+                _buildSheetSlider(
+                  label: 'ESP',
+                  value: brush.spacing,
+                  min: 0.05, max: 5.0,
+                  displayValue: '${(brush.spacing * 100).round()}%',
+                  onChanged: (v) => setSheet(() {
+                    brush.spacing = v;
+                    _controller.setActiveBrush(brush);
+                    setState(() {});
+                  }),
+                ),
+                _buildSheetSlider(
+                  label: 'FLUJO',
+                  value: brush.flow,
+                  min: 0.01, max: 1.0,
+                  displayValue: '${(brush.flow * 100).round()}%',
+                  onChanged: (v) => setSheet(() {
+                    brush.flow = v;
+                    _controller.setActiveBrush(brush);
+                    setState(() {});
+                  }),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSheetSlider({
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required String displayValue,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(children: [
+        SizedBox(
+          width: 44,
+          child: Text(label,
+              style: const TextStyle(
+                fontFamily: 'Raleway',
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: _textSecondary,
+                letterSpacing: 1.2,
+              )),
+        ),
+        Expanded(
+          child: SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 3,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+              activeTrackColor: AppTheme.accentRed,
+              inactiveTrackColor: _borderColor,
+              thumbColor: Colors.white,
+              overlayColor: AppTheme.accentRed.withOpacity(0.2),
+            ),
+            child: Slider(
+              value: value.clamp(min, max),
+              min: min,
+              max: max,
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 44,
+          child: Text(displayValue,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontFamily: 'Raleway',
+                fontSize: 11,
+                color: _textPrimary,
+                fontWeight: FontWeight.w600,
+              )),
+        ),
+      ]),
     );
   }
 
@@ -5933,7 +6093,7 @@ class _BrushStrokePreviewPainter extends CustomPainter {
   bool shouldRepaint(_BrushStrokePreviewPainter old) =>
       old.tip != tip || old.color != color || old.brush.id != brush.id;
 }
-     
+
 // ─── SELECTION OVERLAY PAINTER ───────────────────────────────
 class _SelectionOverlayPainter extends CustomPainter {
   final SelectionMode mode;
