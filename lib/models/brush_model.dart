@@ -11,6 +11,7 @@ class BrushModel {
   double spacing;
   bool isPressureSensitive;
   double hardness; // 0.0=suave, 1.0=duro
+  double flow;     // 0.0=sin flujo, 1.0=flujo máximo
 
   BrushModel({
     required this.id,
@@ -23,6 +24,7 @@ class BrushModel {
     this.spacing = 1.0,
     this.isPressureSensitive = true,
     this.hardness = 1.0,
+    this.flow = 1.0,
   });
 
   BrushModel copyWith({
@@ -36,6 +38,7 @@ class BrushModel {
     double? spacing,
     bool? isPressureSensitive,
     double? hardness,
+    double? flow,
   }) {
     return BrushModel(
       id: id ?? this.id,
@@ -48,6 +51,7 @@ class BrushModel {
       spacing: spacing ?? this.spacing,
       isPressureSensitive: isPressureSensitive ?? this.isPressureSensitive,
       hardness: hardness ?? this.hardness,
+      flow: flow ?? this.flow,
     );
   }
 
