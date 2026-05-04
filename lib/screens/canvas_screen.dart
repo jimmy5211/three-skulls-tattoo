@@ -39,7 +39,8 @@ class CanvasScreen extends StatefulWidget {
   State<CanvasScreen> createState() => _CanvasScreenState();
 }
 
-class _CanvasScreenState extends State<CanvasScreen> {
+class _CanvasScreenState extends State<CanvasScreen>
+    with WidgetsBindingObserver {
   late CanvasController _controller;
   late List<BrushModel> _brushes;
 
@@ -181,6 +182,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // lifecycle observer
     _controller = CanvasController();
     _controller.addListener(_syncLayerOpacities);
     _brushes = BrushModel.defaultBrushes();
@@ -327,6 +329,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       // de delay para que el motor GL complete la inicialización.
       // Sin esto: canvas oscuro al inicio hasta que el usuario dibuje.
       _retryExportCanvas(attempts: 5, delayMs: 80);
+      // Auto-restaurar canvas si la app fue cerrada por el sistema
+      Future.delayed(const Duration(milliseconds: 500), _autoRestoreCanvas);
 
       // Fase 4: cargar brush tips PNG al GPU en background
       // No bloquea el inicio — si un pincel se usa antes de que cargue
@@ -395,6 +399,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.removeListener(_syncLayerOpacities);
     if (_nativeReady) _bridge.destroy();
     _brushScrollController.dispose();
@@ -474,6 +479,77 @@ class _CanvasScreenState extends State<CanvasScreen> {
       _smudgeMode = false;
       _showSelectionOptions = false;
     });
+  }
+
+  // ── Auto-save al salir, auto-restore al volver ─────────────────────────────
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // App va al fondo → guardar el canvas en archivo temporal
+      _autoSaveCanvas();
+    } else if (state == AppLifecycleState.resumed) {
+      // App vuelve al frente → re-inicializar GPU si fue destruido
+      if (_nativeReady) {
+        _retryExportCanvas(attempts: 3, delayMs: 200);
+      }
+    }
+  }
+
+  static const _kAutoSaveFile = 'canvas_autosave.png';
+
+  Future<void> _autoSaveCanvas() async {
+    if (!_nativeReady || !mounted) return;
+    try {
+      // Exportar canvas como PNG completo
+      final pixels = await _bridge.exportPixels();
+      if (pixels == null || pixels.isEmpty) return;
+      final cw  = _controller.canvasSize.width.toInt();
+      final ch  = _controller.canvasSize.height.toInt();
+      // Convertir RGBA raw → PNG
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromPixels(
+        pixels, cw, ch, ui.PixelFormat.rgba8888,
+        (img) => completer.complete(img),
+      );
+      final img  = await completer.future;
+      final bd   = await img.toByteData(format: ui.ImageByteFormat.png);
+      img.dispose();
+      if (bd == null) return;
+      final dir  = await getApplicationDocumentsDirectory();
+      final file = File('\${dir.path}/$_kAutoSaveFile');
+      await file.writeAsBytes(bd.buffer.asUint8List());
+      debugPrint('[AutoSave] Guardado: \${file.path}');
+    } catch (e) {
+      debugPrint('[AutoSave] Error: $e');
+    }
+  }
+
+  Future<void> _autoRestoreCanvas() async {
+    if (!_nativeReady || !mounted) return;
+    try {
+      final dir  = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$_kAutoSaveFile');
+      if (!await file.exists()) return;
+      final pngBytes = await file.readAsBytes();
+      if (pngBytes.isEmpty) return;
+      // Decodificar PNG → ui.Image
+      final codec = await ui.instantiateImageCodec(pngBytes);
+      final frame = await codec.getNextFrame();
+      final img   = frame.image;
+      if (!mounted) { img.dispose(); return; }
+      // Importar como imagen en el canvas (mismo flujo que _importImageToCanvas)
+      final canvasW = _controller.canvasSize.width;
+      final canvasH = _controller.canvasSize.height;
+      // addCanvasImage coloca la imagen centrada en el canvas
+      _controller.addCanvasImage(img);
+      setState(() {});
+      debugPrint('[AutoSave] Canvas restaurado');
+      await file.delete();
+    } catch (e) {
+      debugPrint('[AutoSave] Restore error: $e');
+    }
   }
 
   @override
