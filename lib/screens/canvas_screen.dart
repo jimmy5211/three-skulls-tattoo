@@ -1016,13 +1016,19 @@ class _CanvasScreenState extends State<CanvasScreen>
   void _triggerBrushPreview(double size) {
     _previewToken++;
     final token = _previewToken;
-    // Sin setState — ValueNotifier actualiza solo el widget del preview
     _brushPreviewNotifier.value = size;
-    Future.delayed(const Duration(milliseconds: 1000), () {
+    // Auto-ocultar después de 1.2s
+    Future.delayed(const Duration(milliseconds: 1200), () {
       if (mounted && _previewToken == token) {
-        _brushPreviewNotifier.value = null; // null = ocultar
+        _brushPreviewNotifier.value = null;
       }
     });
+  }
+
+  // Ocultar preview inmediatamente (al iniciar trazo)
+  void _hideBrushPreview() {
+    _previewToken++;
+    _brushPreviewNotifier.value = null;
   }
 
   Widget _buildBrushPreview() {
@@ -4364,6 +4370,7 @@ class _CanvasScreenState extends State<CanvasScreen>
             _pendingPoints.add(cp);
             if (_pendingPoints.length >= 1) {
               _isDrawing = true;
+              _hideBrushPreview(); // ocultar size preview al dibujar
               _controller.startStroke(_pendingPoints.first);
               final _brush = _controller.activeBrush;
               final _dbgX = _pendingPoints.first.dx;
@@ -5752,17 +5759,17 @@ class _BrushTexturePreview extends StatelessWidget {
   String? get _assetPath {
     // Misma lógica de GpuBrushLoader para encontrar el asset
     final map = {
-      'aero': 'assets/brushes/aerosoles/aers_01_shape.png',
-      'cal' : 'assets/brushes/caligrafia/cali_01_shape.png',
-      'car' : 'assets/brushes/carboncillo/carb_01_shape.png',
-      'lum' : 'assets/brushes/luminancia/lumi_01_shape.png',
-      'ret' : 'assets/brushes/retoque/ret_01_shape.png',
-      'abs' : 'assets/brushes/aerosoles/aers_09_shape.png',
-      'tex' : 'assets/brushes/carboncillo/carb_03_shape.png',
-      'org' : 'assets/brushes/carboncillo/carb_08_shape.png',
-      'agua': 'assets/brushes/aerosoles/aers_14_shape.png',
-      'ind' : 'assets/brushes/caligrafia/cali_12_shape.png',
-      'imp' : 'assets/brushes/caligrafia/cali_01_shape.png',
+      'aero': 'assets/Brushes/aerosoles/aers_01_shape.png',
+      'cal' : 'assets/Brushes/caligrafia/cali_01_shape.png',
+      'car' : 'assets/Brushes/carboncillo/carb_01_shape.png',
+      'lum' : 'assets/Brushes/luminancia/lumi_01_shape.png',
+      'ret' : 'assets/Brushes/retoque/ret_01_shape.png',
+      'abs' : 'assets/Brushes/aerosoles/aers_09_shape.png',
+      'tex' : 'assets/Brushes/carboncillo/carb_03_shape.png',
+      'org' : 'assets/Brushes/carboncillo/carb_08_shape.png',
+      'agua': 'assets/Brushes/aerosoles/aers_14_shape.png',
+      'ind' : 'assets/Brushes/caligrafia/cali_12_shape.png',
+      'imp' : 'assets/Brushes/caligrafia/cali_01_shape.png',
     };
     // Extraer el prefijo del brushId (e.g. 'aero' de 'aero_01')
     final prefix = brushId.contains('_')
@@ -5773,15 +5780,15 @@ class _BrushTexturePreview extends StatelessWidget {
     final numStr = num.toString().padLeft(2, '0');
 
     if (brushId.startsWith('aero'))
-      return 'assets/brushes/aerosoles/aers_${numStr}_shape.png';
+      return 'assets/Brushes/aerosoles/aers_${numStr}_shape.png';
     if (brushId.startsWith('cal'))
-      return 'assets/brushes/caligrafia/cali_${numStr}_shape.png';
+      return 'assets/Brushes/caligrafia/cali_${numStr}_shape.png';
     if (brushId.startsWith('car'))
-      return 'assets/brushes/carboncillo/carb_${numStr}_shape.png';
+      return 'assets/Brushes/carboncillo/carb_${numStr}_shape.png';
     if (brushId.startsWith('lum'))
-      return 'assets/brushes/luminancia/lumi_${numStr}_shape.png';
+      return 'assets/Brushes/luminancia/lumi_${numStr}_shape.png';
     if (brushId.startsWith('ret'))
-      return 'assets/brushes/retoque/ret_${numStr}_shape.png';
+      return 'assets/Brushes/retoque/ret_${numStr}_shape.png';
     return map[prefix];
   }
 
