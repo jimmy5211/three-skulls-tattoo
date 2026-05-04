@@ -3398,12 +3398,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
   /// El spacing controla qué tan separados están los stamps:
   /// 0.03 = muy denso (línea sólida) | 0.25 = suelto (textura visible)
   static double _spacingForBrush(String id) {
-    if (id.startsWith('car_'))  return 0.22; // carboncillo: stamps separados → textura rugosa visible
-    if (id.startsWith('cal_'))  return 0.04; // caligrafía: muy denso → línea sólida de tinta
-    if (id.startsWith('aero_')) return 0.06; // aerógrafo: denso → borde suave pero visible
-    if (id.startsWith('lum_'))  return 0.06; // luminancia: denso → glow continuo
-    if (id.startsWith('ret_'))  return 0.08; // retoque: normal
-    return 0.08; // default
+    if (id.startsWith('car_'))  return 0.12; // carboncillo: algo separado → textura visible sin bolitas
+    if (id.startsWith('cal_'))  return 0.03; // caligrafía: muy denso → línea sólida de tinta
+    if (id.startsWith('aero_')) return 0.04; // aerógrafo: muy denso → borde difuso suave
+    if (id.startsWith('lum_'))  return 0.04; // luminancia: denso → glow continuo
+    if (id.startsWith('ret_'))  return 0.05; // retoque: suave
+    if (id.startsWith('abs_'))  return 0.08;
+    if (id.startsWith('org_'))  return 0.10;
+    if (id.startsWith('agua_')) return 0.05;
+    if (id.startsWith('ind_'))  return 0.06;
+    if (id.startsWith('tex_'))  return 0.08;
+    if (id.startsWith('imp_'))  return 0.05;
+    return 0.05; // default más ajustado
   }
 
   /// Ancho fijo para la preview del pincel — independiente del TAM actual.
