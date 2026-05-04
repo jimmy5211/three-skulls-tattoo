@@ -976,7 +976,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             const SizedBox(width: 4),
             Text(
               _nativeReady
-                  ? 'GPU C++ Offscreen'
+                  ? 'GPU C++ Offscreen | tex:${GpuBrushLoader.loadedCount}'
                   : 'CPU Dart',
               style: const TextStyle(
                 color: Colors.white,
@@ -3397,20 +3397,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
   /// Spacing GPU por categoría de pincel.
   /// El spacing controla qué tan separados están los stamps:
   /// 0.03 = muy denso (línea sólida) | 0.25 = suelto (textura visible)
-  static double _spacingForBrush(String id) {
-    if (id.startsWith('car_'))  return 0.12; // carboncillo: algo separado → textura visible sin bolitas
-    if (id.startsWith('cal_'))  return 0.03; // caligrafía: muy denso → línea sólida de tinta
-    if (id.startsWith('aero_')) return 0.04; // aerógrafo: muy denso → borde difuso suave
-    if (id.startsWith('lum_'))  return 0.04; // luminancia: denso → glow continuo
-    if (id.startsWith('ret_'))  return 0.05; // retoque: suave
-    if (id.startsWith('abs_'))  return 0.08;
-    if (id.startsWith('org_'))  return 0.10;
-    if (id.startsWith('agua_')) return 0.05;
-    if (id.startsWith('ind_'))  return 0.06;
-    if (id.startsWith('tex_'))  return 0.08;
-    if (id.startsWith('imp_'))  return 0.05;
-    return 0.05; // default más ajustado
-  }
+  // _spacingForBrush ELIMINADO — el motor C++ v3 calcula spacing dinámico
+  // internamente: size * (0.04 + velocidad * 0.008). No duplicar aquí.
 
   /// Ancho fijo para la preview del pincel — independiente del TAM actual.
   static double _previewStrokeWidth(String id) {
@@ -4239,15 +4227,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
 
           if (!_isDrawing) {
-            // Buffer: acumular puntos hasta confirmar que es un gesto real
+            // C++ v3 tiene su propio buffer Catmull-Rom interno.
+            // Iniciar stroke en el primer punto confirmado con 1 dedo.
             _pendingPoints.add(cp);
-            if (_pendingPoints.length >= 3) {
-              // 🔥 Stroke nace aquí — 3+ puntos con 1 dedo = intención real
+            if (_pendingPoints.length >= 1) {
               _isDrawing = true;
               _controller.startStroke(_pendingPoints.first);
-              // ── Fase 2: enviar al motor nativo ──
               final _brush = _controller.activeBrush;
-              // DIAGNOSTIC: guardar coords para dialog Motor GPU
               final _dbgX = _pendingPoints.first.dx;
               final _dbgY = _pendingPoints.first.dy;
               _lastBridgeCoords =
@@ -4260,30 +4246,35 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 _confirmedSingleUpdates = 0; // reset — 1 update confirmado es suficiente
               _mirrorLastPoint = null;
               _mirrorAccDist  = 0.0;
-              final _gpuTexId = GpuBrushLoader.shapeTexId(_brush.id);
+              // Resolver textura GPU: PNG cargado > textura orgánica interna > Gaussian
+              int _gpuTexId = GpuBrushLoader.shapeTexId(_brush.id);
+              if (_gpuTexId < 0) {
+                final id = _brush.id;
+                if      (id.startsWith('aero_'))                       _gpuTexId = -10;
+                else if (id.startsWith('car_'))                        _gpuTexId = -11;
+                else if (id.startsWith('cal_'))                        _gpuTexId = -12;
+                else if (id.startsWith('lum_'))                        _gpuTexId = -14;
+                else if (id.startsWith('agua_'))                       _gpuTexId = -15;
+                else if (id.startsWith('tex_') || id.startsWith('org_'))  _gpuTexId = -13;
+                else if (id.startsWith('ret_') || id.startsWith('abs_') ||
+                         id.startsWith('ind_') || id.startsWith('imp_')) _gpuTexId = -12;
+              }
+              // Nota: spacing ya NO se pasa desde Dart — el motor C++ v3 lo
+              // calcula dinámicamente (0.04 × size × factor velocidad)
               // Spacing per categoría: más separado → stamps visibles → textura real
               // Aerógrafo: 0.05 (denso = suave) | Carboncillo: 0.20 (suelto = rugoso)
               // Caligrafía: 0.04 (muy denso = línea sólida) | Luminancia: 0.06
-              final _gpuSpacing = _spacingForBrush(_brush.id);
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:    _nativeLayer(_controller.activeLayerId),
                 x: _dbgX, y: _dbgY,
                 size:       _brush.size + 5.0,
                 opacity:    _brush.opacity,
                 hardness:   _brush.hardness,
-                spacing:    _gpuSpacing,
                 isEraser:   _brush.type == StrokeType.eraser,
                 brushTexId: _gpuTexId,
                 color:      _controller.activeColor,
               ));
-              for (final p in _pendingPoints.skip(1)) {
-                _controller.continueStroke(p);
-                _bridgeCall(() => _bridge.addPoint(p.dx, p.dy));
-                if (_controller.activeBrush.type == StrokeType.eraser && _controller.symmetryEnabled) {
-                  _sendMirrorStamp(p);
-                }
-              }
-              _pendingPoints.clear();
+              // _pendingPoints eliminado — C++ maneja buffer interno
               _pendingStrokePoint = null;
             }
           } else {
@@ -5086,7 +5077,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
     final mx = isVert ? p.dx : cw - p.dx;
     final my = isVert ? ch - p.dy : p.dy;
     final mirror = Offset(mx, my);
-    final spacing = (_controller.activeBrush.size + 5.0) * 0.08;
+    // Spacing espejo igual al motor C++ v3: 4% del tamaño
+    final spacing = (_controller.activeBrush.size + 5.0) * 0.04;
 
     if (_mirrorLastPoint == null) {
       _mirrorLastPoint = mirror;
