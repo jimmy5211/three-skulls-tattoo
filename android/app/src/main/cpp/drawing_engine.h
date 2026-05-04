@@ -35,7 +35,7 @@ struct BrushParams {
     float size     = 20.0f;  // diámetro en canvas units
     float opacity  = 1.0f;   // 0.0–1.0
     float hardness = 1.0f;   // 0.0=suave, 1.0=duro
-    float spacing  = 0.1f;   // fracción del diámetro entre stamps
+    float spacing  = 0.05f;  // fracción del diámetro — 0.05 = stamps muy solapados, trazo suave
     bool  isEraser = false;
     int   brushTextureId = -1;
     int   grainTextureId = -1;  // -1 = sin grano
