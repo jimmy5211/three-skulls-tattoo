@@ -66,6 +66,71 @@ class GpuBrushLoader {
     }
   }
 
+  /// Carga la shape.png de un .tskbrush (ZIP en memoria) al GPU.
+  /// Llama esto cuando el usuario selecciona un pincel importado.
+  static Future<void> loadFromTskBrush(
+      NativeCanvasBridge bridge, String brushId, List<int> zipBytes) async {
+    if (_shapeTexIds.containsKey(brushId)) return; // ya cargado
+    try {
+      // Buscar shape.png en el ZIP leyendo los local file headers
+      final data = zipBytes;
+      int pos = 0;
+      while (pos < data.length - 30) {
+        if (data[pos] == 0x50 && data[pos+1] == 0x4B &&
+            data[pos+2] == 0x03 && data[pos+3] == 0x04) {
+          final compression = data[pos+8]  | (data[pos+9]  << 8);
+          final compSize    = data[pos+18] | (data[pos+19] << 8) |
+                              (data[pos+20] << 16) | (data[pos+21] << 24);
+          final nameLen     = data[pos+26] | (data[pos+27] << 8);
+          final extraLen    = data[pos+28] | (data[pos+29] << 8);
+          final name        = String.fromCharCodes(
+              data.sublist(pos+30, pos+30+nameLen));
+          final dataStart   = pos + 30 + nameLen + extraLen;
+
+          if (name == 'shape.png' && compression == 0 &&
+              dataStart + compSize <= data.length) {
+            final pngBytes = Uint8List.fromList(
+                data.sublist(dataStart, dataStart + compSize));
+            // Decodificar PNG → RGBA
+            final codec = await ui.instantiateImageCodec(
+                pngBytes, targetWidth: 256, targetHeight: 256);
+            final frame = await codec.getNextFrame();
+            final img   = frame.image;
+            final bd    = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+            img.dispose();
+            if (bd == null) return;
+
+            // Mover luminancia → Alpha (mismo proceso que _uploadTexture)
+            final src = bd.buffer.asUint8List();
+            final dst = Uint8List(src.length);
+            for (int i = 0; i < src.length; i += 4) {
+              dst[i]     = 255;
+              dst[i + 1] = 255;
+              dst[i + 2] = 255;
+              dst[i + 3] = src[i + 3] > 10 ? src[i + 3] : src[i]; // alpha o R
+            }
+
+            final texId = await bridge.loadBrushTexture(dst, 256, 256);
+            if (texId >= 0) {
+              _shapeTexIds[brushId] = texId;
+              // ignore: avoid_print
+              print('[GpuBrushLoader] ✅ tskbrush $brushId → texId=$texId');
+            }
+            return;
+          }
+          pos = dataStart + compSize;
+        } else {
+          pos++;
+        }
+      }
+      // ignore: avoid_print
+      print('[GpuBrushLoader] ⚠️ shape.png not found in $brushId');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[GpuBrushLoader] ❌ loadFromTskBrush $brushId → $e');
+    }
+  }
+
   static Future<void> dispose(NativeCanvasBridge bridge) async {
     for (final texId in _shapeTexIds.values) {
       await bridge.unloadBrushTexture(texId);
