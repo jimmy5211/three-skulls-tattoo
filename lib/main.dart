@@ -12,6 +12,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'theme/app_theme.dart';
 import 'app_router.dart';
 import 'services/update_service.dart';
+import 'services/storage_manager.dart';
 import 'services/device_profile.dart';
 import 'confirm_update_dialog.dart';
 
@@ -235,6 +236,9 @@ void main() async {
 
   // Detectar hardware y configurar perfil de rendimiento
   await DeviceProfile.detect();
+
+  // Crear carpetas /ThreeSkulls/ en almacenamiento interno
+  await StorageManager.instance.init();
 
   runApp(const ThreeSkullsApp());
 }
