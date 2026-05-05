@@ -126,14 +126,41 @@ object DrawingEngineJNI {
     fun beginStroke(
         layerId: Int, x: Float, y: Float, pressure: Float,
         size: Float, opacity: Float, hardness: Float, spacing: Float,
-        isEraser: Boolean, brushTexId: Int, colorARGB: Int
+        isEraser: Boolean, brushTexId: Int, colorARGB: Int,
+        // Parámetros .tskbrush (valores default = comportamiento anterior)
+        spacingBase: Float = 0.04f, spacingVelocity: Float = 0.001f,
+        spacingMinPx: Float = 1.0f, jitterPos: Float = 0.03f,
+        jitterSize: Float = 0.02f,  jitterRot: Float = 6.28f,
+        followStroke: Boolean = true, flow: Float = 0.55f, grainDepth: Float = 0.0f
     ) = glHandler.post {
         if (!initialized) return@post
         ensureCurrent()
 
+        // Aplicar parámetros dinámicos del pincel ANTES de beginStroke
+        jniSetBrushDynParams(
+            spacingBase, spacingVelocity, spacingMinPx,
+            jitterPos, jitterSize, jitterRot,
+            followStroke, flow, grainDepth
+        )
         jniBeginStroke(
             layerId, x, y, pressure, size, opacity, hardness, spacing,
             isEraser, brushTexId, colorARGB
+        )
+    }
+
+    // Configura parámetros dinámicos sin iniciar trazo (útil para preview)
+    fun setBrushDynParams(
+        spacingBase: Float = 0.04f, spacingVelocity: Float = 0.001f,
+        spacingMinPx: Float = 1.0f, jitterPos: Float = 0.03f,
+        jitterSize: Float = 0.02f,  jitterRot: Float = 6.28f,
+        followStroke: Boolean = true, flow: Float = 0.55f, grainDepth: Float = 0.0f
+    ) = glHandler.post {
+        if (!initialized) return@post
+        ensureCurrent()
+        jniSetBrushDynParams(
+            spacingBase, spacingVelocity, spacingMinPx,
+            jitterPos, jitterSize, jitterRot,
+            followStroke, flow, grainDepth
         )
     }
 
@@ -317,4 +344,10 @@ object DrawingEngineJNI {
     @JvmStatic private external fun jniUnloadBrushTexture(id: Int)
     // NUEVO: simetría
     @JvmStatic private external fun jniSetSymmetry(enabled: Boolean, axis: Int)
+    // NUEVO: parámetros dinámicos .tskbrush
+    @JvmStatic private external fun jniSetBrushDynParams(
+        spacingBase: Float, spacingVelocity: Float, spacingMinPx: Float,
+        jitterPos: Float, jitterSize: Float, jitterRot: Float,
+        followStroke: Boolean, flow: Float, grainDepth: Float
+    )
 }
