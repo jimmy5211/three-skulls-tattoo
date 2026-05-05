@@ -3596,6 +3596,10 @@ class _CanvasScreenState extends State<CanvasScreen>
           return;
         }
         _controller.setActiveBrush(brush);
+        // Cargar textura del .tskbrush al GPU si es pincel importado
+        if (brush.category == BrushCategory.importado) {
+          _loadTskBrushTexture(brush);
+        }
         setState(() {
           // FIX: desactivar sello y transform mode al seleccionar pincel
           _stampMode = false;
@@ -3677,6 +3681,26 @@ class _CanvasScreenState extends State<CanvasScreen>
         ),
       ),
     );
+  }
+
+  // ── Carga la textura de un pincel .tskbrush al GPU ───────────────────────────
+  Future<void> _loadTskBrushTexture(BrushModel brush) async {
+    if (!_nativeReady) return;
+    // Buscar el archivo .tskbrush en el almacenamiento
+    final paths = await StorageManager.instance.listBrushFiles();
+    for (final path in paths) {
+      final fileName = path.split('/').last.replaceAll('.tskbrush', '');
+      if (fileName == brush.id || fileName.contains(brush.id)) {
+        try {
+          final bytes = await File(path).readAsBytes();
+          await GpuBrushLoader.loadFromTskBrush(_bridge, brush.id, bytes);
+          debugPrint('_loadTskBrushTexture: ${brush.id} loaded from $path');
+        } catch (e) {
+          debugPrint('_loadTskBrushTexture error: $e');
+        }
+        return;
+      }
+    }
   }
 
   void _showBrushAdjustSheet(BrushModel brush) {
@@ -4522,6 +4546,16 @@ class _CanvasScreenState extends State<CanvasScreen>
                 isEraser:   _brush.type == StrokeType.eraser,
                 brushTexId: _gpuTexId,
                 color:      _controller.activeColor,
+                // Parámetros .tskbrush — se aplican si el pincel los tiene definidos
+                spacingBase:     _brush.spacingBase,
+                spacingVelocity: _brush.spacingVelocity,
+                spacingMinPx:    _brush.spacingMinPx,
+                jitterPos:       _brush.jitterPos,
+                jitterSize:      _brush.jitterSize,
+                jitterRot:       _brush.jitterRot,
+                followStroke:    _brush.followStroke,
+                flow:            _brush.flow,
+                grainDepth:      _brush.grainDepth,
               ));
               // _pendingPoints eliminado — C++ maneja buffer interno
               _pendingStrokePoint = null;
