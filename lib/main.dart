@@ -238,7 +238,7 @@ void main() async {
   await DeviceProfile.detect();
 
   // Crear carpetas /ThreeSkulls/ en almacenamiento interno
-  await StorageManager.instance.init();
+  try { await StorageManager.instance.init(); } catch (_) {}
 
   runApp(const ThreeSkullsApp());
 }
