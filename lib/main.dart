@@ -238,7 +238,8 @@ void main() async {
   await DeviceProfile.detect();
 
   // Crear carpetas /ThreeSkulls/ en almacenamiento interno
-  try { await StorageManager.instance.init(); } catch (_) {}
+  // El permiso se pide en SplashScreen — aquí solo init sin permiso como fallback
+try { await StorageManager.instance.init(usePublicStorage: false); } catch (_) {}
 
   runApp(const ThreeSkullsApp());
 }
