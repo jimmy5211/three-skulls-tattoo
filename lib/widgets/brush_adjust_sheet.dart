@@ -863,36 +863,57 @@ class _StrokePreviewPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width; final h = size.height;
-    final path = Path()
-      ..moveTo(w * 0.02, h * 0.7)
-      ..cubicTo(w * 0.25, h * 0.1, w * 0.55, h * 0.9, w * 0.80, h * 0.2)
-      ..lineTo(w * 0.98, h * 0.5);
-
-    final sw = h * 0.3;
+    final w = size.width;
+    final h = size.height;
+    const segs = 50;
+    final head = brush.pressureConeHead.clamp(0.0, 1.0);
+    final tail = brush.pressureConeTail.clamp(0.0, 1.0);
     final id = brush.id;
+    final maxSw = h * 0.32;
 
-    if (id.startsWith('aero')) {
-      for (double r = sw * 2; r >= 1; r -= 2) {
-        canvas.drawPath(path, Paint()
+    for (int i = 0; i < segs - 1; i++) {
+      final t0 = i / (segs - 1.0);
+      final t1 = (i + 1) / (segs - 1.0);
+      final x0 = w * (0.03 + t0 * 0.94);
+      final x1 = w * (0.03 + t1 * 0.94);
+      final y0 = h * 0.5 + h * 0.3 * sin(t0 * pi * 1.5);
+      final y1 = h * 0.5 + h * 0.3 * sin(t1 * pi * 1.5);
+
+      // Presión con cono de cabeza y cola
+      final headLen = 0.12 + head * 0.28;
+      final tailLen = 0.12 + tail * 0.28;
+      double p = 1.0;
+      if (t0 < headLen && head > 0.01)
+        p = (t0 / headLen).clamp(0.05, 1.0);
+      if (t0 > 1.0 - tailLen && tail > 0.01)
+        p = ((1.0 - t0) / tailLen).clamp(0.05, 1.0);
+      p = p * (1.0 - (head > 0.01 || tail > 0.01 ? 0.0 : 0.0)); // sin min si hay cono
+
+      final sw = (maxSw * p).clamp(0.8, maxSw);
+      final opacity = brush.opacity.clamp(0.1, 1.0);
+
+      // Glow extra para aerógrafo y luminancia
+      if (id.startsWith('aero') || id.startsWith('lum')) {
+        canvas.drawLine(Offset(x0,y0), Offset(x1,y1), Paint()
           ..color = Colors.white.withOpacity(0.06)
-          ..strokeWidth = r ..strokeCap = StrokeCap.round
+          ..strokeWidth = sw * 3.5
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5)
           ..style = PaintingStyle.stroke);
       }
-    } else if (id.startsWith('lum')) {
-      canvas.drawPath(path, Paint()
-        ..color = Colors.white.withOpacity(0.2)
-        ..strokeWidth = sw * 3 ..strokeCap = StrokeCap.round
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4)
+
+      canvas.drawLine(Offset(x0,y0), Offset(x1,y1), Paint()
+        ..color = Colors.white.withOpacity(opacity * (id.startsWith('aero') ? 0.6 : 0.88))
+        ..strokeWidth = sw
+        ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke);
     }
-    canvas.drawPath(path, Paint()
-      ..color = Colors.white.withOpacity(0.85 * brush.opacity)
-      ..strokeWidth = sw * (0.3 + brush.pressureConeHead * 0.7)
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke);
   }
 
   @override
-  bool shouldRepaint(_StrokePreviewPainter o) => o.brush != brush;
+  bool shouldRepaint(_StrokePreviewPainter o) =>
+      o.brush.id != brush.id ||
+      o.brush.opacity != brush.opacity ||
+      o.brush.pressureConeHead != brush.pressureConeHead ||
+      o.brush.pressureConeTail != brush.pressureConeTail;
 }
