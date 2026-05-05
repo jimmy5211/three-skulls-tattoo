@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../models/tsk_brush_model.dart';
 
 /// Puente Flutter ↔ motor C++ offscreen.
 /// El motor renderiza en FBO → exporta RGBA → Flutter crea ui.Image.
@@ -41,13 +42,44 @@ class NativeCanvasBridge {
     double pressure = 1.0, required double size, required double opacity,
     required double hardness, double spacing = 0.1,
     bool isEraser = false, int brushTexId = -1, required Color color,
+    // Parámetros .tskbrush opcionales — si se pasan, se aplican antes del trazo
+    TskBrushModel? tskBrush,
   }) async {
     if (!_ready) return;
+    final sp = tskBrush?.spacing ?? const SpacingParams();
+    final jt = tskBrush?.jitter  ?? const JitterParams();
     await _ch.invokeMethod('beginStroke', {
       'layerId': layerId, 'x': x, 'y': y, 'pressure': pressure,
       'size': size, 'opacity': opacity, 'hardness': hardness,
       'spacing': spacing, 'isEraser': isEraser,
       'brushTexId': brushTexId, 'colorARGB': color.value,
+      // Nuevos parámetros .tskbrush
+      'spacingBase':     sp.base,
+      'spacingVelocity': sp.velocityInfluence,
+      'spacingMinPx':    sp.minSpacing,
+      'jitterPos':       jt.position,
+      'jitterSize':      jt.size,
+      'jitterRot':       jt.rotation,
+      'followStroke':    tskBrush?.followStroke ?? true,
+      'flow':            tskBrush?.flow         ?? 0.55,
+      'grainDepth':      tskBrush?.grainDepth   ?? 0.0,
+    });
+  }
+
+  /// Aplica los parámetros de un TskBrushModel al motor sin iniciar trazo.
+  /// Útil para pre-configurar el pincel antes del primer punto.
+  Future<void> setBrushDynParams(TskBrushModel brush) async {
+    if (!_ready) return;
+    await _ch.invokeMethod('setBrushDynParams', {
+      'spacingBase':     brush.spacing.base,
+      'spacingVelocity': brush.spacing.velocityInfluence,
+      'spacingMinPx':    brush.spacing.minSpacing,
+      'jitterPos':       brush.jitter.position,
+      'jitterSize':      brush.jitter.size,
+      'jitterRot':       brush.jitter.rotation,
+      'followStroke':    brush.followStroke,
+      'flow':            brush.flow,
+      'grainDepth':      brush.grainDepth,
     });
   }
 
