@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/app_theme.dart';
+import '../services/storage_manager.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -87,6 +88,12 @@ class _SplashScreenState extends State<SplashScreen>
     if (mounted) _titleController.forward();
 
     await Future.delayed(const Duration(milliseconds: 1500));
+
+    // ── Pedir permiso de almacenamiento y crear carpetas ThreeSkulls ─────────
+    if (mounted) {
+      await StorageManager.instance.requestAndInit(context);
+    }
+
     if (mounted) _fadeController.forward();
 
     await Future.delayed(const Duration(milliseconds: 500));
@@ -133,10 +140,7 @@ class _SplashScreenState extends State<SplashScreen>
                       return Opacity(
                         opacity: _titleAnimation.value,
                         child: Transform.translate(
-                          offset: Offset(
-                            0,
-                            20 * (1 - _titleAnimation.value),
-                          ),
+                          offset: Offset(0, 20 * (1 - _titleAnimation.value)),
                           child: Column(
                             children: [
                               const Text(
@@ -159,8 +163,7 @@ class _SplashScreenState extends State<SplashScreen>
                               ),
                               const SizedBox(height: 8),
                               Container(
-                                width: 200,
-                                height: 1,
+                                width: 200, height: 1,
                                 color: AppTheme.accentRed,
                               ),
                               const SizedBox(height: 8),
@@ -194,10 +197,7 @@ class _SplashScreenState extends State<SplashScreen>
       builder: (context, child) {
         return Transform.scale(
           scale: animation.value,
-          child: Text(
-            '💀',
-            style: TextStyle(fontSize: size),
-          ),
+          child: Text('💀', style: TextStyle(fontSize: size)),
         );
       },
     );
