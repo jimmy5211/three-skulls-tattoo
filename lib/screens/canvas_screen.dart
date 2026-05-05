@@ -5749,7 +5749,7 @@ class _CanvasScreenState extends State<CanvasScreen>
               width:     p.canvasWidth,
               height:    p.canvasHeight,
             );
-            if (img != null) setState(() => _controller.setLayerImage(img));
+            if (img != null) setState(() {});
           }
         }
       }
