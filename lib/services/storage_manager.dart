@@ -1,15 +1,18 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 /// Gestiona la estructura de carpetas de Three Skulls Tattoo.
-/// Las carpetas se crean en /storage/emulated/0/ThreeSkulls/
-/// para que sean visibles en el gestor de archivos.
+/// Carpeta raíz visible: /storage/emulated/0/ThreeSkulls/
+/// Requiere MANAGE_EXTERNAL_STORAGE en Android 11+.
 class StorageManager {
   static StorageManager? _instance;
   static StorageManager get instance => _instance ??= StorageManager._();
   StorageManager._();
 
   String? _rootPath;
+  bool _initialized = false;
 
   // ── Rutas ─────────────────────────────────────────────────────────────────
   String get root       => '$_rootPath/ThreeSkulls';
@@ -28,64 +31,131 @@ class StorageManager {
   String get pincelesAgua        => '$pinceles/agua';
   String get pincelesPersonales  => '$pinceles/mis_pinceles';
 
-  // ── Init ──────────────────────────────────────────────────────────────────
-  Future<void> init() async {
-    // Intentar obtener /storage/emulated/0/ (almacenamiento público)
-    _rootPath = await _getPublicStoragePath();
-    await _createAll();
-    await _cleanTemp();
+  bool   get isInitialized => _initialized;
+  String get displayPath   => root;
+
+  // ── Pedir permiso y crear carpetas ────────────────────────────────────────
+
+  /// Llama esto desde SplashScreen antes de navegar al home.
+  /// Devuelve true si las carpetas fueron creadas exitosamente.
+  Future<bool> requestAndInit(BuildContext context) async {
+    final hasPermission = await _requestStoragePermission(context);
+    await init(usePublicStorage: hasPermission);
+    return hasPermission;
   }
 
-  /// Obtiene la ruta del almacenamiento público visible en el gestor de archivos.
-  /// En Android esto es /storage/emulated/0/
-  static Future<String> _getPublicStoragePath() async {
-    try {
-      // getExternalStorageDirectory() devuelve algo como:
-      // /storage/emulated/0/Android/data/com.threeskullstattoo.app/files
-      // Subimos 4 niveles para llegar a /storage/emulated/0/
-      final appDir = await getExternalStorageDirectory();
-      if (appDir != null) {
-        // Subir directorios: files -> app_package -> data -> Android -> /storage/emulated/0/
-        final parts = appDir.path.split('/');
-        // Buscar el índice de "Android" y tomar todo antes
-        final androidIdx = parts.indexOf('Android');
-        if (androidIdx > 0) {
-          return parts.sublist(0, androidIdx).join('/');
-        }
-        // Fallback: subir 4 niveles manualmente
-        Directory dir = appDir;
-        for (int i = 0; i < 4; i++) {
-          dir = dir.parent;
-        }
-        return dir.path;
-      }
-    } catch (_) {}
+  /// Pide MANAGE_EXTERNAL_STORAGE si es Android 11+.
+  /// Muestra diálogo explicativo antes de enviar al usuario a Configuración.
+  static Future<bool> _requestStoragePermission(BuildContext context) async {
+    if (!Platform.isAndroid) return true;
 
-    // Fallback final: directorio de documentos de la app
-    final docs = await getApplicationDocumentsDirectory();
-    return docs.path;
+    // Android 10 y menor — READ/WRITE es suficiente
+    if (await Permission.storage.isGranted) return true;
+
+    // Android 11+ — necesita MANAGE_EXTERNAL_STORAGE
+    final manageStatus = await Permission.manageExternalStorage.status;
+    if (manageStatus.isGranted) return true;
+
+    // Mostrar diálogo explicativo
+    if (context.mounted) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: const Text(
+            '📁 Acceso al almacenamiento',
+            style: TextStyle(
+                color: Colors.white,
+                fontFamily: 'BlackOpsOne',
+                fontSize: 16),
+          ),
+          content: const Text(
+            'Three Skulls necesita acceso al almacenamiento para crear la carpeta '
+            '"ThreeSkulls" donde se guardarán tus proyectos, pinceles y sellos.\n\n'
+            'En la siguiente pantalla activa "Permitir el acceso a todos los archivos".',
+            style: TextStyle(
+                color: Color(0xFFAAAAAA),
+                fontFamily: 'Raleway',
+                fontSize: 13,
+                height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Omitir',
+                  style: TextStyle(color: Colors.white38)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Continuar',
+                  style: TextStyle(color: Color(0xFFE53935))),
+            ),
+          ],
+        ),
+      ) ?? false;
+
+      if (!confirmed) return false;
+    }
+
+    // Abrir configuración del sistema para MANAGE_EXTERNAL_STORAGE
+    await Permission.manageExternalStorage.request();
+
+    // Verificar si fue otorgado
+    return await Permission.manageExternalStorage.isGranted;
+  }
+
+  // ── Init principal ────────────────────────────────────────────────────────
+
+  Future<void> init({bool usePublicStorage = true}) async {
+    try {
+      if (usePublicStorage) {
+        // Intentar escribir en /storage/emulated/0/
+        final extDir = await getExternalStorageDirectory();
+        if (extDir != null) {
+          final parts = extDir.path.split('/');
+          final androidIdx = parts.indexOf('Android');
+          if (androidIdx > 0) {
+            final publicRoot = parts.sublist(0, androidIdx).join('/');
+            _rootPath = publicRoot;
+            await _createAll();
+            _initialized = true;
+            debugPrint('StorageManager OK (público): $root');
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('StorageManager public init error: $e');
+    }
+
+    // Fallback: directorio externo de la app
+    try {
+      final extDir = await getExternalStorageDirectory();
+      _rootPath = extDir?.path ?? (await getApplicationDocumentsDirectory()).path;
+      await _createAll();
+      _initialized = true;
+      debugPrint('StorageManager OK (privado): $root');
+    } catch (e) {
+      debugPrint('StorageManager fallback error: $e');
+      try {
+        _rootPath = (await getApplicationDocumentsDirectory()).path;
+        await _createAll();
+        _initialized = true;
+      } catch (_) {}
+    }
   }
 
   Future<void> _createAll() async {
     final dirs = [
-      root,
-      proyectos,
+      root, proyectos,
       pinceles,
-      pincelesCarboncillo,
-      pincelesTinta,
-      pincelesAerografo,
-      pincelesLinea,
-      pincelesAgua,
-      pincelesPersonales,
+      pincelesCarboncillo, pincelesTinta, pincelesAerografo,
+      pincelesLinea, pincelesAgua, pincelesPersonales,
       sellos,
-      '$sellos/abstractos',
-      '$sellos/elementos',
-      '$sellos/industriales',
-      '$sellos/organicos',
-      fuentes,
-      exportar,
-      importar,
-      temp,
+      '$sellos/abstractos', '$sellos/elementos',
+      '$sellos/industriales', '$sellos/organicos',
+      fuentes, exportar, importar, temp,
     ];
     for (final path in dirs) {
       final d = Directory(path);
@@ -102,7 +172,7 @@ class StorageManager {
   }
 
   // ── Proyectos ─────────────────────────────────────────────────────────────
-  String projectPath(String name) => '$proyectos/$name.tskproject';
+  String projectPath(String id) => '$proyectos/$id.tskproject';
 
   Future<List<FileSystemEntity>> listProjects() async {
     final d = Directory(proyectos);
@@ -114,10 +184,8 @@ class StorageManager {
   }
 
   // ── Pinceles ──────────────────────────────────────────────────────────────
-  String brushPath(String id, {String category = 'mis_pinceles'}) {
-    final catDir = _brushCategoryDir(category);
-    return '$catDir/$id.tskbrush';
-  }
+  String brushPath(String id, {String category = 'mis_pinceles'}) =>
+      '${_brushCategoryDir(category)}/$id.tskbrush';
 
   String _brushCategoryDir(String category) {
     switch (category) {
@@ -132,19 +200,14 @@ class StorageManager {
 
   Future<List<String>> listBrushFiles() async {
     final result = <String>[];
-    final dirs = [
-      Directory(pincelesCarboncillo),
-      Directory(pincelesTinta),
-      Directory(pincelesAerografo),
-      Directory(pincelesLinea),
-      Directory(pincelesAgua),
-      Directory(pincelesPersonales),
-    ];
-    for (final d in dirs) {
+    for (final d in [
+      Directory(pincelesCarboncillo), Directory(pincelesTinta),
+      Directory(pincelesAerografo),   Directory(pincelesLinea),
+      Directory(pincelesAgua),        Directory(pincelesPersonales),
+    ]) {
       if (!await d.exists()) continue;
-      for (final f in d.listSync()) {
+      for (final f in d.listSync())
         if (f.path.endsWith('.tskbrush')) result.add(f.path);
-      }
     }
     return result;
   }
@@ -158,7 +221,6 @@ class StorageManager {
         .toList();
   }
 
-  // ── Sellos ────────────────────────────────────────────────────────────────
   Future<List<String>> listStamps({String? category}) async {
     final dir = category != null ? '$sellos/$category' : sellos;
     final d = Directory(dir);
@@ -169,30 +231,25 @@ class StorageManager {
         .toList();
   }
 
-  // ── Export / Temp ─────────────────────────────────────────────────────────
   String exportPath(String filename) => '$exportar/$filename';
   String tempPath(String filename)   => '$temp/$filename';
 
-  // ── Utilidades ────────────────────────────────────────────────────────────
   Future<int> storageUsedBytes() async {
     int total = 0;
-    await for (final f in Directory(root).list(recursive: true)) {
+    if (!await Directory(root).exists()) return 0;
+    await for (final f in Directory(root).list(recursive: true))
       if (f is File) total += await f.length();
-    }
     return total;
   }
 
   String formatBytes(int bytes) {
-    if (bytes < 1024)          return '$bytes B';
-    if (bytes < 1024 * 1024)   return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024)    return '$bytes B';
+    if (bytes < 1048576) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / 1048576).toStringAsFixed(1)} MB';
   }
 
-  /// Ruta pública para mostrar al usuario
-  String get displayPath => '$_rootPath/ThreeSkulls';
-
-  Future<void> deleteProject(String name) async {
-    final f = File(projectPath(name));
+  Future<void> deleteProject(String id) async {
+    final f = File(projectPath(id));
     if (await f.exists()) await f.delete();
   }
 
