@@ -5430,7 +5430,7 @@ class _CanvasScreenState extends State<CanvasScreen>
         try {
           // file bytes loaded in _parseTskBrush
           // Leer brush.json del ZIP
-          final archive = dart_io.File(path);
+          // file parsed below
           // Parsear directamente con ZipDecoder de dart (archive package)
           // Por ahora cargar como BrushModel básico desde el nombre del archivo
           final fileName = path.split('/').last.replaceAll('.tskbrush', '');
