@@ -890,11 +890,7 @@ class _CanvasScreenState extends State<CanvasScreen>
         _buildSmudgeBtn(),
         _buildLayersBtn(),
         _buildColorBtn(),
-        _btn(Icons.save_outlined,
-            color: AppTheme.accentRed, onTap: _saveProject),
-        _btn(Icons.folder_open_outlined,
-            tooltip: 'Abrir proyecto',
-            onTap: _showOpenProjectDialog),
+        _buildProjectMenuBtn(),
         const SizedBox(width: 4),
       ],
     );
@@ -5389,6 +5385,48 @@ class _CanvasScreenState extends State<CanvasScreen>
   ];
 
   // ─── GUARDAR PROYECTO .tskproject ────────────────────────────────────────────
+
+  Widget _buildProjectMenuBtn() {
+    return PopupMenuButton<String>(
+      offset: const Offset(0, 44),
+      color: const Color(0xFF1E1E1E),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Colors.white12),
+      ),
+      icon: const Icon(Icons.save_outlined, color: AppTheme.accentRed, size: 22),
+      tooltip: 'Proyecto',
+      onSelected: (value) {
+        if (value == 'save')   _saveProject();
+        if (value == 'open')   _showOpenProjectDialog();
+        if (value == 'export') _saveDesign();
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(value: 'save',
+          child: Row(children: [
+            const Icon(Icons.save_outlined, color: AppTheme.accentRed, size: 18),
+            const SizedBox(width: 10),
+            const Text('Guardar proyecto',
+                style: TextStyle(color: Colors.white, fontFamily: 'Raleway')),
+          ])),
+        PopupMenuItem(value: 'open',
+          child: Row(children: [
+            const Icon(Icons.folder_open_outlined, color: Colors.white70, size: 18),
+            const SizedBox(width: 10),
+            const Text('Abrir proyecto',
+                style: TextStyle(color: Colors.white, fontFamily: 'Raleway')),
+          ])),
+        const PopupMenuDivider(),
+        PopupMenuItem(value: 'export',
+          child: Row(children: [
+            const Icon(Icons.ios_share_outlined, color: Colors.white70, size: 18),
+            const SizedBox(width: 10),
+            const Text('Exportar / Compartir',
+                style: TextStyle(color: Colors.white, fontFamily: 'Raleway')),
+          ])),
+      ],
+    );
+  }
 
   Future<void> _saveProject() async {
     // Mostrar diálogo de nombre si es proyecto nuevo
