@@ -20,6 +20,7 @@ add_library(
     src/main/cpp/stroke_engine.cpp
     src/main/cpp/layer_manager.cpp
     src/main/cpp/brush_shader.cpp
+    src/main/cpp/tskbrush_loader.cpp
 )
 
 # ── Librerías del sistema Android ────────────────────────────────
