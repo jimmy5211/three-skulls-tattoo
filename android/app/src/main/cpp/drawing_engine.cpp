@@ -516,36 +516,47 @@ void DrawingEngine::setBackground(const Color& c) {
 // ── Restaurar píxeles RGBA a FBO de capa (para cargar proyectos .tskproject) ──
 void DrawingEngine::restoreLayerPixels(int layerId, const uint8_t* rgba,
                                         size_t size, int w, int h) {
-    if (!initialized_) return;
-    auto* layer = layerManager_.getLayer(layerId);
+    if (!impl_) return;
+    if (!impl_->makeCurrent()) return;
+
+    auto* layer = impl_->layerMgr->getLayer(layerId);
     if (!layer) {
         LOGE("restoreLayerPixels: layer %d not found", layerId);
+        impl_->doneCurrent();
         return;
     }
     if ((size_t)(w * h * 4) != size) {
         LOGE("restoreLayerPixels: size mismatch %dx%d*4=%d != %zu",
              w, h, w*h*4, size);
+        impl_->doneCurrent();
         return;
     }
 
-    // Crear textura temporal con los píxeles y copiar al FBO de la capa
-    GLuint tmpTex = 0;
-    glGenTextures(1, &tmpTex);
-    glBindTexture(GL_TEXTURE_2D, tmpTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, rgba);
-
-    // Bind FBO de la capa y hacer blit
+    // Bind FBO de la capa y subir píxeles directamente con glTexSubImage2D
     glBindFramebuffer(GL_FRAMEBUFFER, layer->fbo);
     glViewport(0, 0, w, h);
 
-    // Usar el shader de copia para dibujar la textura al FBO
-    strokeEngine_.drawTexture(tmpTex, w, h);
+    // Obtener textura del attachment del FBO y subir píxeles directamente
+    GLint attachTex = 0;
+    glGetFramebufferAttachmentParameteriv(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+        GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &attachTex);
+
+    if (attachTex > 0) {
+        // La capa ya tiene una textura — subir píxeles directamente
+        glBindTexture(GL_TEXTURE_2D, (GLuint)attachTex);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h,
+                        GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    } else {
+        // Fallback: limpiar y usar glReadPixels/write approach
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDeleteTextures(1, &tmpTex);
+
+    impl_->doneCurrent();
     LOGI("restoreLayerPixels: layer %d restored %dx%d", layerId, w, h);
 }
 void DrawingEngine::setCanvasSize(int w, int h) {
