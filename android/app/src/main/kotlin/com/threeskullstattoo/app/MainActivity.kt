@@ -47,7 +47,6 @@ class MainActivity : FlutterActivity() {
                         isEraser   = call.argument<Boolean>("isEraser") ?: false,
                         brushTexId = call.argument<Int>("brushTexId") ?: -1,
                         colorARGB  = (call.argument<Any>("colorARGB") as? Number)?.toInt() ?: 0xFF000000.toInt(),
-                        // Parámetros .tskbrush (opcionales — defaults preservan comportamiento anterior)
                         spacingBase     = (call.argument<Double>("spacingBase")     ?: 0.04).toFloat(),
                         spacingVelocity = (call.argument<Double>("spacingVelocity") ?: 0.001).toFloat(),
                         spacingMinPx    = (call.argument<Double>("spacingMinPx")    ?: 1.0).toFloat(),
@@ -61,7 +60,6 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
 
-                // Configura parámetros dinámicos del pincel sin iniciar trazo
                 "setBrushDynParams" -> {
                     DrawingEngineJNI.setBrushDynParams(
                         spacingBase     = (call.argument<Double>("spacingBase")     ?: 0.04).toFloat(),
@@ -86,12 +84,12 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
 
-                // endStroke devuelve ByteArray RGBA del canvas completo
                 "endStrokeAndExport" -> DrawingEngineJNI.endStrokeAndExport { bytes ->
                     result.success(bytes)
                 }
 
                 "cancelStroke" -> { DrawingEngineJNI.cancelStroke(); result.success(null) }
+
                 "stampAt" -> {
                     val x = (call.argument<Any>("x") as Number).toFloat()
                     val y = (call.argument<Any>("y") as Number).toFloat()
@@ -99,12 +97,11 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
 
-                // exportCanvas sin modificar historial
                 "exportCanvas" -> DrawingEngineJNI.exportCanvas { bytes ->
                     result.success(bytes)
                 }
 
-                // ── Historial (devuelven ByteArray del nuevo estado) ──
+                // ── Historial ─────────────────────────────────────────
                 "undo" -> DrawingEngineJNI.undo { bytes -> result.success(bytes) }
                 "redo" -> DrawingEngineJNI.redo { bytes -> result.success(bytes) }
                 "canUndo" -> result.success(DrawingEngineJNI.canUndo())
@@ -115,24 +112,22 @@ class MainActivity : FlutterActivity() {
                     val name = call.argument<String>("name") ?: ""
                     result.success(DrawingEngineJNI.addLayer(name))
                 }
-                "removeLayer"    -> { DrawingEngineJNI.removeLayer(call.argument<Int>("id")!!);     result.success(null) }
-                "setActiveLayer" -> { DrawingEngineJNI.setActiveLayer(call.argument<Int>("id")!!);  result.success(null) }
-                "setLayerOpacity"-> {
+                "removeLayer"    -> { DrawingEngineJNI.removeLayer(call.argument<Int>("id")!!);    result.success(null) }
+                "setActiveLayer" -> { DrawingEngineJNI.setActiveLayer(call.argument<Int>("id")!!); result.success(null) }
+                "setLayerOpacity" -> {
                     DrawingEngineJNI.setLayerOpacity(
                         call.argument<Int>("id")!!,
                         (call.argument<Double>("opacity")!!).toFloat()
                     )
                     result.success(null)
                 }
-                "setLayerVisible"-> {
+                "setLayerVisible" -> {
                     DrawingEngineJNI.setLayerVisible(
                         call.argument<Int>("id")!!,
                         call.argument<Boolean>("visible")!!
                     )
                     result.success(null)
                 }
-
-                // clearLayer devuelve ByteArray
                 "clearLayer" -> DrawingEngineJNI.clearLayer(call.argument<Int>("id")!!) { bytes ->
                     result.success(bytes)
                 }
@@ -143,11 +138,13 @@ class MainActivity : FlutterActivity() {
                 ) { bytes -> result.success(bytes) }
 
                 "setCanvasSize" -> {
-                    DrawingEngineJNI.setCanvasSize(call.argument<Int>("w")!!, call.argument<Int>("h")!!)
+                    DrawingEngineJNI.setCanvasSize(
+                        call.argument<Int>("w")!!,
+                        call.argument<Int>("h")!!
+                    )
                     result.success(null)
                 }
 
-                // ── Export ────────────────────────────────────────────
                 "exportPixels" -> DrawingEngineJNI.exportCanvas { bytes -> result.success(bytes) }
 
                 "eraseRegion" -> {
@@ -158,6 +155,17 @@ class MainActivity : FlutterActivity() {
                     val h = (call.argument<Any>("h") as Number).toFloat()
                     DrawingEngineJNI.eraseRegion(lid, x, y, w, h)
                     result.success(null)
+                }
+
+                // ── Restore layer (para cargar proyectos .tskproject) ─
+                "restoreLayer" -> {
+                    val layerId = call.argument<Int>("layerId")!!
+                    val pixels  = call.argument<ByteArray>("pixels")!!
+                    val w       = call.argument<Int>("width")!!
+                    val h       = call.argument<Int>("height")!!
+                    DrawingEngineJNI.restoreLayer(layerId, pixels, w, h) { bytes ->
+                        result.success(bytes)
+                    }
                 }
 
                 // ── Brush textures ────────────────────────────────────
@@ -183,11 +191,12 @@ class MainActivity : FlutterActivity() {
                     DrawingEngineJNI.setSymmetry(enabled, axis)
                     result.success(null)
                 }
+
                 else -> result.notImplemented()
             }
         }
 
-        // ── Canal de optimización de batería / segundo plano ──────────────────
+        // ── Canal de optimización de batería ──────────────────────────────────
         MethodChannel(messenger, "com.threeskullstattoo.app/battery")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
