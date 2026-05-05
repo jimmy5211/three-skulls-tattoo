@@ -1,18 +1,9 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
-/// Gestiona la estructura de carpetas de Three Skulls Tattoo
-/// en el almacenamiento interno del dispositivo.
-///
-/// Estructura:
-/// /ThreeSkulls/
-///   proyectos/       ← proyectos guardados (.tskproject)
-///   pinceles/        ← pinceles importados (.tskbrush)
-///   sellos/          ← stamps importados (.png)
-///   fuentes/         ← fuentes importadas (.ttf / .otf)
-///   exportar/        ← exportaciones temporales
-///   importar/        ← archivos sueltos pendientes de importar
-///   temp/            ← archivos temporales (se borran al iniciar)
+/// Gestiona la estructura de carpetas de Three Skulls Tattoo.
+/// Las carpetas se crean en /storage/emulated/0/ThreeSkulls/
+/// para que sean visibles en el gestor de archivos.
 class StorageManager {
   static StorageManager? _instance;
   static StorageManager get instance => _instance ??= StorageManager._();
@@ -21,7 +12,6 @@ class StorageManager {
   String? _rootPath;
 
   // ── Rutas ─────────────────────────────────────────────────────────────────
-
   String get root       => '$_rootPath/ThreeSkulls';
   String get proyectos  => '$root/proyectos';
   String get pinceles   => '$root/pinceles';
@@ -31,7 +21,6 @@ class StorageManager {
   String get importar   => '$root/importar';
   String get temp       => '$root/temp';
 
-  // Sub-carpetas de pinceles por categoría
   String get pincelesCarboncillo => '$pinceles/carboncillo';
   String get pincelesTinta       => '$pinceles/tinta';
   String get pincelesAerografo   => '$pinceles/aerografo';
@@ -40,16 +29,41 @@ class StorageManager {
   String get pincelesPersonales  => '$pinceles/mis_pinceles';
 
   // ── Init ──────────────────────────────────────────────────────────────────
-
-  /// Inicializa y crea todas las carpetas necesarias.
-  /// Llamar una vez al iniciar la app (en main.dart o initState del HomeScreen).
   Future<void> init() async {
-    final dir = await getExternalStorageDirectory()
-             ?? await getApplicationDocumentsDirectory();
-    _rootPath = dir.path;
-
+    // Intentar obtener /storage/emulated/0/ (almacenamiento público)
+    _rootPath = await _getPublicStoragePath();
     await _createAll();
     await _cleanTemp();
+  }
+
+  /// Obtiene la ruta del almacenamiento público visible en el gestor de archivos.
+  /// En Android esto es /storage/emulated/0/
+  static Future<String> _getPublicStoragePath() async {
+    try {
+      // getExternalStorageDirectory() devuelve algo como:
+      // /storage/emulated/0/Android/data/com.threeskullstattoo.app/files
+      // Subimos 4 niveles para llegar a /storage/emulated/0/
+      final appDir = await getExternalStorageDirectory();
+      if (appDir != null) {
+        // Subir directorios: files -> app_package -> data -> Android -> /storage/emulated/0/
+        final parts = appDir.path.split('/');
+        // Buscar el índice de "Android" y tomar todo antes
+        final androidIdx = parts.indexOf('Android');
+        if (androidIdx > 0) {
+          return parts.sublist(0, androidIdx).join('/');
+        }
+        // Fallback: subir 4 niveles manualmente
+        Directory dir = appDir;
+        for (int i = 0; i < 4; i++) {
+          dir = dir.parent;
+        }
+        return dir.path;
+      }
+    } catch (_) {}
+
+    // Fallback final: directorio de documentos de la app
+    final docs = await getApplicationDocumentsDirectory();
+    return docs.path;
   }
 
   Future<void> _createAll() async {
@@ -75,13 +89,10 @@ class StorageManager {
     ];
     for (final path in dirs) {
       final d = Directory(path);
-      if (!await d.exists()) {
-        await d.create(recursive: true);
-      }
+      if (!await d.exists()) await d.create(recursive: true);
     }
   }
 
-  // Borra los archivos temporales del ciclo anterior
   Future<void> _cleanTemp() async {
     final d = Directory(temp);
     if (await d.exists()) {
@@ -91,7 +102,6 @@ class StorageManager {
   }
 
   // ── Proyectos ─────────────────────────────────────────────────────────────
-
   String projectPath(String name) => '$proyectos/$name.tskproject';
 
   Future<List<FileSystemEntity>> listProjects() async {
@@ -104,7 +114,6 @@ class StorageManager {
   }
 
   // ── Pinceles ──────────────────────────────────────────────────────────────
-
   String brushPath(String id, {String category = 'mis_pinceles'}) {
     final catDir = _brushCategoryDir(category);
     return '$catDir/$id.tskbrush';
@@ -121,7 +130,6 @@ class StorageManager {
     }
   }
 
-  /// Lista todos los .tskbrush encontrados en todas las subcarpetas de pinceles
   Future<List<String>> listBrushFiles() async {
     final result = <String>[];
     final dirs = [
@@ -141,7 +149,6 @@ class StorageManager {
     return result;
   }
 
-  /// Lista .tskbrush en la carpeta de importar (pendientes)
   Future<List<String>> listPendingImports() async {
     final d = Directory(importar);
     if (!await d.exists()) return [];
@@ -152,7 +159,6 @@ class StorageManager {
   }
 
   // ── Sellos ────────────────────────────────────────────────────────────────
-
   Future<List<String>> listStamps({String? category}) async {
     final dir = category != null ? '$sellos/$category' : sellos;
     final d = Directory(dir);
@@ -163,14 +169,11 @@ class StorageManager {
         .toList();
   }
 
-  // ── Exportar ─────────────────────────────────────────────────────────────
-
+  // ── Export / Temp ─────────────────────────────────────────────────────────
   String exportPath(String filename) => '$exportar/$filename';
+  String tempPath(String filename)   => '$temp/$filename';
 
-  String tempPath(String filename) => '$temp/$filename';
-
-  // ── Utilidades ───────────────────────────────────────────────────────────
-
+  // ── Utilidades ────────────────────────────────────────────────────────────
   Future<int> storageUsedBytes() async {
     int total = 0;
     await for (final f in Directory(root).list(recursive: true)) {
@@ -180,10 +183,13 @@ class StorageManager {
   }
 
   String formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024)          return '$bytes B';
+    if (bytes < 1024 * 1024)   return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
+
+  /// Ruta pública para mostrar al usuario
+  String get displayPath => '$_rootPath/ThreeSkulls';
 
   Future<void> deleteProject(String name) async {
     final f = File(projectPath(name));
