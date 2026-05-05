@@ -26,6 +26,7 @@ import '../models/stamp_model.dart';
 import '../services/device_profile.dart';
 import 'background_service_dialog.dart';
 import 'package:flutter/services.dart';
+import '../widgets/brush_adjust_sheet.dart';
 import '../models/tsk_project_model.dart';
 import '../services/tsk_project_service.dart';
 import 'package:uuid/uuid.dart';
@@ -889,7 +890,11 @@ class _CanvasScreenState extends State<CanvasScreen>
         _buildSmudgeBtn(),
         _buildLayersBtn(),
         _buildColorBtn(),
-        _buildProjectMenuBtn(),
+        _btn(Icons.save_outlined,
+            color: AppTheme.accentRed, onTap: _saveProject),
+        _btn(Icons.folder_open_outlined,
+            tooltip: 'Abrir proyecto',
+            onTap: _showOpenProjectDialog),
         const SizedBox(width: 4),
       ],
     );
@@ -963,7 +968,9 @@ class _CanvasScreenState extends State<CanvasScreen>
               const Spacer(),
               _buildLayersBtn(),
               _buildColorBtn(),
-              _buildProjectMenuBtn(),
+              _btn(Icons.save_outlined,
+                  tooltip: 'Guardar',
+                  color: AppTheme.accentRed, onTap: _saveDesign),
               const SizedBox(width: 4),
             ],
           ),
@@ -3647,102 +3654,14 @@ class _CanvasScreenState extends State<CanvasScreen>
   }
 
   void _showBrushAdjustSheet(BrushModel brush) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: _cardColor,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => StatefulBuilder(
-        builder: (context, setSheet) {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 36, height: 4,
-                  decoration: BoxDecoration(
-                    color: _borderColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Row(children: [
-                  Text(brush.emoji, style: const TextStyle(fontSize: 20)),
-                  const SizedBox(width: 10),
-                  Text(
-                    brush.name.toUpperCase(),
-                    style: const TextStyle(
-                      fontFamily: 'BlackOpsOne',
-                      fontSize: 13,
-                      color: _textPrimary,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                ]),
-                const SizedBox(height: 20),
-                _buildSheetSlider(
-                  label: 'TAM',
-                  value: brush.size,
-                  min: 1.0, max: 200.0,
-                  displayValue: '${brush.size.round()}px',
-                  onChanged: (v) => setSheet(() {
-                    brush.size = v;
-                    _controller.setActiveBrush(brush);
-                    setState(() {});
-                  }),
-                ),
-                _buildSheetSlider(
-                  label: 'OPA',
-                  value: brush.opacity,
-                  min: 0.01, max: 1.0,
-                  displayValue: '${(brush.opacity * 100).round()}%',
-                  onChanged: (v) => setSheet(() {
-                    brush.opacity = v;
-                    _controller.setActiveBrush(brush);
-                    setState(() {});
-                  }),
-                ),
-                _buildSheetSlider(
-                  label: 'DUR',
-                  value: brush.hardness,
-                  min: 0.0, max: 1.0,
-                  displayValue: '${(brush.hardness * 100).round()}%',
-                  onChanged: (v) => setSheet(() {
-                    brush.hardness = v;
-                    _controller.setActiveBrush(brush);
-                    setState(() {});
-                  }),
-                ),
-                _buildSheetSlider(
-                  label: 'ESP',
-                  value: brush.spacing,
-                  min: 0.05, max: 5.0,
-                  displayValue: '${(brush.spacing * 100).round()}%',
-                  onChanged: (v) => setSheet(() {
-                    brush.spacing = v;
-                    _controller.setActiveBrush(brush);
-                    setState(() {});
-                  }),
-                ),
-                _buildSheetSlider(
-                  label: 'FLUJO',
-                  value: brush.flow,
-                  min: 0.01, max: 1.0,
-                  displayValue: '${(brush.flow * 100).round()}%',
-                  onChanged: (v) => setSheet(() {
-                    brush.flow = v;
-                    _controller.setActiveBrush(brush);
-                    setState(() {});
-                  }),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
+    showBrushAdjustSheet(
+      context,
+      brush,
+      strokePreviewTitle: brush.name,
+      onChanged: (updated) {
+        _controller.setActiveBrush(updated);
+        setState(() {});
+      },
     );
   }
 
@@ -5470,59 +5389,6 @@ class _CanvasScreenState extends State<CanvasScreen>
   ];
 
   // ─── GUARDAR PROYECTO .tskproject ────────────────────────────────────────────
-
-  // ─── BOTÓN PROYECTO (guardar + abrir en un solo botón) ─────────────────────
-  Widget _buildProjectMenuBtn() {
-    return PopupMenuButton<String>(
-      offset: const Offset(0, 44),
-      color: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.white12),
-      ),
-      icon: Icon(
-        Icons.save_outlined,
-        color: AppTheme.accentRed,
-        size: 22,
-      ),
-      tooltip: 'Proyecto',
-      onSelected: (value) {
-        if (value == 'save')  _saveProject();
-        if (value == 'open')  _showOpenProjectDialog();
-        if (value == 'export') _saveDesign();
-      },
-      itemBuilder: (_) => [
-        PopupMenuItem(
-          value: 'save',
-          child: Row(children: [
-            const Icon(Icons.save_outlined, color: AppTheme.accentRed, size: 18),
-            const SizedBox(width: 10),
-            const Text('Guardar proyecto',
-                style: TextStyle(color: Colors.white, fontFamily: 'Raleway')),
-          ]),
-        ),
-        PopupMenuItem(
-          value: 'open',
-          child: Row(children: [
-            const Icon(Icons.folder_open_outlined, color: Colors.white70, size: 18),
-            const SizedBox(width: 10),
-            const Text('Abrir proyecto',
-                style: TextStyle(color: Colors.white, fontFamily: 'Raleway')),
-          ]),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          value: 'export',
-          child: Row(children: [
-            const Icon(Icons.ios_share_outlined, color: Colors.white70, size: 18),
-            const SizedBox(width: 10),
-            const Text('Exportar / Compartir',
-                style: TextStyle(color: Colors.white, fontFamily: 'Raleway')),
-          ]),
-        ),
-      ],
-    );
-  }
 
   Future<void> _saveProject() async {
     // Mostrar diálogo de nombre si es proyecto nuevo
