@@ -26,6 +26,9 @@ import '../models/stamp_model.dart';
 import '../services/device_profile.dart';
 import 'background_service_dialog.dart';
 import 'package:flutter/services.dart';
+import '../models/tsk_project_model.dart';
+import '../services/tsk_project_service.dart';
+import 'package:uuid/uuid.dart';
 
 enum BrushPanelTab { todos, descargados, creados, sellos }
 enum SelloTab { creados, descargados }
@@ -77,6 +80,7 @@ class _CanvasScreenState extends State<CanvasScreen>
   Offset _startOffset = Offset.zero;
   Offset _startFocalPoint = Offset.zero;
   String _projectName = 'Sin título';
+  String? _projectId; // null = proyecto nuevo sin guardar
   bool _isScaling = false;
   double _rotation = 0.0;
   double _startRotation = 0.0;
@@ -886,7 +890,10 @@ class _CanvasScreenState extends State<CanvasScreen>
         _buildLayersBtn(),
         _buildColorBtn(),
         _btn(Icons.save_outlined,
-            color: AppTheme.accentRed, onTap: _saveDesign),
+            color: AppTheme.accentRed, onTap: _saveProject),
+        _btn(Icons.folder_open_outlined,
+            tooltip: 'Abrir proyecto',
+            onTap: _showOpenProjectDialog),
         const SizedBox(width: 4),
       ],
     );
@@ -5467,6 +5474,298 @@ class _CanvasScreenState extends State<CanvasScreen>
   List<Offset> _imageHandlePositions(Rect rect) => [
     rect.topLeft, rect.topRight, rect.bottomLeft, rect.bottomRight,
   ];
+
+  // ─── GUARDAR PROYECTO .tskproject ────────────────────────────────────────────
+
+  Future<void> _saveProject() async {
+    // Mostrar diálogo de nombre si es proyecto nuevo
+    if (_projectId == null) {
+      final name = await _showProjectNameDialog(_projectName);
+      if (name == null) return; // cancelado
+      _projectName = name;
+    }
+
+    // Mostrar progreso
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: AppTheme.accentRed),
+      ),
+    );
+
+    try {
+      // 1. Obtener píxeles del canvas del motor C++
+      final pixels = _nativeReady ? await _bridge.exportPixels() : null;
+      final w = _controller.canvasSize.width.toInt();
+      final h = _controller.canvasSize.height.toInt();
+
+      // 2. Generar thumbnail (escalar a 256px de ancho)
+      Uint8List? thumbnail;
+      if (pixels != null) {
+        try {
+          final buf  = await ui.ImmutableBuffer.fromUint8List(pixels);
+          final desc = ui.ImageDescriptor.raw(
+            buf, width: w, height: h,
+            pixelFormat: ui.PixelFormat.rgba8888,
+          );
+          final codec = await desc.instantiateCodec(
+            targetWidth: 256,
+            targetHeight: (h * 256 / w).round(),
+          );
+          final frame    = await codec.getNextFrame();
+          final thumbImg = frame.image;
+          final bd = await thumbImg.toByteData(format: ui.ImageByteFormat.png);
+          thumbnail = bd?.buffer.asUint8List();
+        } catch (_) {}
+      }
+
+      // 3. Construir capas con píxeles
+      final layers = _controller.layers.map((l) => TskLayerData(
+        id:        l.id,
+        name:      l.name,
+        opacity:   l.opacity,
+        isVisible: l.isVisible,
+        isLocked:  l.isLocked,
+        pixelData: (l.id == _controller.activeLayerId) ? pixels : null,
+      )).toList();
+
+      // 4. Crear o actualizar modelo de proyecto
+      final project = TskProjectModel(
+        id:                  _projectId ?? const Uuid().v4(),
+        name:                _projectName,
+        canvasWidth:         w,
+        canvasHeight:        h,
+        backgroundColorARGB: _controller.backgroundColor.value,
+        layers:              layers,
+        activeLayerId:       _controller.activeLayerId,
+        activeBrushId:       _controller.activeBrush.id,
+        activeBrushSize:     _controller.activeBrush.size,
+        activeBrushOpacity:  _controller.activeBrush.opacity,
+        activeColorARGB:     _controller.activeColor.value,
+      );
+      _projectId = project.id;
+
+      // 5. Guardar
+      final result = await TskProjectService.save(
+        project,
+        layerPixels: pixels != null
+            ? {_controller.activeLayerId: pixels}
+            : {},
+        thumbnail: thumbnail,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop(); // cerrar loading
+
+      if (result == SaveResult.ok) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('💾 "$_projectName" guardado'),
+          backgroundColor: Colors.green.shade700,
+          duration: const Duration(seconds: 2),
+        ));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Error al guardar el proyecto'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
+      debugPrint('_saveProject error: $e');
+    }
+  }
+
+  Future<String?> _showProjectNameDialog(String current) async {
+    final ctrl = TextEditingController(text: current);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Nombre del proyecto',
+            style: TextStyle(color: Colors.white, fontFamily: 'BlackOpsOne')),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'Sin título',
+            hintStyle: TextStyle(color: Colors.white38),
+            enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: AppTheme.accentRed)),
+            focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: AppTheme.accentRed, width: 2)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim().isEmpty ? 'Sin título' : ctrl.text.trim()),
+            child: const Text('Guardar', style: TextStyle(color: AppTheme.accentRed)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── ABRIR PROYECTO ───────────────────────────────────────────────────────────
+
+  Future<void> _showOpenProjectDialog() async {
+    final projects = await TskProjectService.listProjects();
+
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        minChildSize: 0.4,
+        expand: false,
+        builder: (_, sc) => Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text('PROYECTOS',
+                style: TextStyle(
+                  fontFamily: 'BlackOpsOne', fontSize: 14,
+                  color: Colors.white, letterSpacing: 2,
+                )),
+            const SizedBox(height: 8),
+            Expanded(
+              child: projects.isEmpty
+                  ? const Center(
+                      child: Text('No hay proyectos guardados',
+                          style: TextStyle(color: Colors.white38)))
+                  : ListView.builder(
+                      controller: sc,
+                      itemCount: projects.length,
+                      itemBuilder: (_, i) {
+                        final p = projects[i];
+                        return ListTile(
+                          leading: Container(
+                            width: 48, height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.white10,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: p.thumbnail != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: Image.memory(p.thumbnail!,
+                                        fit: BoxFit.cover),
+                                  )
+                                : const Icon(Icons.image_outlined,
+                                    color: Colors.white38),
+                          ),
+                          title: Text(p.name,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontFamily: 'Raleway',
+                                  fontWeight: FontWeight.bold)),
+                          subtitle: Text(
+                            '${p.formattedDate} · ${p.formattedSize}',
+                            style: const TextStyle(color: Colors.white38, fontSize: 11),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete_outline,
+                                color: Colors.red, size: 20),
+                            onPressed: () async {
+                              await TskProjectService.delete(p.id);
+                              Navigator.pop(ctx);
+                              _showOpenProjectDialog();
+                            },
+                          ),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _loadProject(p.id);
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _loadProject(String projectId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: AppTheme.accentRed),
+      ),
+    );
+
+    try {
+      final loaded = await TskProjectService.load(projectId);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      if (loaded.result != LoadResult.ok) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Error al abrir el proyecto'),
+          backgroundColor: Colors.red,
+        ));
+        return;
+      }
+
+      final p = loaded.project;
+      _projectId   = p.id;
+      _projectName = p.name;
+
+      // Restaurar tamaño del canvas
+      _controller.updateCanvasSize(
+          Size(p.canvasWidth.toDouble(), p.canvasHeight.toDouble()));
+
+      // Restaurar fondo
+      _controller.backgroundColor = Color(p.backgroundColorARGB);
+
+      // Restaurar píxeles al motor C++ si están disponibles
+      if (_nativeReady) {
+        for (final layer in p.layers) {
+          if (layer.pixelData != null && layer.pixelData!.isNotEmpty) {
+            // Restaurar imagen de la capa al motor
+            final img = await _bridge.restoreLayer(
+              layerId:   layer.id,
+              pixels:    layer.pixelData!,
+              width:     p.canvasWidth,
+              height:    p.canvasHeight,
+            );
+            if (img != null) setState(() => _controller.setLayerImage(img));
+          }
+        }
+      }
+
+      setState(() {});
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('📂 "${p.name}" abierto'),
+        backgroundColor: Colors.green.shade700,
+        duration: const Duration(seconds: 2),
+      ));
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
+      debugPrint('_loadProject error: $e');
+    }
+  }
 
   void _saveDesign() {
     _showExportDialog();
