@@ -271,4 +271,22 @@ JNINAME(jniSetBrushDynParams)(JNIEnv*, jclass,
          spacingBase, spacingVelocity, jitterPos, flow);
 }
 
+// ── Restaurar capa desde píxeles RGBA (para cargar proyectos .tskproject) ────
+JNIEXPORT void JNICALL
+JNINAME(jniRestoreLayer)(JNIEnv* env, jclass,
+                          jint layerId, jbyteArray pixels, jint w, jint h) {
+    jsize len = env->GetArrayLength(pixels);
+    jbyte* raw = env->GetByteArrayElements(pixels, nullptr);
+    if (!raw || len <= 0) return;
+
+    // Subir píxeles RGBA directamente al FBO de la capa
+    DrawingEngine::get().restoreLayerPixels(
+        layerId,
+        reinterpret_cast<const uint8_t*>(raw),
+        (size_t)len, w, h
+    );
+    env->ReleaseByteArrayElements(pixels, raw, JNI_ABORT);
+    LOGI("jniRestoreLayer: layerId=%d %dx%d (%d bytes)", layerId, w, h, (int)len);
+}
+
 } // extern "C"

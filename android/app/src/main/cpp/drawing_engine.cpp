@@ -512,6 +512,42 @@ void DrawingEngine::setBackground(const Color& c) {
     if (ready_) { impl_->background = c; render(); }
 }
 
+
+// ── Restaurar píxeles RGBA a FBO de capa (para cargar proyectos .tskproject) ──
+void DrawingEngine::restoreLayerPixels(int layerId, const uint8_t* rgba,
+                                        size_t size, int w, int h) {
+    if (!initialized_) return;
+    auto* layer = layerManager_.getLayer(layerId);
+    if (!layer) {
+        LOGE("restoreLayerPixels: layer %d not found", layerId);
+        return;
+    }
+    if ((size_t)(w * h * 4) != size) {
+        LOGE("restoreLayerPixels: size mismatch %dx%d*4=%d != %zu",
+             w, h, w*h*4, size);
+        return;
+    }
+
+    // Crear textura temporal con los píxeles y copiar al FBO de la capa
+    GLuint tmpTex = 0;
+    glGenTextures(1, &tmpTex);
+    glBindTexture(GL_TEXTURE_2D, tmpTex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+
+    // Bind FBO de la capa y hacer blit
+    glBindFramebuffer(GL_FRAMEBUFFER, layer->fbo);
+    glViewport(0, 0, w, h);
+
+    // Usar el shader de copia para dibujar la textura al FBO
+    strokeEngine_.drawTexture(tmpTex, w, h);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteTextures(1, &tmpTex);
+    LOGI("restoreLayerPixels: layer %d restored %dx%d", layerId, w, h);
+}
 void DrawingEngine::setCanvasSize(int w, int h) {
     if (!ready_) return;
     if (!impl_->makeCurrent()) return;
