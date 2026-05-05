@@ -18,6 +18,9 @@ import android.util.Log
  *
  * SIMETRÍA: jniSetSymmetry() activa el espejo en StrokeEngine C++.
  * Cada stamp se duplica horizontalmente sin overhead en Dart.
+ *
+ * .tskbrush: jniSetBrushDynParams() configura spacing/jitter dinámicos.
+ * .tskproject: jniRestoreLayer() restaura píxeles RGBA al FBO de una capa.
  */
 object DrawingEngineJNI {
 
@@ -126,14 +129,40 @@ object DrawingEngineJNI {
     fun beginStroke(
         layerId: Int, x: Float, y: Float, pressure: Float,
         size: Float, opacity: Float, hardness: Float, spacing: Float,
-        isEraser: Boolean, brushTexId: Int, colorARGB: Int
+        isEraser: Boolean, brushTexId: Int, colorARGB: Int,
+        // Parámetros .tskbrush (valores default = comportamiento anterior)
+        spacingBase: Float = 0.04f, spacingVelocity: Float = 0.001f,
+        spacingMinPx: Float = 1.0f, jitterPos: Float = 0.03f,
+        jitterSize: Float = 0.02f,  jitterRot: Float = 6.28f,
+        followStroke: Boolean = true, flow: Float = 0.55f, grainDepth: Float = 0.0f
     ) = glHandler.post {
         if (!initialized) return@post
         ensureCurrent()
-
+        // Aplicar parámetros dinámicos del pincel ANTES de beginStroke
+        jniSetBrushDynParams(
+            spacingBase, spacingVelocity, spacingMinPx,
+            jitterPos, jitterSize, jitterRot,
+            followStroke, flow, grainDepth
+        )
         jniBeginStroke(
             layerId, x, y, pressure, size, opacity, hardness, spacing,
             isEraser, brushTexId, colorARGB
+        )
+    }
+
+    // Configura parámetros dinámicos sin iniciar trazo (útil para preview)
+    fun setBrushDynParams(
+        spacingBase: Float = 0.04f, spacingVelocity: Float = 0.001f,
+        spacingMinPx: Float = 1.0f, jitterPos: Float = 0.03f,
+        jitterSize: Float = 0.02f,  jitterRot: Float = 6.28f,
+        followStroke: Boolean = true, flow: Float = 0.55f, grainDepth: Float = 0.0f
+    ) = glHandler.post {
+        if (!initialized) return@post
+        ensureCurrent()
+        jniSetBrushDynParams(
+            spacingBase, spacingVelocity, spacingMinPx,
+            jitterPos, jitterSize, jitterRot,
+            followStroke, flow, grainDepth
         )
     }
 
@@ -181,17 +210,15 @@ object DrawingEngineJNI {
     fun canRedo(): Boolean = initialized && jniCanRedo()
 
     // ── Simetría ──────────────────────────────────────────────────────────
-    // Activa/desactiva el espejo en StrokeEngine C++.
-    // axis: 0=horizontal (espejo en X), 1=vertical (espejo en Y).
     fun setSymmetry(enabled: Boolean, axis: Int = 0) =
         glHandler.post { if (initialized) jniSetSymmetry(enabled, axis) }
 
     // ── Capas ──────────────────────────────────────────────────────────────
 
     fun addLayer(name: String): Int = if (initialized) jniAddLayer(name) else -1
-    fun removeLayer(id: Int)   = glHandler.post { if (initialized) jniRemoveLayer(id) }
-    fun setActiveLayer(id: Int)= glHandler.post { if (initialized) jniSetActiveLayer(id) }
-    fun setLayerOpacity(id: Int, o: Float) = glHandler.post { if (initialized) jniSetLayerOpacity(id, o) }
+    fun removeLayer(id: Int)    = glHandler.post { if (initialized) jniRemoveLayer(id) }
+    fun setActiveLayer(id: Int) = glHandler.post { if (initialized) jniSetActiveLayer(id) }
+    fun setLayerOpacity(id: Int, o: Float)   = glHandler.post { if (initialized) jniSetLayerOpacity(id, o) }
     fun setLayerVisible(id: Int, v: Boolean) = glHandler.post { if (initialized) jniSetLayerVisible(id, v) }
 
     fun clearLayer(id: Int, onDone: (ByteArray?) -> Unit) = glHandler.post {
@@ -222,7 +249,7 @@ object DrawingEngineJNI {
 
     fun loadBrushTexture(data: ByteArray, w: Int, h: Int, onDone: (Int) -> Unit) {
         glHandler.post {
-            ensureCurrent() // FIX: GL context debe estar activo para glGenTextures/glTexImage2D
+            ensureCurrent()
             val id = if (initialized) jniLoadBrushTexture(data, w, h) else -1
             Log.i(TAG, "loadBrushTexture: ${w}x${h} → texId=$id")
             android.os.Handler(android.os.Looper.getMainLooper()).post { onDone(id) }
@@ -232,7 +259,8 @@ object DrawingEngineJNI {
     fun unloadBrushTexture(id: Int) =
         glHandler.post { if (initialized) jniUnloadBrushTexture(id) }
 
-    // ── Restaurar capa desde píxeles RGBA (para cargar .tskproject) ─────────────
+    // ── Restaurar capa desde píxeles RGBA (para cargar .tskproject) ────────
+
     fun restoreLayer(layerId: Int, pixels: ByteArray, w: Int, h: Int,
                      onDone: (ByteArray?) -> Unit) {
         glHandler.post {
@@ -297,7 +325,7 @@ object DrawingEngineJNI {
         pbufferSurface = EGL14.EGL_NO_SURFACE
     }
 
-    // ── JNI ────────────────────────────────────────────────────────────────
+    // ── JNI declarations ───────────────────────────────────────────────────
 
     private val nativeLibLoaded: Boolean = try {
         System.loadLibrary("three_skulls_engine"); true
@@ -326,6 +354,13 @@ object DrawingEngineJNI {
     @JvmStatic          external fun jniExportPixels(): ByteArray?
     @JvmStatic private external fun jniLoadBrushTexture(data: ByteArray, w: Int, h: Int): Int
     @JvmStatic private external fun jniUnloadBrushTexture(id: Int)
-    // NUEVO: simetría
     @JvmStatic private external fun jniSetSymmetry(enabled: Boolean, axis: Int)
+    // .tskbrush — parámetros dinámicos de pincel
+    @JvmStatic private external fun jniSetBrushDynParams(
+        spacingBase: Float, spacingVelocity: Float, spacingMinPx: Float,
+        jitterPos: Float, jitterSize: Float, jitterRot: Float,
+        followStroke: Boolean, flow: Float, grainDepth: Float
+    )
+    // .tskproject — restaurar capa desde píxeles
+    @JvmStatic private external fun jniRestoreLayer(layerId: Int, pixels: ByteArray, w: Int, h: Int)
 }
