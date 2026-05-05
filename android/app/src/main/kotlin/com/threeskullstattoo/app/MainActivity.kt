@@ -46,7 +46,33 @@ class MainActivity : FlutterActivity() {
                         spacing    = (call.argument<Double>("spacing") ?: 0.1).toFloat(),
                         isEraser   = call.argument<Boolean>("isEraser") ?: false,
                         brushTexId = call.argument<Int>("brushTexId") ?: -1,
-                        colorARGB  = (call.argument<Any>("colorARGB") as? Number)?.toInt() ?: 0xFF000000.toInt()
+                        colorARGB  = (call.argument<Any>("colorARGB") as? Number)?.toInt() ?: 0xFF000000.toInt(),
+                        // Parámetros .tskbrush (opcionales — defaults preservan comportamiento anterior)
+                        spacingBase     = (call.argument<Double>("spacingBase")     ?: 0.04).toFloat(),
+                        spacingVelocity = (call.argument<Double>("spacingVelocity") ?: 0.001).toFloat(),
+                        spacingMinPx    = (call.argument<Double>("spacingMinPx")    ?: 1.0).toFloat(),
+                        jitterPos       = (call.argument<Double>("jitterPos")       ?: 0.03).toFloat(),
+                        jitterSize      = (call.argument<Double>("jitterSize")      ?: 0.02).toFloat(),
+                        jitterRot       = (call.argument<Double>("jitterRot")       ?: 6.28).toFloat(),
+                        followStroke    = call.argument<Boolean>("followStroke")    ?: true,
+                        flow            = (call.argument<Double>("flow")            ?: 0.55).toFloat(),
+                        grainDepth      = (call.argument<Double>("grainDepth")      ?: 0.0).toFloat()
+                    )
+                    result.success(null)
+                }
+
+                // Configura parámetros dinámicos del pincel sin iniciar trazo
+                "setBrushDynParams" -> {
+                    DrawingEngineJNI.setBrushDynParams(
+                        spacingBase     = (call.argument<Double>("spacingBase")     ?: 0.04).toFloat(),
+                        spacingVelocity = (call.argument<Double>("spacingVelocity") ?: 0.001).toFloat(),
+                        spacingMinPx    = (call.argument<Double>("spacingMinPx")    ?: 1.0).toFloat(),
+                        jitterPos       = (call.argument<Double>("jitterPos")       ?: 0.03).toFloat(),
+                        jitterSize      = (call.argument<Double>("jitterSize")      ?: 0.02).toFloat(),
+                        jitterRot       = (call.argument<Double>("jitterRot")       ?: 6.28).toFloat(),
+                        followStroke    = call.argument<Boolean>("followStroke")    ?: true,
+                        flow            = (call.argument<Double>("flow")            ?: 0.55).toFloat(),
+                        grainDepth      = (call.argument<Double>("grainDepth")      ?: 0.0).toFloat()
                     )
                     result.success(null)
                 }
