@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
-import 'tsk_project_model.dart';
+import '../models/tsk_project_model.dart';
 
 // ─── Resultado de operaciones ─────────────────────────────────────────────────
 enum SaveResult { ok, errorIO, errorEncode }
