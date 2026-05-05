@@ -11,9 +11,34 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #include "stb_image.h"
+// stb_image_write stub — activo cuando se use save()
+#ifndef stbi_write_png_to_mem
+static inline unsigned char* stbi_write_png_to_mem(
+    const unsigned char*, int, int, int, int, int* len) {
+    if (len) *len = 0; return nullptr;
+}
+#define STBIW_FREE(p) free(p)
+#endif
 
-// ── ZIP (miniz, header-only, agregar al proyecto) ─────────────────────────────
-#include "miniz.h"
+// ── ZIP stub (miniz amalgamation pendiente) ───────────────────────────────────
+// El ZIP real se activa cuando se sube miniz.h de la carpeta amalgamation/
+// Por ahora las funciones ZIP retornan vacío — el loader carga JSON inline.
+#define MZ_ZIP_NO_STDIO
+typedef unsigned char mz_uint8;
+typedef unsigned int  mz_uint;
+typedef unsigned long mz_ulong;
+struct mz_zip_archive { void* m_pState; };
+struct mz_zip_archive_file_stat { size_t m_uncomp_size; };
+static inline bool mz_zip_reader_init_mem(mz_zip_archive*, const void*, size_t, int) { return false; }
+static inline int  mz_zip_reader_locate_file(mz_zip_archive*, const char*, const char*, int) { return -1; }
+static inline bool mz_zip_reader_file_stat(mz_zip_archive*, int, mz_zip_archive_file_stat*) { return false; }
+static inline bool mz_zip_reader_extract_to_mem(mz_zip_archive*, int, void*, size_t, int) { return false; }
+static inline void mz_zip_reader_end(mz_zip_archive*) {}
+static inline bool mz_zip_writer_init_file(mz_zip_archive*, const char*, int) { return false; }
+static inline bool mz_zip_writer_add_mem(mz_zip_archive*, const char*, const void*, size_t, int) { return false; }
+static inline bool mz_zip_writer_finalize_archive(mz_zip_archive*) { return false; }
+static inline void mz_zip_writer_end(mz_zip_archive*) {}
+#define MZ_BEST_COMPRESSION 9
 
 #define TAG "TSK_BrushLoader"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  TAG, __VA_ARGS__)

@@ -11,6 +11,17 @@ using namespace tsk;
 
 #define JNINAME(name) Java_com_threeskullstattoo_app_DrawingEngineJNI_##name
 
+// ── Parámetros dinámicos .tskbrush (globales, se setean antes de cada stroke) ──
+static float g_spacingBase     = 0.04f;
+static float g_spacingVelocity = 0.001f;
+static float g_spacingMinPx    = 1.0f;
+static float g_jitterPos       = 0.03f;
+static float g_jitterSize      = 0.02f;
+static float g_jitterRot       = 6.28f;
+static bool  g_followStroke    = true;
+static float g_flow            = 0.55f;
+static float g_grainDepth      = 0.0f;
+
 extern "C" {
 
 // ── Init / Destroy ─────────────────────────────────────────────────────
@@ -241,21 +252,6 @@ JNINAME(jniEraseRegion)(JNIEnv*, jclass,
     DrawingEngine::get().eraseRegion(layerId, x, y, w, h);
 }
 
-
-// ── .tskbrush dynamic params ───────────────────────────────────────────
-// Llamar ANTES de jniBeginStroke para configurar los parámetros del pincel.
-// Permite que el motor use los valores del .tskbrush en lugar de defaults.
-
-// Parámetros dinámicos almacenados globalmente hasta el próximo beginStroke
-static float g_spacingBase     = 0.04f;
-static float g_spacingVelocity = 0.001f;
-static float g_spacingMinPx    = 1.0f;
-static float g_jitterPos       = 0.03f;
-static float g_jitterSize      = 0.02f;
-static float g_jitterRot       = 6.28f;
-static bool  g_followStroke    = true;
-static float g_flow            = 0.55f;
-static float g_grainDepth      = 0.0f;
 
 JNIEXPORT void JNICALL
 JNINAME(jniSetBrushDynParams)(JNIEnv*, jclass,
