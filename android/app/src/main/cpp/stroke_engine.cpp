@@ -270,7 +270,7 @@ bool StrokeEngine::addPoint(const Point& rawP){
     float dx=p.x-lastPoint_.x, dy=p.y-lastPoint_.y;
     float dist=std::sqrt(dx*dx+dy*dy);
     lastSpeed_=dist*0.3f+lastSpeed_*0.7f;
-    float spacing=std::max(1.0f, brush_.size*(0.04f+lastSpeed_*0.001f));
+    float spacing=std::max(brush_.spacingMinPx, brush_.size*(brush_.spacingBase+lastSpeed_*brush_.spacingVelocity));
 
     accDist_+=dist;
     bool rendered=false;
@@ -290,14 +290,14 @@ bool StrokeEngine::addPoint(const Point& rawP){
             ? brush_.size*(0.65f+s.pressure*0.35f)  // presión → tamaño
             : brush_.size;
         // Jitter mínimo — solo para imperfección orgánica, no para bolitas
-        diameter*=(1.0f+rnd(-0.02f,0.02f));
+        diameter*=(1.0f+rnd(-brush_.jitterSize,brush_.jitterSize));
 
-        // Scatter mínimo (posición)
-        float sc=brush_.size*0.03f;
+        // Scatter controlado por jitter del pincel
+        float sc=brush_.size*brush_.jitterPos;
         float sx=s.x+rnd(-sc,sc);
         float sy=s.y+rnd(-sc,sc);
 
-        float rotation=rnd(0.f,6.28f);
+        float rotation=rnd(0.f, brush_.jitterRot);
         renderStampAt(sx,sy,s.pressure,diameter,rotation);
 
         if(symmetryEnabled_&&!brush_.isEraser){
@@ -366,9 +366,9 @@ void StrokeEngine::renderStampAt(float x,float y,float pressure,
         glBindFramebuffer(GL_FRAMEBUFFER,strokeFBO_);
         glViewport(0,0,canvasW_,canvasH_);
         glEnable(GL_BLEND);
-        glBlendEquationSeparate(GL_FUNC_ADD,GL_MAX);
+        glBlendEquationSeparate(GL_FUNC_ADD,GL_FUNC_ADD);
         glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,
-                            GL_ONE,GL_ONE);
+                            GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
     }
 
     glUniform2f(glGetUniformLocation(prog,"u_center"),x,y);

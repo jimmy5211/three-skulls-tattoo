@@ -35,12 +35,21 @@ struct BrushParams {
     float size     = 20.0f;  // diámetro en canvas units
     float opacity  = 1.0f;   // 0.0–1.0
     float hardness = 1.0f;   // 0.0=suave, 1.0=duro
-    float spacing  = 0.05f;  // fracción del diámetro — 0.05 = stamps muy solapados, trazo suave
+    float spacing  = 0.05f;  // legacy (mantenido para compatibilidad)
     bool  isEraser = false;
     int   brushTextureId = -1;
     int   grainTextureId = -1;  // -1 = sin grano
     float grainDepth     = 0.0f; // 0=sin grano, 1=grano total
-    float flow           = 0.55f; // 0.3-0.8 acumulación (flow) // -1 = circular por defecto
+    float flow           = 0.55f; // 0.3-0.8 acumulación (flow)
+
+    // ── Parámetros .tskbrush (spacing dinámico + jitter) ──────────────
+    float spacingBase     = 0.04f;  // fracción del tamaño base
+    float spacingVelocity = 0.001f; // influencia de velocidad en spacing
+    float spacingMinPx    = 1.0f;   // mínimo absoluto en píxeles
+    float jitterPos       = 0.03f;  // jitter de posición (fracción del tamaño)
+    float jitterSize      = 0.02f;  // jitter de tamaño (±%)
+    float jitterRot       = 6.28f;  // jitter de rotación (rad, 6.28=libre 360°)
+    bool  followStroke    = true;   // rotar stamp según dirección del trazo
 };
 
 enum class BlendMode : int {

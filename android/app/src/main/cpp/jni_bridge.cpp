@@ -73,6 +73,16 @@ JNINAME(jniBeginStroke)(JNIEnv*, jclass,
     brush.spacing  = spacing;
     brush.isEraser = (bool)isEraser;
     brush.brushTextureId = brushTexId;
+    // Aplicar parámetros .tskbrush almacenados por jniSetBrushDynParams
+    brush.spacingBase     = g_spacingBase;
+    brush.spacingVelocity = g_spacingVelocity;
+    brush.spacingMinPx    = g_spacingMinPx;
+    brush.jitterPos       = g_jitterPos;
+    brush.jitterSize      = g_jitterSize;
+    brush.jitterRot       = g_jitterRot;
+    brush.followStroke    = g_followStroke;
+    brush.flow            = g_flow;
+    brush.grainDepth      = g_grainDepth;
     Color color = Color::fromARGB((uint32_t)colorARGB);
     // FIX OPACITY: multiplicar alpha del color por la opacidad del pincel
     color.a *= opacity;
@@ -229,6 +239,40 @@ JNIEXPORT void JNICALL
 JNINAME(jniEraseRegion)(JNIEnv*, jclass,
                          jint layerId, jfloat x, jfloat y, jfloat w, jfloat h) {
     DrawingEngine::get().eraseRegion(layerId, x, y, w, h);
+}
+
+
+// ── .tskbrush dynamic params ───────────────────────────────────────────
+// Llamar ANTES de jniBeginStroke para configurar los parámetros del pincel.
+// Permite que el motor use los valores del .tskbrush en lugar de defaults.
+
+// Parámetros dinámicos almacenados globalmente hasta el próximo beginStroke
+static float g_spacingBase     = 0.04f;
+static float g_spacingVelocity = 0.001f;
+static float g_spacingMinPx    = 1.0f;
+static float g_jitterPos       = 0.03f;
+static float g_jitterSize      = 0.02f;
+static float g_jitterRot       = 6.28f;
+static bool  g_followStroke    = true;
+static float g_flow            = 0.55f;
+static float g_grainDepth      = 0.0f;
+
+JNIEXPORT void JNICALL
+JNINAME(jniSetBrushDynParams)(JNIEnv*, jclass,
+    jfloat spacingBase, jfloat spacingVelocity, jfloat spacingMinPx,
+    jfloat jitterPos,   jfloat jitterSize,      jfloat jitterRot,
+    jboolean followStroke, jfloat flow,         jfloat grainDepth) {
+    g_spacingBase     = spacingBase;
+    g_spacingVelocity = spacingVelocity;
+    g_spacingMinPx    = spacingMinPx;
+    g_jitterPos       = jitterPos;
+    g_jitterSize      = jitterSize;
+    g_jitterRot       = jitterRot;
+    g_followStroke    = (bool)followStroke;
+    g_flow            = flow;
+    g_grainDepth      = grainDepth;
+    LOGI("SetBrushDynParams: spacing=%.3f vel=%.4f jPos=%.3f flow=%.2f",
+         spacingBase, spacingVelocity, jitterPos, flow);
 }
 
 } // extern "C"
