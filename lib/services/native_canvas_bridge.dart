@@ -174,6 +174,23 @@ class NativeCanvasBridge {
   Future<Uint8List?> exportPixels() async =>
       _ch.invokeMethod<Uint8List>('exportCanvas');
 
+  /// Restaura los píxeles RGBA de una capa al motor C++ (para cargar proyectos).
+  Future<ui.Image?> restoreLayer({
+    required int layerId,
+    required Uint8List pixels,
+    required int width,
+    required int height,
+  }) async {
+    if (!_ready) return null;
+    final bytes = await _ch.invokeMethod<Uint8List>('restoreLayer', {
+      'layerId': layerId,
+      'pixels':  pixels,
+      'width':   width,
+      'height':  height,
+    });
+    return _toImage(bytes);
+  }
+
   // ── Brush textures ────────────────────────────────────────────────
 
   Future<int> loadBrushTexture(Uint8List data, int w, int h) async =>
