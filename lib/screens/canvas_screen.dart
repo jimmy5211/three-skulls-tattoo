@@ -28,6 +28,7 @@ import 'background_service_dialog.dart';
 import 'package:flutter/services.dart';
 import '../widgets/brush_adjust_sheet.dart';
 import '../models/tsk_project_model.dart';
+import '../models/tsk_brush_model.dart';
 import '../services/storage_manager.dart';
 import 'dart:convert';
 import '../services/tsk_project_service.dart';
@@ -4537,6 +4538,23 @@ class _CanvasScreenState extends State<CanvasScreen>
               // Spacing per categoría: más separado → stamps visibles → textura real
               // Aerógrafo: 0.05 (denso = suave) | Carboncillo: 0.20 (suelto = rugoso)
               // Caligrafía: 0.04 (muy denso = línea sólida) | Luminancia: 0.06
+              // Construir TskBrushModel desde BrushModel para pasar params dinámicos
+              final _tskParams = TskBrushModel(
+                id: _brush.id, name: _brush.name, category: _brush.category.name,
+                spacing: SpacingParams(
+                  base: _brush.spacingBase,
+                  velocityInfluence: _brush.spacingVelocity,
+                  minSpacing: _brush.spacingMinPx,
+                ),
+                jitter: JitterParams(
+                  position: _brush.jitterPos,
+                  size: _brush.jitterSize,
+                  rotation: _brush.jitterRot,
+                ),
+                followStroke: _brush.followStroke,
+                flow: _brush.flow,
+                grainDepth: _brush.grainDepth,
+              );
               _bridgeCall(() => _bridge.beginStroke(
                 layerId:    _nativeLayer(_controller.activeLayerId),
                 x: _dbgX, y: _dbgY,
@@ -4546,16 +4564,7 @@ class _CanvasScreenState extends State<CanvasScreen>
                 isEraser:   _brush.type == StrokeType.eraser,
                 brushTexId: _gpuTexId,
                 color:      _controller.activeColor,
-                // Parámetros .tskbrush — se aplican si el pincel los tiene definidos
-                spacingBase:     _brush.spacingBase,
-                spacingVelocity: _brush.spacingVelocity,
-                spacingMinPx:    _brush.spacingMinPx,
-                jitterPos:       _brush.jitterPos,
-                jitterSize:      _brush.jitterSize,
-                jitterRot:       _brush.jitterRot,
-                followStroke:    _brush.followStroke,
-                flow:            _brush.flow,
-                grainDepth:      _brush.grainDepth,
+                tskBrush:   _tskParams,
               ));
               // _pendingPoints eliminado — C++ maneja buffer interno
               _pendingStrokePoint = null;
