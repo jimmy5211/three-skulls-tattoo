@@ -28,6 +28,8 @@ import 'background_service_dialog.dart';
 import 'package:flutter/services.dart';
 import '../widgets/brush_adjust_sheet.dart';
 import '../models/tsk_project_model.dart';
+import '../services/storage_manager.dart';
+import 'dart:convert';
 import '../services/tsk_project_service.dart';
 import 'package:uuid/uuid.dart';
 
@@ -48,6 +50,8 @@ class _CanvasScreenState extends State<CanvasScreen>
     with WidgetsBindingObserver {
   late CanvasController _controller;
   late List<BrushModel> _brushes;
+  List<BrushModel> _importedBrushes = [];
+  bool _isRefreshingBrushes = false; // pinceles .tskbrush del almacenamiento
 
   bool _showLayers = false;
   bool _showColors = false;
@@ -195,6 +199,8 @@ class _CanvasScreenState extends State<CanvasScreen>
     _controller = CanvasController();
     _controller.addListener(_syncLayerOpacities);
     _brushes = BrushModel.defaultBrushes();
+    // Cargar pinceles importados del almacenamiento
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadImportedBrushes());
 
     // FIX ORDEN INIT: procesar designParams ANTES de _initNativeEngine para que
     // _controller.canvasSize tenga el valor correcto cuando el motor C++ se inicia.
@@ -476,7 +482,11 @@ class _CanvasScreenState extends State<CanvasScreen>
       case BrushPanelTab.todos:
         return _brushes;
       case BrushPanelTab.descargados:
-        return [];
+        if (_searchQuery.isNotEmpty) {
+          return _importedBrushes.where((b) =>
+              b.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+        }
+        return _importedBrushes;
       case BrushPanelTab.creados:
         return [];
       case BrushPanelTab.sellos:
@@ -2547,6 +2557,28 @@ class _CanvasScreenState extends State<CanvasScreen>
           _buildTab('Descargados', BrushPanelTab.descargados),
           _buildTab('Creados', BrushPanelTab.creados),
           _buildTab('Sellos', BrushPanelTab.sellos),
+          // Botón refrescar pinceles importados
+          if (_brushTab == BrushPanelTab.descargados)
+            GestureDetector(
+              onTap: () async {
+                setState(() => _isRefreshingBrushes = true);
+                await _loadImportedBrushes();
+                if (mounted) setState(() => _isRefreshingBrushes = false);
+              },
+              child: Container(
+                margin: const EdgeInsets.all(3),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: _isRefreshingBrushes
+                    ? const SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppTheme.accentRed,
+                        ))
+                    : const Icon(Icons.refresh,
+                        color: AppTheme.accentRed, size: 18),
+              ),
+            ),
         ],
       ),
     );
@@ -3749,8 +3781,12 @@ class _CanvasScreenState extends State<CanvasScreen>
           _buildOptionRow(
               Icons.download_outlined,
               'Importar pincel',
-              'Importa archivo .brush de Procreate',
-              () => Navigator.pop(context)),
+              'Importa .tskbrush desde ThreeSkulls/pinceles/',
+              () async {
+                Navigator.pop(context);
+                await _loadImportedBrushes();
+                if (mounted) setState(() => _brushTab = BrushPanelTab.descargados);
+              }),
           _buildOptionRow(
               Icons.edit_outlined,
               'Modificar pincel',
@@ -5383,6 +5419,76 @@ class _CanvasScreenState extends State<CanvasScreen>
   ];
 
   // ─── GUARDAR PROYECTO .tskproject ────────────────────────────────────────────
+
+  // ── Cargar pinceles .tskbrush del almacenamiento ─────────────────────────────
+  Future<void> _loadImportedBrushes() async {
+    if (!StorageManager.instance.isInitialized) return;
+    try {
+      final paths = await StorageManager.instance.listBrushFiles();
+      final loaded = <BrushModel>[];
+      for (final path in paths) {
+        try {
+          // file bytes loaded in _parseTskBrush
+          // Leer brush.json del ZIP
+          final archive = dart_io.File(path);
+          // Parsear directamente con ZipDecoder de dart (archive package)
+          // Por ahora cargar como BrushModel básico desde el nombre del archivo
+          final fileName = path.split('/').last.replaceAll('.tskbrush', '');
+          // Intentar leer brush.json del archivo ZIP
+          final model = await _parseTskBrush(path, fileName);
+          if (model != null) loaded.add(model);
+        } catch (e) {
+          debugPrint('Error loading brush $path: $e');
+        }
+      }
+      if (mounted) setState(() => _importedBrushes = loaded);
+      debugPrint('Imported brushes loaded: ${loaded.length}');
+    } catch (e) {
+      debugPrint('_loadImportedBrushes error: $e');
+    }
+  }
+
+  Future<BrushModel?> _parseTskBrush(String path, String fallbackId) async {
+    try {
+      final bytes = await File(path).readAsBytes();
+      // Leer ZIP manualmente buscando brush.json
+      // Los primeros 4 bytes de cada entry ZIP son 50 4B 03 04
+      final data = bytes;
+      int pos = 0;
+      while (pos < data.length - 4) {
+        if (data[pos] == 0x50 && data[pos+1] == 0x4B &&
+            data[pos+2] == 0x03 && data[pos+3] == 0x04) {
+          // Local file header
+          final nameLen = data[pos+26] | (data[pos+27] << 8);
+          final extraLen = data[pos+28] | (data[pos+29] << 8);
+          final compSize = data[pos+18] | (data[pos+19] << 8) |
+                          (data[pos+20] << 16) | (data[pos+21] << 24);
+          final name = String.fromCharCodes(data.sublist(pos+30, pos+30+nameLen));
+          final dataStart = pos + 30 + nameLen + extraLen;
+
+          if (name == 'brush.json' && dataStart + compSize <= data.length) {
+            final jsonBytes = data.sublist(dataStart, dataStart + compSize);
+            final json = jsonDecode(String.fromCharCodes(jsonBytes)) as Map<String, dynamic>;
+            return BrushModel.fromJson(json);
+          }
+          pos = dataStart + compSize;
+        } else {
+          pos++;
+        }
+      }
+    } catch (e) {
+      debugPrint('_parseTskBrush error: $e');
+    }
+    // Fallback: crear modelo básico con el nombre del archivo
+    return BrushModel(
+      id: fallbackId,
+      name: fallbackId.replaceAll('_', ' ').split(' ').map((w) =>
+          w.isEmpty ? w : w[0].toUpperCase() + w.substring(1)).join(' '),
+      emoji: '🖌️',
+      type: StrokeType.liner,
+      category: BrushCategory.importado,
+    );
+  }
 
   Widget _buildProjectMenuBtn() {
     return PopupMenuButton<String>(
