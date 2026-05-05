@@ -1,17 +1,66 @@
 import 'stroke_model.dart';
 
+enum RotationDynamic { fijo, libre, seguirTrazo, aleteo }
+enum BlendModeType   { estandar, multiplicar, pantalla, superposicion, luz }
+
 class BrushModel {
   final String id;
   final String name;
   final String emoji;
   final StrokeType type;
   final BrushCategory category;
+
+  // ── General ────────────────────────────────────────────────────────────────
   double size;
   double opacity;
   double spacing;
+  double hardness;
+  double flow;
+  double sizeMin;
+  double flowMax;
+  double flowMin;
+  bool   accumulative;
+  bool   velocityPressure;
+  double smoothing;
+  bool   professionalLine;
+  bool   detectRefLimits;
+  bool   pressureConeSync;
+  double pressureConeHead;
+  double pressureConeTail;
+
+  // ── Forma ──────────────────────────────────────────────────────────────────
+  bool   flipX;
+  bool   flipY;
+  bool   convertToAlpha;
+  double shapeSmoothing;
+  double shapeRoundness;
+  double shapeAngle;
+  int    shapeCount;
+  double shapeCountJitter;
+  double scatter;
+  bool   scatter2D;
+  BlendModeType blendMode;
+  RotationDynamic rotationDynamic;
+
+  // ── Textura ────────────────────────────────────────────────────────────────
+  String? grainAsset;
+  double  grainDepth;
+
+  // ── Lápiz ──────────────────────────────────────────────────────────────────
+  bool   pressureSizeOn;
+  bool   pressureFlowOn;
+  bool   tiltSizeOn;
+  bool   tiltFlowOn;
+  double pressureCurveP1x;
+  double pressureCurveP1y;
+  double pressureCurveP2x;
+  double pressureCurveP2y;
+
+  // ── Cepillo doble ──────────────────────────────────────────────────────────
+  bool    doubleBrushOn;
+  String? doubleBrushId;
+
   bool isPressureSensitive;
-  double hardness; // 0.0=suave, 1.0=duro
-  double flow;     // 0.0=sin flujo, 1.0=flujo máximo
 
   BrushModel({
     required this.id,
@@ -19,518 +68,312 @@ class BrushModel {
     required this.emoji,
     required this.type,
     required this.category,
-    this.size = 5.0,
-    this.opacity = 1.0,
-    this.spacing = 1.0,
+    this.size               = 5.0,
+    this.opacity            = 1.0,
+    this.spacing            = 1.0,
+    this.hardness           = 1.0,
+    this.flow               = 1.0,
+    this.sizeMin            = 0.0,
+    this.flowMax            = 1.0,
+    this.flowMin            = 0.0,
+    this.accumulative       = false,
+    this.velocityPressure   = false,
+    this.smoothing          = 0.0,
+    this.professionalLine   = true,
+    this.detectRefLimits    = true,
+    this.pressureConeSync   = true,
+    this.pressureConeHead   = 0.0,
+    this.pressureConeTail   = 0.0,
+    this.flipX              = false,
+    this.flipY              = false,
+    this.convertToAlpha     = true,
+    this.shapeSmoothing     = 1.0,
+    this.shapeRoundness     = 1.0,
+    this.shapeAngle         = 0.0,
+    this.shapeCount         = 1,
+    this.shapeCountJitter   = 0.0,
+    this.scatter            = 0.0,
+    this.scatter2D          = true,
+    this.blendMode          = BlendModeType.estandar,
+    this.rotationDynamic    = RotationDynamic.libre,
+    this.grainAsset,
+    this.grainDepth         = 0.0,
+    this.pressureSizeOn     = true,
+    this.pressureFlowOn     = false,
+    this.tiltSizeOn         = false,
+    this.tiltFlowOn         = false,
+    this.pressureCurveP1x   = 0.33,
+    this.pressureCurveP1y   = 0.33,
+    this.pressureCurveP2x   = 0.66,
+    this.pressureCurveP2y   = 0.66,
+    this.doubleBrushOn      = false,
+    this.doubleBrushId,
     this.isPressureSensitive = true,
-    this.hardness = 1.0,
-    this.flow = 1.0,
   });
 
+  // Getters para el motor C++
+  double get spacingBase     => spacing * 0.04;
+  double get spacingVelocity => velocityPressure ? 0.001 : 0.0;
+  double get spacingMinPx    => 1.0;
+  double get jitterPos       => scatter * 0.15;
+  double get jitterSize      => shapeCountJitter * 0.2;
+  double get jitterRot {
+    switch (rotationDynamic) {
+      case RotationDynamic.fijo:        return 0.0;
+      case RotationDynamic.seguirTrazo: return 0.1;
+      case RotationDynamic.aleteo:      return 1.0;
+      case RotationDynamic.libre:       return 6.28;
+    }
+  }
+  bool get followStroke => rotationDynamic == RotationDynamic.seguirTrazo;
+
   BrushModel copyWith({
-    String? id,
-    String? name,
-    String? emoji,
-    StrokeType? type,
-    BrushCategory? category,
-    double? size,
-    double? opacity,
-    double? spacing,
+    String? id, String? name, String? emoji,
+    StrokeType? type, BrushCategory? category,
+    double? size, double? opacity, double? spacing, double? hardness,
+    double? flow, double? sizeMin, double? flowMax, double? flowMin,
+    bool? accumulative, bool? velocityPressure, double? smoothing,
+    bool? professionalLine, bool? detectRefLimits,
+    bool? pressureConeSync, double? pressureConeHead, double? pressureConeTail,
+    bool? flipX, bool? flipY, bool? convertToAlpha,
+    double? shapeSmoothing, double? shapeRoundness, double? shapeAngle,
+    int? shapeCount, double? shapeCountJitter,
+    double? scatter, bool? scatter2D,
+    BlendModeType? blendMode, RotationDynamic? rotationDynamic,
+    String? grainAsset, double? grainDepth,
+    bool? pressureSizeOn, bool? pressureFlowOn,
+    bool? tiltSizeOn, bool? tiltFlowOn,
+    double? pressureCurveP1x, double? pressureCurveP1y,
+    double? pressureCurveP2x, double? pressureCurveP2y,
+    bool? doubleBrushOn, String? doubleBrushId,
     bool? isPressureSensitive,
-    double? hardness,
-    double? flow,
   }) {
     return BrushModel(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      emoji: emoji ?? this.emoji,
-      type: type ?? this.type,
-      category: category ?? this.category,
-      size: size ?? this.size,
-      opacity: opacity ?? this.opacity,
-      spacing: spacing ?? this.spacing,
+      id: id ?? this.id, name: name ?? this.name, emoji: emoji ?? this.emoji,
+      type: type ?? this.type, category: category ?? this.category,
+      size: size ?? this.size, opacity: opacity ?? this.opacity,
+      spacing: spacing ?? this.spacing, hardness: hardness ?? this.hardness,
+      flow: flow ?? this.flow, sizeMin: sizeMin ?? this.sizeMin,
+      flowMax: flowMax ?? this.flowMax, flowMin: flowMin ?? this.flowMin,
+      accumulative: accumulative ?? this.accumulative,
+      velocityPressure: velocityPressure ?? this.velocityPressure,
+      smoothing: smoothing ?? this.smoothing,
+      professionalLine: professionalLine ?? this.professionalLine,
+      detectRefLimits: detectRefLimits ?? this.detectRefLimits,
+      pressureConeSync: pressureConeSync ?? this.pressureConeSync,
+      pressureConeHead: pressureConeHead ?? this.pressureConeHead,
+      pressureConeTail: pressureConeTail ?? this.pressureConeTail,
+      flipX: flipX ?? this.flipX, flipY: flipY ?? this.flipY,
+      convertToAlpha: convertToAlpha ?? this.convertToAlpha,
+      shapeSmoothing: shapeSmoothing ?? this.shapeSmoothing,
+      shapeRoundness: shapeRoundness ?? this.shapeRoundness,
+      shapeAngle: shapeAngle ?? this.shapeAngle,
+      shapeCount: shapeCount ?? this.shapeCount,
+      shapeCountJitter: shapeCountJitter ?? this.shapeCountJitter,
+      scatter: scatter ?? this.scatter, scatter2D: scatter2D ?? this.scatter2D,
+      blendMode: blendMode ?? this.blendMode,
+      rotationDynamic: rotationDynamic ?? this.rotationDynamic,
+      grainAsset: grainAsset ?? this.grainAsset,
+      grainDepth: grainDepth ?? this.grainDepth,
+      pressureSizeOn: pressureSizeOn ?? this.pressureSizeOn,
+      pressureFlowOn: pressureFlowOn ?? this.pressureFlowOn,
+      tiltSizeOn: tiltSizeOn ?? this.tiltSizeOn,
+      tiltFlowOn: tiltFlowOn ?? this.tiltFlowOn,
+      pressureCurveP1x: pressureCurveP1x ?? this.pressureCurveP1x,
+      pressureCurveP1y: pressureCurveP1y ?? this.pressureCurveP1y,
+      pressureCurveP2x: pressureCurveP2x ?? this.pressureCurveP2x,
+      pressureCurveP2y: pressureCurveP2y ?? this.pressureCurveP2y,
+      doubleBrushOn: doubleBrushOn ?? this.doubleBrushOn,
+      doubleBrushId: doubleBrushId ?? this.doubleBrushId,
       isPressureSensitive: isPressureSensitive ?? this.isPressureSensitive,
-      hardness: hardness ?? this.hardness,
-      flow: flow ?? this.flow,
     );
   }
 
-  static List<BrushModel> defaultBrushes() {
-    return [
-      // ─── LINER (base) ─────────────────────────────────────
-      BrushModel(id: 'liner_fino', name: 'Liner Fino', emoji: '✒️',
-          type: StrokeType.liner, category: BrushCategory.todos, size: 2.0, opacity: 1.0),
-      BrushModel(id: 'liner_medio', name: 'Liner Medio', emoji: '🖊️',
-          type: StrokeType.liner, category: BrushCategory.todos, size: 4.0, opacity: 1.0),
-      BrushModel(id: 'shader_suave', name: 'Shader Suave', emoji: '🖌️',
-          type: StrokeType.shader, category: BrushCategory.todos, size: 15.0, opacity: 0.5),
-      BrushModel(id: 'dotwork', name: 'Dotwork', emoji: '⚫',
-          type: StrokeType.dotwork, category: BrushCategory.todos, size: 3.0, opacity: 1.0, spacing: 3.0),
-      BrushModel(id: 'relleno', name: 'Relleno', emoji: '🎨',
-          type: StrokeType.fill, category: BrushCategory.todos, size: 20.0, opacity: 0.8),
-      BrushModel(id: 'borrador', name: 'Borrador', emoji: '🧹',
-          type: StrokeType.eraser, category: BrushCategory.todos, size: 10.0, opacity: 1.0, hardness: 1.0),
+  Map<String, dynamic> toJson() => {
+    'id': id, 'name': name, 'emoji': emoji,
+    'type': type.name, 'category': category.name,
+    'size': size, 'opacity': opacity, 'spacing': spacing,
+    'hardness': hardness, 'flow': flow,
+    'sizeMin': sizeMin, 'flowMax': flowMax, 'flowMin': flowMin,
+    'accumulative': accumulative, 'velocityPressure': velocityPressure,
+    'smoothing': smoothing, 'professionalLine': professionalLine,
+    'detectRefLimits': detectRefLimits,
+    'pressureConeSync': pressureConeSync,
+    'pressureConeHead': pressureConeHead, 'pressureConeTail': pressureConeTail,
+    'flipX': flipX, 'flipY': flipY, 'convertToAlpha': convertToAlpha,
+    'shapeSmoothing': shapeSmoothing, 'shapeRoundness': shapeRoundness,
+    'shapeAngle': shapeAngle, 'shapeCount': shapeCount,
+    'shapeCountJitter': shapeCountJitter,
+    'scatter': scatter, 'scatter2D': scatter2D,
+    'blendMode': blendMode.name, 'rotationDynamic': rotationDynamic.name,
+    'grainAsset': grainAsset, 'grainDepth': grainDepth,
+    'pressureSizeOn': pressureSizeOn, 'pressureFlowOn': pressureFlowOn,
+    'tiltSizeOn': tiltSizeOn, 'tiltFlowOn': tiltFlowOn,
+    'pressureCurveP1x': pressureCurveP1x, 'pressureCurveP1y': pressureCurveP1y,
+    'pressureCurveP2x': pressureCurveP2x, 'pressureCurveP2y': pressureCurveP2y,
+    'doubleBrushOn': doubleBrushOn, 'doubleBrushId': doubleBrushId,
+  };
 
-      // ─── CALIGRAFÍA ───────────────────────────────────────
-      BrushModel(id: 'cal_01', name: 'Pluma Clásica', emoji: '✒️',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 3.0, opacity: 1.0),
-      BrushModel(id: 'cal_02', name: 'Pluma Caligráfica', emoji: '🖋️',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 4.0, opacity: 1.0),
-      BrushModel(id: 'cal_03', name: 'Pincel Caligráfico', emoji: '🖌️',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 6.0, opacity: 0.9),
-      BrushModel(id: 'cal_04', name: 'Marcador Fino', emoji: '✏️',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 2.0, opacity: 1.0),
-      BrushModel(id: 'cal_05', name: 'Marcador Grueso', emoji: '🖍️',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 8.0, opacity: 1.0),
-      BrushModel(id: 'cal_06', name: 'Tinta China', emoji: '🖊️',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 3.0, opacity: 1.0),
-      BrushModel(id: 'cal_07', name: 'Brocha Japonesa', emoji: '🎋',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 10.0, opacity: 0.8),
-      BrushModel(id: 'cal_08', name: 'Plumilla', emoji: '🪶',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 1.5, opacity: 1.0),
-      BrushModel(id: 'cal_09', name: 'Rotulador', emoji: '🖊️',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 5.0, opacity: 1.0),
-      BrushModel(id: 'cal_10', name: 'Pincel Seco', emoji: '🎨',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 7.0, opacity: 0.7),
-      BrushModel(id: 'cal_11', name: 'Caña', emoji: '🌾',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 4.0, opacity: 0.9),
-      BrushModel(id: 'cal_12', name: 'Gótico', emoji: '⚜️',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 5.0, opacity: 1.0),
-      BrushModel(id: 'cal_13', name: 'Copperplate', emoji: '✒️',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 2.0, opacity: 1.0),
-      BrushModel(id: 'cal_14', name: 'Brush Lettering', emoji: '🖌️',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 8.0, opacity: 0.9),
-      BrushModel(id: 'cal_15', name: 'Uncial', emoji: '📜',
-          type: StrokeType.caligrafia, category: BrushCategory.caligrafia, size: 6.0, opacity: 1.0),
+  factory BrushModel.fromJson(Map<String, dynamic> j) => BrushModel(
+    id:       j['id']    as String,
+    name:     j['name']  as String,
+    emoji:    j['emoji'] as String? ?? '🖌️',
+    type:     StrokeType.values.firstWhere((e) => e.name == j['type'],     orElse: () => StrokeType.liner),
+    category: BrushCategory.values.firstWhere((e) => e.name == j['category'], orElse: () => BrushCategory.todos),
+    size:              (j['size']              as num?)?.toDouble() ?? 5.0,
+    opacity:           (j['opacity']           as num?)?.toDouble() ?? 1.0,
+    spacing:           (j['spacing']           as num?)?.toDouble() ?? 1.0,
+    hardness:          (j['hardness']          as num?)?.toDouble() ?? 1.0,
+    flow:              (j['flow']              as num?)?.toDouble() ?? 1.0,
+    sizeMin:           (j['sizeMin']           as num?)?.toDouble() ?? 0.0,
+    flowMax:           (j['flowMax']           as num?)?.toDouble() ?? 1.0,
+    flowMin:           (j['flowMin']           as num?)?.toDouble() ?? 0.0,
+    accumulative:      j['accumulative']       as bool? ?? false,
+    velocityPressure:  j['velocityPressure']   as bool? ?? false,
+    smoothing:         (j['smoothing']         as num?)?.toDouble() ?? 0.0,
+    professionalLine:  j['professionalLine']   as bool? ?? true,
+    detectRefLimits:   j['detectRefLimits']    as bool? ?? true,
+    pressureConeSync:  j['pressureConeSync']   as bool? ?? true,
+    pressureConeHead:  (j['pressureConeHead']  as num?)?.toDouble() ?? 0.0,
+    pressureConeTail:  (j['pressureConeTail']  as num?)?.toDouble() ?? 0.0,
+    flipX:             j['flipX']              as bool? ?? false,
+    flipY:             j['flipY']              as bool? ?? false,
+    convertToAlpha:    j['convertToAlpha']     as bool? ?? true,
+    shapeSmoothing:    (j['shapeSmoothing']    as num?)?.toDouble() ?? 1.0,
+    shapeRoundness:    (j['shapeRoundness']    as num?)?.toDouble() ?? 1.0,
+    shapeAngle:        (j['shapeAngle']        as num?)?.toDouble() ?? 0.0,
+    shapeCount:        j['shapeCount']         as int?  ?? 1,
+    shapeCountJitter:  (j['shapeCountJitter']  as num?)?.toDouble() ?? 0.0,
+    scatter:           (j['scatter']           as num?)?.toDouble() ?? 0.0,
+    scatter2D:         j['scatter2D']          as bool? ?? true,
+    blendMode:         BlendModeType.values.firstWhere((e) => e.name == j['blendMode'],       orElse: () => BlendModeType.estandar),
+    rotationDynamic:   RotationDynamic.values.firstWhere((e) => e.name == j['rotationDynamic'], orElse: () => RotationDynamic.libre),
+    grainAsset:        j['grainAsset']         as String?,
+    grainDepth:        (j['grainDepth']        as num?)?.toDouble() ?? 0.0,
+    pressureSizeOn:    j['pressureSizeOn']     as bool? ?? true,
+    pressureFlowOn:    j['pressureFlowOn']     as bool? ?? false,
+    tiltSizeOn:        j['tiltSizeOn']         as bool? ?? false,
+    tiltFlowOn:        j['tiltFlowOn']         as bool? ?? false,
+    pressureCurveP1x:  (j['pressureCurveP1x'] as num?)?.toDouble() ?? 0.33,
+    pressureCurveP1y:  (j['pressureCurveP1y'] as num?)?.toDouble() ?? 0.33,
+    pressureCurveP2x:  (j['pressureCurveP2x'] as num?)?.toDouble() ?? 0.66,
+    pressureCurveP2y:  (j['pressureCurveP2y'] as num?)?.toDouble() ?? 0.66,
+    doubleBrushOn:     j['doubleBrushOn']      as bool? ?? false,
+    doubleBrushId:     j['doubleBrushId']      as String?,
+  );
 
-      // ─── AERÓGRAFO ────────────────────────────────────────
-      BrushModel(id: 'aero_01', name: 'Aerógrafo Suave', emoji: '💨',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 30.0, opacity: 0.3),
-      BrushModel(id: 'aero_02', name: 'Aerógrafo Medio', emoji: '🌫️',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 20.0, opacity: 0.5),
-      BrushModel(id: 'aero_03', name: 'Aerógrafo Duro', emoji: '💨',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 15.0, opacity: 0.8),
-      BrushModel(id: 'aero_04', name: 'Difuminado', emoji: '🌀',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 40.0, opacity: 0.2),
-      BrushModel(id: 'aero_05', name: 'Niebla', emoji: '🌁',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 50.0, opacity: 0.15),
-      BrushModel(id: 'aero_06', name: 'Spray Fino', emoji: '✨',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 10.0, opacity: 0.6),
-      BrushModel(id: 'aero_07', name: 'Spray Grueso', emoji: '💦',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 25.0, opacity: 0.4),
-      BrushModel(id: 'aero_08', name: 'Degradado', emoji: '🎨',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 35.0, opacity: 0.25),
-      BrushModel(id: 'aero_09', name: 'Sombra Suave', emoji: '🌑',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 45.0, opacity: 0.2),
-      BrushModel(id: 'aero_10', name: 'Luz Suave', emoji: '🌟',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 40.0, opacity: 0.2),
-      BrushModel(id: 'aero_11', name: 'Contorno Aerosol', emoji: '🖊️',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 8.0, opacity: 0.7),
-      BrushModel(id: 'aero_12', name: 'Nube', emoji: '☁️',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 60.0, opacity: 0.1),
-      BrushModel(id: 'aero_13', name: 'Aerógrafo Puntual', emoji: '🎯',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 5.0, opacity: 0.9),
-      BrushModel(id: 'aero_14', name: 'Bruma', emoji: '🌫️',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 55.0, opacity: 0.12),
-      BrushModel(id: 'aero_15', name: 'Flash', emoji: '⚡',
-          type: StrokeType.aerografo, category: BrushCategory.aerografo, size: 20.0, opacity: 0.6),
-      // ─── TEXTURAS ─────────────────────────────────────────
-      BrushModel(id: 'tex_01', name: 'Textura Rugosa', emoji: '🪨',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 20.0, opacity: 0.7),
-      BrushModel(id: 'tex_02', name: 'Textura Arena', emoji: '🏖️',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 25.0, opacity: 0.6),
-      BrushModel(id: 'tex_03', name: 'Textura Madera', emoji: '🪵',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 15.0, opacity: 0.8),
-      BrushModel(id: 'tex_04', name: 'Textura Piel', emoji: '🦎',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 10.0, opacity: 0.7),
-      BrushModel(id: 'tex_05', name: 'Textura Tela', emoji: '🧵',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 18.0, opacity: 0.6),
-      BrushModel(id: 'tex_06', name: 'Textura Metal', emoji: '⚙️',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 12.0, opacity: 0.9),
-      BrushModel(id: 'tex_07', name: 'Textura Piedra', emoji: '🪨',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 22.0, opacity: 0.7),
-      BrushModel(id: 'tex_08', name: 'Textura Corteza', emoji: '🌳',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 16.0, opacity: 0.8),
-      BrushModel(id: 'tex_09', name: 'Textura Cuero', emoji: '👜',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 14.0, opacity: 0.75),
-      BrushModel(id: 'tex_10', name: 'Textura Escamas', emoji: '🐟',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 8.0, opacity: 0.8),
-      BrushModel(id: 'tex_11', name: 'Textura Granito', emoji: '🗿',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 20.0, opacity: 0.65),
-      BrushModel(id: 'tex_12', name: 'Textura Mármol', emoji: '🏛️',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 30.0, opacity: 0.5),
-      BrushModel(id: 'tex_13', name: 'Textura Papel', emoji: '📄',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 25.0, opacity: 0.6),
-      BrushModel(id: 'tex_14', name: 'Textura Óxido', emoji: '🔩',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 18.0, opacity: 0.7),
-      BrushModel(id: 'tex_15', name: 'Textura Polvo', emoji: '💨',
-          type: StrokeType.textura, category: BrushCategory.texturas, size: 35.0, opacity: 0.3),
+  static List<BrushModel> defaultBrushes() => [
+    BrushModel(id:'liner_fino',  name:'Liner Fino',  emoji:'✒️', type:StrokeType.liner,   category:BrushCategory.todos, size:2.0,  opacity:1.0, rotationDynamic:RotationDynamic.seguirTrazo),
+    BrushModel(id:'liner_medio', name:'Liner Medio', emoji:'🖊️', type:StrokeType.liner,   category:BrushCategory.todos, size:4.0,  opacity:1.0, rotationDynamic:RotationDynamic.seguirTrazo),
+    BrushModel(id:'shader_suave',name:'Shader Suave',emoji:'🖌️', type:StrokeType.shader,  category:BrushCategory.todos, size:15.0, opacity:0.5, hardness:0.2),
+    BrushModel(id:'dotwork',     name:'Dotwork',     emoji:'⚫', type:StrokeType.dotwork, category:BrushCategory.todos, size:3.0,  opacity:1.0, spacing:3.0, scatter:0.1),
+    BrushModel(id:'relleno',     name:'Relleno',     emoji:'🎨', type:StrokeType.fill,    category:BrushCategory.todos, size:20.0, opacity:0.8),
+    BrushModel(id:'borrador',    name:'Borrador',    emoji:'🧹', type:StrokeType.eraser,  category:BrushCategory.todos, size:10.0, opacity:1.0, hardness:1.0),
+    BrushModel(id:'cal_01', name:'Pluma Clásica',    emoji:'✒️', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:3.0,  opacity:1.0, rotationDynamic:RotationDynamic.seguirTrazo),
+    BrushModel(id:'cal_02', name:'Pluma Caligráfica',emoji:'🖋️', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:4.0,  opacity:1.0, shapeAngle:45.0),
+    BrushModel(id:'cal_03', name:'Pincel Caligráfico',emoji:'🖌️',type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:6.0,  opacity:0.9, smoothing:0.3),
+    BrushModel(id:'cal_04', name:'Marcador Fino',    emoji:'✏️', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:2.0,  opacity:1.0),
+    BrushModel(id:'cal_05', name:'Marcador Grueso',  emoji:'🖍️', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:8.0,  opacity:1.0),
+    BrushModel(id:'cal_06', name:'Tinta China',      emoji:'🖊️', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:3.0,  opacity:1.0, pressureConeHead:0.2, pressureConeTail:0.1),
+    BrushModel(id:'cal_07', name:'Brocha Japonesa',  emoji:'🎋', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:10.0, opacity:0.8, scatter:0.05),
+    BrushModel(id:'cal_08', name:'Plumilla',         emoji:'🪶', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:1.5,  opacity:1.0, pressureConeHead:0.3),
+    BrushModel(id:'cal_09', name:'Rotulador',        emoji:'🖊️', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:5.0,  opacity:1.0),
+    BrushModel(id:'cal_10', name:'Pincel Seco',      emoji:'🎨', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:7.0,  opacity:0.7, grainDepth:0.4),
+    BrushModel(id:'cal_11', name:'Caña',             emoji:'🌾', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:4.0,  opacity:0.9),
+    BrushModel(id:'cal_12', name:'Gótico',           emoji:'⚜️', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:5.0,  opacity:1.0, shapeAngle:30.0),
+    BrushModel(id:'cal_13', name:'Copperplate',      emoji:'✒️', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:2.0,  opacity:1.0),
+    BrushModel(id:'cal_14', name:'Brush Lettering',  emoji:'🖌️', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:8.0,  opacity:0.9),
+    BrushModel(id:'cal_15', name:'Uncial',           emoji:'📜', type:StrokeType.caligrafia,  category:BrushCategory.caligrafia,  size:6.0,  opacity:1.0),
+    BrushModel(id:'aero_01',name:'Aerógrafo Suave',  emoji:'💨', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:30.0, opacity:0.3, hardness:0.1, accumulative:true),
+    BrushModel(id:'aero_02',name:'Aerógrafo Medio',  emoji:'🌫️', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:20.0, opacity:0.5, hardness:0.3, accumulative:true),
+    BrushModel(id:'aero_03',name:'Aerógrafo Duro',   emoji:'💨', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:15.0, opacity:0.8, hardness:0.7),
+    BrushModel(id:'aero_04',name:'Difuminado',       emoji:'🌀', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:40.0, opacity:0.2, hardness:0.0, accumulative:true),
+    BrushModel(id:'aero_05',name:'Niebla',           emoji:'🌁', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:50.0, opacity:0.15),
+    BrushModel(id:'aero_06',name:'Spray Fino',       emoji:'✨', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:10.0, opacity:0.6, scatter:0.3),
+    BrushModel(id:'aero_07',name:'Spray Grueso',     emoji:'💦', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:25.0, opacity:0.4, scatter:0.4),
+    BrushModel(id:'aero_08',name:'Degradado',        emoji:'🎨', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:35.0, opacity:0.25,hardness:0.0),
+    BrushModel(id:'aero_09',name:'Sombra Suave',     emoji:'🌑', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:45.0, opacity:0.2),
+    BrushModel(id:'aero_10',name:'Luz Suave',        emoji:'🌟', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:40.0, opacity:0.2),
+    BrushModel(id:'aero_11',name:'Contorno Aerosol', emoji:'🖊️', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:8.0,  opacity:0.7),
+    BrushModel(id:'aero_12',name:'Nube',             emoji:'☁️', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:60.0, opacity:0.1),
+    BrushModel(id:'aero_13',name:'Aerógrafo Puntual',emoji:'🎯', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:5.0,  opacity:0.9),
+    BrushModel(id:'aero_14',name:'Bruma',            emoji:'🌫️', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:55.0, opacity:0.12),
+    BrushModel(id:'aero_15',name:'Flash',            emoji:'⚡', type:StrokeType.aerografo,   category:BrushCategory.aerografo,   size:20.0, opacity:0.6),
+    BrushModel(id:'car_01', name:'Carboncillo Fino', emoji:'✏️', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:3.0,  opacity:0.9, grainDepth:0.6, scatter:0.05),
+    BrushModel(id:'car_02', name:'Carboncillo Medio',emoji:'✏️', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:8.0,  opacity:0.8, grainDepth:0.7, scatter:0.08),
+    BrushModel(id:'car_03', name:'Carboncillo Grueso',emoji:'🖤',type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:15.0, opacity:0.7, grainDepth:0.8, scatter:0.1),
+    BrushModel(id:'car_04', name:'Grafito HB',       emoji:'📝', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:2.0,  opacity:0.85,grainDepth:0.3),
+    BrushModel(id:'car_05', name:'Grafito 2B',       emoji:'📝', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:4.0,  opacity:0.8, grainDepth:0.4),
+    BrushModel(id:'car_06', name:'Grafito 6B',       emoji:'📝', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:8.0,  opacity:0.75,grainDepth:0.5),
+    BrushModel(id:'car_07', name:'Difuminador',      emoji:'👆', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:20.0, opacity:0.4, hardness:0.2),
+    BrushModel(id:'car_08', name:'Sanguina',         emoji:'🟤', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:6.0,  opacity:0.7, grainDepth:0.5),
+    BrushModel(id:'car_09', name:'Tiza',             emoji:'🪨', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:10.0, opacity:0.6, grainDepth:0.6),
+    BrushModel(id:'car_10', name:'Pastel Seco',      emoji:'🎨', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:14.0, opacity:0.65,grainDepth:0.65),
+    BrushModel(id:'car_11', name:'Lápiz Duro',       emoji:'✏️', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:1.5,  opacity:0.95,grainDepth:0.2),
+    BrushModel(id:'car_12', name:'Boceto',           emoji:'📐', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:3.0,  opacity:0.7, grainDepth:0.3),
+    BrushModel(id:'car_13', name:'Sombreado Suave',  emoji:'🌑', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:18.0, opacity:0.5, grainDepth:0.5, hardness:0.3),
+    BrushModel(id:'car_14', name:'Rayado Cruzado',   emoji:'✂️', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:2.0,  opacity:0.8),
+    BrushModel(id:'car_15', name:'Carbón Comprimido',emoji:'🖤', type:StrokeType.carbonciilo, category:BrushCategory.carbonciilo, size:12.0, opacity:0.9, grainDepth:0.7),
+    BrushModel(id:'aers_01',name:'Spray Urbano',     emoji:'🎨', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:30.0, opacity:0.7, scatter:0.35, shapeCount:3),
+    BrushModel(id:'aers_02',name:'Graffiti Base',    emoji:'🖌️', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:25.0, opacity:0.8),
+    BrushModel(id:'aers_03',name:'Spray Fino',       emoji:'✨', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:8.0,  opacity:0.9, scatter:0.2),
+    BrushModel(id:'aers_04',name:'Spray Grueso',     emoji:'💦', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:40.0, opacity:0.6, scatter:0.4),
+    BrushModel(id:'aers_05',name:'Drip',             emoji:'💧', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:5.0,  opacity:0.9),
+    BrushModel(id:'aers_06',name:'Stencil',          emoji:'🔲', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:20.0, opacity:0.85),
+    BrushModel(id:'aers_07',name:'Tag Fino',         emoji:'🖊️', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:3.0,  opacity:1.0),
+    BrushModel(id:'aers_08',name:'Tag Grueso',       emoji:'✏️', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:10.0, opacity:0.95),
+    BrushModel(id:'aers_09',name:'Fill Urbano',      emoji:'🎭', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:35.0, opacity:0.7),
+    BrushModel(id:'aers_10',name:'Outline Graffiti', emoji:'🖋️', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:4.0,  opacity:1.0, rotationDynamic:RotationDynamic.seguirTrazo),
+    BrushModel(id:'aers_11',name:'Bubble',           emoji:'🫧', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:22.0, opacity:0.75),
+    BrushModel(id:'aers_12',name:'Wildstyle',        emoji:'🌀', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:6.0,  opacity:0.9),
+    BrushModel(id:'aers_13',name:'Chrome',           emoji:'⚡', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:18.0, opacity:0.8),
+    BrushModel(id:'aers_14',name:'Fade',             emoji:'🌫️', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:45.0, opacity:0.4, hardness:0.0),
+    BrushModel(id:'aers_15',name:'Block Letter',     emoji:'🔠', type:StrokeType.aerosol,     category:BrushCategory.aerosoles,   size:15.0, opacity:0.9),
+    BrushModel(id:'lum_01', name:'Luz Brillante',    emoji:'✨', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:30.0, opacity:0.3, hardness:0.0, accumulative:true),
+    BrushModel(id:'lum_02', name:'Destello',         emoji:'💥', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:20.0, opacity:0.4),
+    BrushModel(id:'lum_03', name:'Halo',             emoji:'🌟', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:40.0, opacity:0.2, hardness:0.0),
+    BrushModel(id:'lum_04', name:'Neón',             emoji:'💡', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:6.0,  opacity:0.9),
+    BrushModel(id:'lum_05', name:'Aurora',           emoji:'🌌', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:50.0, opacity:0.15),
+    BrushModel(id:'lum_06', name:'Chispa',           emoji:'⚡', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:4.0,  opacity:0.95,scatter:0.2),
+    BrushModel(id:'lum_07', name:'Resplandor',       emoji:'🌅', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:45.0, opacity:0.2),
+    BrushModel(id:'lum_08', name:'Luz Suave',        emoji:'🕯️', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:35.0, opacity:0.25,hardness:0.0),
+    BrushModel(id:'lum_09', name:'Brillo Metálico',  emoji:'🪙', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:10.0, opacity:0.7),
+    BrushModel(id:'lum_10', name:'Luz Solar',        emoji:'☀️', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:55.0, opacity:0.15),
+    BrushModel(id:'lum_11', name:'Glitter',          emoji:'✨', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:8.0,  opacity:0.8, scatter:0.3, shapeCount:4),
+    BrushModel(id:'lum_12', name:'Reflejo',          emoji:'🪞', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:15.0, opacity:0.5),
+    BrushModel(id:'lum_13', name:'Fosfórico',        emoji:'🔦', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:12.0, opacity:0.6),
+    BrushModel(id:'lum_14', name:'Luz de Luna',      emoji:'🌙', type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:40.0, opacity:0.2, hardness:0.0),
+    BrushModel(id:'lum_15', name:'Explosión Lumínica',emoji:'💫',type:StrokeType.luminancia,  category:BrushCategory.luminancia,  size:25.0, opacity:0.4),
+  ];
 
-      // ─── ABSTRACTOS ───────────────────────────────────────
-      BrushModel(id: 'abs_01', name: 'Abstracto Fluido', emoji: '🌊',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 25.0, opacity: 0.7),
-      BrushModel(id: 'abs_02', name: 'Abstracto Geométrico', emoji: '🔷',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 15.0, opacity: 0.8),
-      BrushModel(id: 'abs_03', name: 'Abstracto Orgánico', emoji: '🍀',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 20.0, opacity: 0.6),
-      BrushModel(id: 'abs_04', name: 'Abstracto Caótico', emoji: '🌀',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 18.0, opacity: 0.75),
-      BrushModel(id: 'abs_05', name: 'Líneas Rotas', emoji: '⚡',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 5.0, opacity: 0.9),
-      BrushModel(id: 'abs_06', name: 'Manchas', emoji: '🎨',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 30.0, opacity: 0.5),
-      BrushModel(id: 'abs_07', name: 'Espiral', emoji: '🌀',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 12.0, opacity: 0.8),
-      BrushModel(id: 'abs_08', name: 'Puntos Dispersos', emoji: '✨',
-          type: StrokeType.dotwork, category: BrushCategory.abstractos, size: 4.0, opacity: 0.85, spacing: 4.0),
-      BrushModel(id: 'abs_09', name: 'Trazos Libres', emoji: '🖌️',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 10.0, opacity: 0.7),
-      BrushModel(id: 'abs_10', name: 'Caos Controlado', emoji: '🎭',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 22.0, opacity: 0.6),
-      BrushModel(id: 'abs_11', name: 'Ondas', emoji: '〰️',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 8.0, opacity: 0.8),
-      BrushModel(id: 'abs_12', name: 'Destellos', emoji: '💫',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 6.0, opacity: 0.9),
-      BrushModel(id: 'abs_13', name: 'Fractales', emoji: '🔮',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 14.0, opacity: 0.7),
-      BrushModel(id: 'abs_14', name: 'Ruido', emoji: '📡',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 20.0, opacity: 0.5),
-      BrushModel(id: 'abs_15', name: 'Explosión', emoji: '💥',
-          type: StrokeType.abstracto, category: BrushCategory.abstractos, size: 35.0, opacity: 0.6),
-
-      // ─── CARBONCILLO ──────────────────────────────────────
-      BrushModel(id: 'car_01', name: 'Carboncillo Fino', emoji: '✏️',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 3.0, opacity: 0.9),
-      BrushModel(id: 'car_02', name: 'Carboncillo Medio', emoji: '✏️',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 8.0, opacity: 0.8),
-      BrushModel(id: 'car_03', name: 'Carboncillo Grueso', emoji: '🖤',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 15.0, opacity: 0.7),
-      BrushModel(id: 'car_04', name: 'Grafito HB', emoji: '📝',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 2.0, opacity: 0.85),
-      BrushModel(id: 'car_05', name: 'Grafito 2B', emoji: '📝',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 4.0, opacity: 0.8),
-      BrushModel(id: 'car_06', name: 'Grafito 6B', emoji: '📝',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 8.0, opacity: 0.75),
-      BrushModel(id: 'car_07', name: 'Difuminador', emoji: '👆',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 20.0, opacity: 0.4),
-      BrushModel(id: 'car_08', name: 'Sanguina', emoji: '🟤',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 6.0, opacity: 0.7),
-      BrushModel(id: 'car_09', name: 'Tiza', emoji: '🪨',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 10.0, opacity: 0.6),
-      BrushModel(id: 'car_10', name: 'Pastel Seco', emoji: '🎨',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 14.0, opacity: 0.65),
-      BrushModel(id: 'car_11', name: 'Lápiz Duro', emoji: '✏️',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 1.5, opacity: 0.95),
-      BrushModel(id: 'car_12', name: 'Boceto', emoji: '📐',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 3.0, opacity: 0.7),
-      BrushModel(id: 'car_13', name: 'Sombreado Suave', emoji: '🌑',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 18.0, opacity: 0.5),
-      BrushModel(id: 'car_14', name: 'Rayado Cruzado', emoji: '✂️',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 2.0, opacity: 0.8),
-      BrushModel(id: 'car_15', name: 'Carbón Comprimido', emoji: '🖤',
-          type: StrokeType.carbonciilo, category: BrushCategory.carbonciilo, size: 12.0, opacity: 0.9),
-      // ─── ELEMENTOS ────────────────────────────────────────
-      BrushModel(id: 'ele_01', name: 'Hoja', emoji: '🍃',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 12.0, opacity: 0.8),
-      BrushModel(id: 'ele_02', name: 'Flor', emoji: '🌸',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 15.0, opacity: 0.85),
-      BrushModel(id: 'ele_03', name: 'Estrella', emoji: '⭐',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 10.0, opacity: 0.9),
-      BrushModel(id: 'ele_04', name: 'Luna', emoji: '🌙',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 18.0, opacity: 0.85),
-      BrushModel(id: 'ele_05', name: 'Rayo', emoji: '⚡',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 6.0, opacity: 0.95),
-      BrushModel(id: 'ele_06', name: 'Llama', emoji: '🔥',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 20.0, opacity: 0.8),
-      BrushModel(id: 'ele_07', name: 'Ola', emoji: '🌊',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 14.0, opacity: 0.75),
-      BrushModel(id: 'ele_08', name: 'Nube', emoji: '☁️',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 25.0, opacity: 0.6),
-      BrushModel(id: 'ele_09', name: 'Cristal', emoji: '💎',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 8.0, opacity: 0.9),
-      BrushModel(id: 'ele_10', name: 'Calavera', emoji: '💀',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 16.0, opacity: 0.85),
-      BrushModel(id: 'ele_11', name: 'Rosa', emoji: '🌹',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 14.0, opacity: 0.8),
-      BrushModel(id: 'ele_12', name: 'Serpiente', emoji: '🐍',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 5.0, opacity: 0.9),
-      BrushModel(id: 'ele_13', name: 'Águila', emoji: '🦅',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 20.0, opacity: 0.85),
-      BrushModel(id: 'ele_14', name: 'Dragón', emoji: '🐉',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 22.0, opacity: 0.8),
-      BrushModel(id: 'ele_15', name: 'Tribal', emoji: '🔱',
-          type: StrokeType.elemento, category: BrushCategory.elementos, size: 4.0, opacity: 1.0),
-
-      // ─── AEROSOLES ────────────────────────────────────────
-      BrushModel(id: 'aers_01', name: 'Spray Urbano', emoji: '🎨',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 30.0, opacity: 0.7),
-      BrushModel(id: 'aers_02', name: 'Graffiti Base', emoji: '🖌️',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 25.0, opacity: 0.8),
-      BrushModel(id: 'aers_03', name: 'Spray Fino', emoji: '✨',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 8.0, opacity: 0.9),
-      BrushModel(id: 'aers_04', name: 'Spray Grueso', emoji: '💦',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 40.0, opacity: 0.6),
-      BrushModel(id: 'aers_05', name: 'Drip', emoji: '💧',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 5.0, opacity: 0.9),
-      BrushModel(id: 'aers_06', name: 'Stencil', emoji: '🔲',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 20.0, opacity: 0.85),
-      BrushModel(id: 'aers_07', name: 'Tag Fino', emoji: '🖊️',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 3.0, opacity: 1.0),
-      BrushModel(id: 'aers_08', name: 'Tag Grueso', emoji: '✏️',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 10.0, opacity: 0.95),
-      BrushModel(id: 'aers_09', name: 'Fill Urbano', emoji: '🎭',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 35.0, opacity: 0.7),
-      BrushModel(id: 'aers_10', name: 'Outline Graffiti', emoji: '🖋️',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 4.0, opacity: 1.0),
-      BrushModel(id: 'aers_11', name: 'Bubble', emoji: '🫧',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 22.0, opacity: 0.75),
-      BrushModel(id: 'aers_12', name: 'Wildstyle', emoji: '🌀',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 6.0, opacity: 0.9),
-      BrushModel(id: 'aers_13', name: 'Chrome', emoji: '⚡',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 18.0, opacity: 0.8),
-      BrushModel(id: 'aers_14', name: 'Fade', emoji: '🌫️',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 45.0, opacity: 0.4),
-      BrushModel(id: 'aers_15', name: 'Block Letter', emoji: '🔠',
-          type: StrokeType.aerosol, category: BrushCategory.aerosoles, size: 15.0, opacity: 0.9),
-
-      // ─── RETOQUE ──────────────────────────────────────────
-      BrushModel(id: 'ret_01', name: 'Suavizador', emoji: '✨',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 25.0, opacity: 0.3),
-      BrushModel(id: 'ret_02', name: 'Afilador', emoji: '🔪',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 3.0, opacity: 0.8),
-      BrushModel(id: 'ret_03', name: 'Clonador', emoji: '👯',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 20.0, opacity: 0.7),
-      BrushModel(id: 'ret_04', name: 'Corrector', emoji: '🩹',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 15.0, opacity: 0.6),
-      BrushModel(id: 'ret_05', name: 'Dodge', emoji: '☀️',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 30.0, opacity: 0.25),
-      BrushModel(id: 'ret_06', name: 'Burn', emoji: '🌑',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 30.0, opacity: 0.25),
-      BrushModel(id: 'ret_07', name: 'Saturación', emoji: '🌈',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 20.0, opacity: 0.4),
-      BrushModel(id: 'ret_08', name: 'Desaturar', emoji: '⬛',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 20.0, opacity: 0.4),
-      BrushModel(id: 'ret_09', name: 'Nitidez', emoji: '🔍',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 10.0, opacity: 0.5),
-      BrushModel(id: 'ret_10', name: 'Desenfoque', emoji: '🌀',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 25.0, opacity: 0.4),
-      BrushModel(id: 'ret_11', name: 'Reconstruir', emoji: '🔧',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 18.0, opacity: 0.6),
-      BrushModel(id: 'ret_12', name: 'Empujar', emoji: '👉',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 15.0, opacity: 0.7),
-      BrushModel(id: 'ret_13', name: 'Jalar', emoji: '👈',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 15.0, opacity: 0.7),
-      BrushModel(id: 'ret_14', name: 'Inflar', emoji: '🎈',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 20.0, opacity: 0.5),
-      BrushModel(id: 'ret_15', name: 'Contraer', emoji: '🔻',
-          type: StrokeType.retoque, category: BrushCategory.retoque, size: 20.0, opacity: 0.5),
-      // ─── LUMINANCIA ───────────────────────────────────────
-      BrushModel(id: 'lum_01', name: 'Luz Brillante', emoji: '✨',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 30.0, opacity: 0.3),
-      BrushModel(id: 'lum_02', name: 'Destello', emoji: '💥',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 20.0, opacity: 0.4),
-      BrushModel(id: 'lum_03', name: 'Halo', emoji: '🌟',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 40.0, opacity: 0.2),
-      BrushModel(id: 'lum_04', name: 'Neón', emoji: '💡',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 6.0, opacity: 0.9),
-      BrushModel(id: 'lum_05', name: 'Aurora', emoji: '🌌',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 50.0, opacity: 0.15),
-      BrushModel(id: 'lum_06', name: 'Chispa', emoji: '⚡',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 4.0, opacity: 0.95),
-      BrushModel(id: 'lum_07', name: 'Resplandor', emoji: '🌅',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 45.0, opacity: 0.2),
-      BrushModel(id: 'lum_08', name: 'Luz Suave', emoji: '🕯️',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 35.0, opacity: 0.25),
-      BrushModel(id: 'lum_09', name: 'Brillo Metálico', emoji: '🪙',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 10.0, opacity: 0.7),
-      BrushModel(id: 'lum_10', name: 'Luz Solar', emoji: '☀️',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 55.0, opacity: 0.15),
-      BrushModel(id: 'lum_11', name: 'Glitter', emoji: '✨',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 8.0, opacity: 0.8),
-      BrushModel(id: 'lum_12', name: 'Reflejo', emoji: '🪞',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 15.0, opacity: 0.5),
-      BrushModel(id: 'lum_13', name: 'Fosfórico', emoji: '🔦',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 12.0, opacity: 0.6),
-      BrushModel(id: 'lum_14', name: 'Luz de Luna', emoji: '🌙',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 40.0, opacity: 0.2),
-      BrushModel(id: 'lum_15', name: 'Explosión Lumínica', emoji: '💫',
-          type: StrokeType.luminancia, category: BrushCategory.luminancia, size: 25.0, opacity: 0.4),
-
-      // ─── INDUSTRIALES ─────────────────────────────────────
-      BrushModel(id: 'ind_01', name: 'Tornillo', emoji: '🔩',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 8.0, opacity: 0.9),
-      BrushModel(id: 'ind_02', name: 'Tuerca', emoji: '⚙️',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 10.0, opacity: 0.85),
-      BrushModel(id: 'ind_03', name: 'Engranaje', emoji: '⚙️',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 15.0, opacity: 0.8),
-      BrushModel(id: 'ind_04', name: 'Cadena', emoji: '⛓️',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 6.0, opacity: 0.9),
-      BrushModel(id: 'ind_05', name: 'Remache', emoji: '🔨',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 5.0, opacity: 0.95),
-      BrushModel(id: 'ind_06', name: 'Soldadura', emoji: '🔧',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 4.0, opacity: 1.0),
-      BrushModel(id: 'ind_07', name: 'Cable', emoji: '🔌',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 3.0, opacity: 0.9),
-      BrushModel(id: 'ind_08', name: 'Placa Metal', emoji: '🛡️',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 25.0, opacity: 0.7),
-      BrushModel(id: 'ind_09', name: 'Malla', emoji: '🕸️',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 12.0, opacity: 0.75),
-      BrushModel(id: 'ind_10', name: 'Corrosión', emoji: '🔩',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 20.0, opacity: 0.65),
-      BrushModel(id: 'ind_11', name: 'Circuito', emoji: '💻',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 2.0, opacity: 0.9),
-      BrushModel(id: 'ind_12', name: 'Tubo', emoji: '🔧',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 8.0, opacity: 0.85),
-      BrushModel(id: 'ind_13', name: 'Rejilla', emoji: '🔲',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 15.0, opacity: 0.7),
-      BrushModel(id: 'ind_14', name: 'Acero', emoji: '⚔️',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 10.0, opacity: 0.9),
-      BrushModel(id: 'ind_15', name: 'Hierro Forjado', emoji: '🛠️',
-          type: StrokeType.industrial, category: BrushCategory.industriales, size: 7.0, opacity: 0.95),
-
-      // ─── ORGÁNICOS ────────────────────────────────────────
-      BrushModel(id: 'org_01', name: 'Musgo', emoji: '🌿',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 18.0, opacity: 0.7),
-      BrushModel(id: 'org_02', name: 'Raíz', emoji: '🌱',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 5.0, opacity: 0.85),
-      BrushModel(id: 'org_03', name: 'Enredadera', emoji: '🌿',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 4.0, opacity: 0.8),
-      BrushModel(id: 'org_04', name: 'Pétalo', emoji: '🌸',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 12.0, opacity: 0.75),
-      BrushModel(id: 'org_05', name: 'Espina', emoji: '🌵',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 3.0, opacity: 0.9),
-      BrushModel(id: 'org_06', name: 'Liquen', emoji: '🍄',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 15.0, opacity: 0.6),
-      BrushModel(id: 'org_07', name: 'Coral', emoji: '🪸',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 10.0, opacity: 0.7),
-      BrushModel(id: 'org_08', name: 'Hueso', emoji: '🦴',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 8.0, opacity: 0.85),
-      BrushModel(id: 'org_09', name: 'Pluma Ave', emoji: '🪶',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 14.0, opacity: 0.7),
-      BrushModel(id: 'org_10', name: 'Concha', emoji: '🐚',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 12.0, opacity: 0.75),
-      BrushModel(id: 'org_11', name: 'Semilla', emoji: '🌰',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 6.0, opacity: 0.8),
-      BrushModel(id: 'org_12', name: 'Hongo', emoji: '🍄',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 10.0, opacity: 0.7),
-      BrushModel(id: 'org_13', name: 'Alga', emoji: '🌊',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 8.0, opacity: 0.65),
-      BrushModel(id: 'org_14', name: 'Rama', emoji: '🌳',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 5.0, opacity: 0.85),
-      BrushModel(id: 'org_15', name: 'Cactus', emoji: '🌵',
-          type: StrokeType.organico, category: BrushCategory.organicos, size: 7.0, opacity: 0.8),
-      // ─── AGUA ─────────────────────────────────────────────
-      BrushModel(id: 'agua_01', name: 'Acuarela Suave', emoji: '💧',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 30.0, opacity: 0.4),
-      BrushModel(id: 'agua_02', name: 'Acuarela Dura', emoji: '🌊',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 20.0, opacity: 0.6),
-      BrushModel(id: 'agua_03', name: 'Pincel Húmedo', emoji: '🖌️',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 15.0, opacity: 0.5),
-      BrushModel(id: 'agua_04', name: 'Gota', emoji: '💦',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 8.0, opacity: 0.7),
-      BrushModel(id: 'agua_05', name: 'Splash', emoji: '🌊',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 35.0, opacity: 0.5),
-      BrushModel(id: 'agua_06', name: 'Marea', emoji: '🌅',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 45.0, opacity: 0.3),
-      BrushModel(id: 'agua_07', name: 'Río', emoji: '🏞️',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 25.0, opacity: 0.45),
-      BrushModel(id: 'agua_08', name: 'Rocío', emoji: '🌿',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 5.0, opacity: 0.6),
-      BrushModel(id: 'agua_09', name: 'Vapor', emoji: '♨️',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 40.0, opacity: 0.2),
-      BrushModel(id: 'agua_10', name: 'Lluvia', emoji: '🌧️',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 2.0, opacity: 0.7),
-      BrushModel(id: 'agua_11', name: 'Hielo', emoji: '🧊',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 18.0, opacity: 0.55),
-      BrushModel(id: 'agua_12', name: 'Nieve', emoji: '❄️',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 12.0, opacity: 0.5),
-      BrushModel(id: 'agua_13', name: 'Tinta Aguada', emoji: '🖊️',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 10.0, opacity: 0.45),
-      BrushModel(id: 'agua_14', name: 'Ola Suave', emoji: '〰️',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 22.0, opacity: 0.4),
-      BrushModel(id: 'agua_15', name: 'Remolino', emoji: '🌀',
-          type: StrokeType.agua, category: BrushCategory.agua, size: 28.0, opacity: 0.35),
-
-      // ─── IMPORTADO ────────────────────────────────────────
-      BrushModel(id: 'imp_01', name: 'Procreate Classic', emoji: '📱',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 5.0, opacity: 1.0),
-      BrushModel(id: 'imp_02', name: 'Procreate Inking', emoji: '🖊️',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 3.0, opacity: 1.0),
-      BrushModel(id: 'imp_03', name: 'Procreate Sketching', emoji: '✏️',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 4.0, opacity: 0.85),
-      BrushModel(id: 'imp_04', name: 'Procreate Painting', emoji: '🎨',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 20.0, opacity: 0.7),
-      BrushModel(id: 'imp_05', name: 'PS Round', emoji: '⭕',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 8.0, opacity: 0.9),
-      BrushModel(id: 'imp_06', name: 'PS Soft', emoji: '🌫️',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 25.0, opacity: 0.4),
-      BrushModel(id: 'imp_07', name: 'PS Hard', emoji: '🔵',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 15.0, opacity: 0.9),
-      BrushModel(id: 'imp_08', name: 'PS Texture', emoji: '🖼️',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 20.0, opacity: 0.7),
-      BrushModel(id: 'imp_09', name: 'Clip Studio Liner', emoji: '🖋️',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 2.0, opacity: 1.0),
-      BrushModel(id: 'imp_10', name: 'Clip Studio Tone', emoji: '🔲',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 10.0, opacity: 0.8),
-      BrushModel(id: 'imp_11', name: 'SAI Water', emoji: '💧',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 18.0, opacity: 0.5),
-      BrushModel(id: 'imp_12', name: 'SAI Pen', emoji: '🖊️',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 4.0, opacity: 0.95),
-      BrushModel(id: 'imp_13', name: 'Krita Basic', emoji: '🎨',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 6.0, opacity: 0.85),
-      BrushModel(id: 'imp_14', name: 'Krita Airbrush', emoji: '💨',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 30.0, opacity: 0.3),
-      BrushModel(id: 'imp_15', name: 'Custom Import', emoji: '📥',
-          type: StrokeType.importado, category: BrushCategory.importado, size: 5.0, opacity: 1.0),
-    ];
-  }
-
-  // Filtrar por categoría
-  static List<BrushModel> byCategory(
-      List<BrushModel> brushes, BrushCategory category) {
+  static List<BrushModel> byCategory(List<BrushModel> brushes, BrushCategory category) {
     if (category == BrushCategory.todos) return brushes;
-    return brushes
-        .where((b) => b.category == category)
-        .toList();
+    return brushes.where((b) => b.category == category).toList();
   }
 
-  // Nombre legible de categoría
-  static String categoryName(BrushCategory category) {
-    switch (category) {
-      case BrushCategory.todos: return 'Todos';
-      case BrushCategory.caligrafia: return 'Caligrafía';
-      case BrushCategory.aerografo: return 'Aerógrafo';
-      case BrushCategory.texturas: return 'Texturas';
-      case BrushCategory.abstractos: return 'Abstractos';
-      case BrushCategory.carbonciilo: return 'Carboncillo';
-      case BrushCategory.elementos: return 'Elementos';
-      case BrushCategory.aerosoles: return 'Aerosoles';
-      case BrushCategory.retoque: return 'Retoque';
-      case BrushCategory.luminancia: return 'Luminancia';
-      case BrushCategory.industriales: return 'Industriales';
-      case BrushCategory.organicos: return 'Orgánicos';
-      case BrushCategory.agua: return 'Agua';
-      case BrushCategory.importado: return 'Importado';
-    }
+  static String categoryName(BrushCategory cat) {
+    const m = {
+      BrushCategory.todos:'Todos', BrushCategory.caligrafia:'Caligrafía',
+      BrushCategory.aerografo:'Aerógrafo', BrushCategory.texturas:'Texturas',
+      BrushCategory.abstractos:'Abstractos', BrushCategory.carbonciilo:'Carboncillo',
+      BrushCategory.elementos:'Elementos', BrushCategory.aerosoles:'Aerosoles',
+      BrushCategory.retoque:'Retoque', BrushCategory.luminancia:'Luminancia',
+      BrushCategory.industriales:'Industriales', BrushCategory.organicos:'Orgánicos',
+      BrushCategory.agua:'Agua', BrushCategory.importado:'Importado',
+    };
+    return m[cat] ?? cat.name;
   }
 
-  // Emoji de categoría
-  static String categoryEmoji(BrushCategory category) {
-    switch (category) {
-      case BrushCategory.todos: return '🖌️';
-      case BrushCategory.caligrafia: return '✒️';
-      case BrushCategory.aerografo: return '💨';
-      case BrushCategory.texturas: return '🪨';
-      case BrushCategory.abstractos: return '🌀';
-      case BrushCategory.carbonciilo: return '✏️';
-      case BrushCategory.elementos: return '💀';
-      case BrushCategory.aerosoles: return '🎨';
-      case BrushCategory.retoque: return '✨';
-      case BrushCategory.luminancia: return '🌟';
-      case BrushCategory.industriales: return '⚙️';
-      case BrushCategory.organicos: return '🌿';
-      case BrushCategory.agua: return '💧';
-      case BrushCategory.importado: return '📥';
-    }
+  static String categoryEmoji(BrushCategory cat) {
+    const m = {
+      BrushCategory.todos:'🖌️', BrushCategory.caligrafia:'✒️',
+      BrushCategory.aerografo:'💨', BrushCategory.texturas:'🪨',
+      BrushCategory.abstractos:'🌀', BrushCategory.carbonciilo:'✏️',
+      BrushCategory.elementos:'💀', BrushCategory.aerosoles:'🎨',
+      BrushCategory.retoque:'✨', BrushCategory.luminancia:'🌟',
+      BrushCategory.industriales:'⚙️', BrushCategory.organicos:'🌿',
+      BrushCategory.agua:'💧', BrushCategory.importado:'📥',
+    };
+    return m[cat] ?? '🖌️';
   }
 }
