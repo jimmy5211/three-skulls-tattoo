@@ -87,7 +87,6 @@ flutter:
     - assets/Brushes/carboncillo/
     - assets/Brushes/caligrafia/
     - assets/Brushes/luminancia/
-    - assets/Brushes/retoque/
 
   fonts:
     - family: BlackOpsOne
