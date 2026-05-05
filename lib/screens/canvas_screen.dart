@@ -52,7 +52,9 @@ class _CanvasScreenState extends State<CanvasScreen>
   late CanvasController _controller;
   late List<BrushModel> _brushes;
   List<BrushModel> _importedBrushes = [];
-  bool _isRefreshingBrushes = false; // pinceles .tskbrush del almacenamiento
+  bool _isRefreshingBrushes = false;
+  int _strokePointCount = 0;     // para cono de presión (tamaño en puntas)
+  List<Offset> _pendingTailPoints = []; // buffer de puntos finales para tail taper // pinceles .tskbrush del almacenamiento
 
   bool _showLayers = false;
   bool _showColors = false;
@@ -4517,7 +4519,8 @@ class _CanvasScreenState extends State<CanvasScreen>
                   'DART canvasSize=${_controller.canvasSize.width.toInt()}x${_controller.canvasSize.height.toInt()}\n'
                   'scale=$_scale DPR=${MediaQuery.of(context).devicePixelRatio.toStringAsFixed(2)}';
 
-                _confirmedSingleUpdates = 0; // reset — 1 update confirmado es suficiente
+                _confirmedSingleUpdates = 0;
+              _strokePointCount = 0; // reset contador para cono de presión
               _mirrorLastPoint = null;
               _mirrorAccDist  = 0.0;
               // Resolver textura GPU: PNG cargado > textura orgánica interna > Gaussian
@@ -4571,7 +4574,19 @@ class _CanvasScreenState extends State<CanvasScreen>
             }
           } else {
             _controller.continueStroke(cp);
-            _bridgeCall(() => _bridge.addPoint(cp.dx, cp.dy));
+            _strokePointCount++;
+            // Cono de presión: head taper (puntas afinadas al inicio)
+            final _coneHead = _brush.pressureConeHead; // 0=sin afinar, 1=muy afinado
+            double _taperedPressure = 1.0;
+            if (_coneHead > 0.01) {
+              final _headLen = 8.0 + _coneHead * 20.0; // puntos para llegar a tamaño completo
+              if (_strokePointCount < _headLen) {
+                _taperedPressure = (_strokePointCount / _headLen).clamp(0.05, 1.0);
+                _taperedPressure = _coneHead * _taperedPressure + (1.0 - _coneHead);
+              }
+            }
+            _bridgeCall(() => _bridge.addPoint(cp.dx, cp.dy,
+                pressure: _taperedPressure));
             // ERASER + simetría: el espejo se envía explícitamente desde Dart.
             // El C++ maneja el espejo del pincel internamente, pero para el borrador
             // hay un bug conocido en el shader/blend — más confiable enviarlo desde Dart.
