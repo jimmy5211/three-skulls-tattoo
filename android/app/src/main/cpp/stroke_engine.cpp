@@ -270,7 +270,7 @@ bool StrokeEngine::addPoint(const Point& rawP){
     float dx=p.x-lastPoint_.x, dy=p.y-lastPoint_.y;
     float dist=std::sqrt(dx*dx+dy*dy);
     lastSpeed_=dist*0.3f+lastSpeed_*0.7f;
-    float spacing=std::max(1.0f, brush_.size*(0.04f+lastSpeed_*0.008f));
+    float spacing=std::max(1.0f, brush_.size*(0.04f+lastSpeed_*0.001f));
 
     accDist_+=dist;
     bool rendered=false;
@@ -366,9 +366,9 @@ void StrokeEngine::renderStampAt(float x,float y,float pressure,
         glBindFramebuffer(GL_FRAMEBUFFER,strokeFBO_);
         glViewport(0,0,canvasW_,canvasH_);
         glEnable(GL_BLEND);
-        glBlendEquationSeparate(GL_FUNC_ADD,GL_FUNC_ADD);
+        glBlendEquationSeparate(GL_FUNC_ADD,GL_MAX);
         glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,
-                            GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
+                            GL_ONE,GL_ONE);
     }
 
     glUniform2f(glGetUniformLocation(prog,"u_center"),x,y);
