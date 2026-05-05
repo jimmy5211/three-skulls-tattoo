@@ -28,6 +28,7 @@ find_library(log-lib log)
 find_library(android-lib android)
 find_library(egl-lib EGL)
 find_library(gles3-lib GLESv3)
+find_library(z-lib z)       # zlib del NDK — para ZIP en tskbrush_loader
 
 target_link_libraries(
     three_skulls_engine
@@ -35,6 +36,7 @@ target_link_libraries(
     ${android-lib}
     ${egl-lib}
     ${gles3-lib}
+    ${z-lib}
 )
 
 # ── Include dirs ──────────────────────────────────────────────────
