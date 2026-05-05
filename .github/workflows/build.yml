@@ -26,18 +26,16 @@ jobs:
           flutter-version: '3.19.0'
           channel: 'stable'
 
-      # ── NDK + CMake para el motor C++ ──────────────────────────────
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r25c           # NDK 25.2.9519653 (LTS estable)
-          add-to-path: true
-
-      - name: Setup CMake
+      # ── NDK + CMake — instalado por el SDK Manager (sin acción externa) ──
+      - name: Setup Android NDK 25.2
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y cmake
-          cmake --version
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "ndk;25.2.9519653" \
+            "cmake;3.22.1" \
+            --sdk_root=$ANDROID_HOME
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
 
       - name: Setup Keystore
         run: |
@@ -92,16 +90,16 @@ jobs:
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
         env:
-          # Asegurar que NDK es encontrado por Gradle
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
       - name: Verify APK signature
         run: |
           BUILD_TOOLS=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)
           $BUILD_TOOLS/apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
 
+      # ── Release con action Node 20 ────────────────────────────────────────
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: "Three Skulls Tattoo v1.0.${{ github.run_number }}"
