@@ -4597,7 +4597,8 @@ class _CanvasScreenState extends State<CanvasScreen>
             // El overlay Dart era impreciso vs GPU. Export directo = resultado exacto.
             // Throttle: evita exportar más de 1 vez cada 32ms (~30fps max).
             _eraseExportCounter++;
-            if (_eraseExportCounter % 20 == 0) {
+            // Exportar más frecuente — cada 8 puntos para WYSIWYG más fluido
+            if (_eraseExportCounter % 8 == 0) {
               final now = DateTime.now().millisecondsSinceEpoch;
               if (now - _lastExportMs >= 32) {
                 _lastExportMs = now;
@@ -4681,6 +4682,7 @@ class _CanvasScreenState extends State<CanvasScreen>
                     _confirmedSingleUpdates = 0;
                     _mirrorLastPoint = null;
                     _mirrorAccDist  = 0.0;
+                    _eraseExportCounter = 0; // reset al terminar stroke
                     _bridge.endStroke().then((img) {
                       if (!mounted) return;
                       _controller.endStroke();
